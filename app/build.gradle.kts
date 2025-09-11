@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
+    id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin") version "2.0.1"
+    id("kotlin-parcelize")
 }
 
 android {
@@ -16,15 +19,24 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ambil dari gradle/local.properties
+        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"${project.findProperty("GOOGLE_SERVER_CLIENT_ID") ?: ""}\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isMinifyEnabled = false
+            // Biasanya proguardFiles tidak diperlukan untuk debug
         }
     }
     compileOptions {
@@ -36,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -49,6 +62,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.foundation.layout.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -59,19 +73,47 @@ dependencies {
 
     // Tempat naruh library pihak ke 3
     // Navigasi antar screen di Jetpack Compose
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.navigation.compose)
     // Library inti pemutar audio/video (ExoPlayer)
-    implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation(libs.androidx.media3.exoplayer)
     // Kontrol media seperti play/pause lewat MediaSession (notif, headset, lockscreen)
-    implementation("androidx.media3:media3-session:1.8.0")
+    implementation(libs.androidx.media3.session)
     // UI komponen player khusus Jetpack Compose (progress bar, tombol, dsb)
-    implementation("androidx.media3:media3-ui-compose:1.8.0")
+    implementation(libs.androidx.media3.ui.compose)
     // Untuk streaming audio/video dari internet (via HTTP/HTTPS)
     implementation("androidx.media3:media3-datasource-okhttp:1.8.0")
     // Menyimpan data lokal seperti setting, tema, atau last played (pengganti SharedPreferences)
     implementation("androidx.datastore:datastore-preferences:1.1.7")
     // Mengelola state global (seperti player state) dengan ViewModel di Jetpack Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2")
     // Tambahan ikon bawaan Material Design (play, pause, next, dll)
     implementation("androidx.compose.material:material-icons-extended")
+    //ambil gambar dari http
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    // Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    // (Opsional) Firebase Analytics
+     implementation("com.google.firebase:firebase-analytics")
+    // Dependensi untuk Firebase Authentication
+    implementation("com.google.firebase:firebase-auth")
+    // Dependensi untuk Firebase Firestore Database
+    implementation("com.google.firebase:firebase-firestore")
+
+//    // Tambahkan Supabase BOM (Bill of Materials)
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.2.2"))
+//    // Tambahkan modul-modul Supabase yang dibutuhkan
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+//    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+
+    // Dependensi BARU untuk Credential Manager API
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.code.gson:gson:2.11.0")
+
+    implementation("com.github.yalantis:ucrop:2.2.10")
+    implementation("io.ktor:ktor-client-okhttp:3.2.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    implementation("androidx.palette:palette:1.0.0")
 }

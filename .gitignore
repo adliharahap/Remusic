@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# File Konfigurasi Sensitif
+google-services.json
+.env
