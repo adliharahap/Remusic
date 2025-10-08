@@ -28,12 +28,14 @@ import com.example.remusic.ui.components.homecomponents.SongSection
 import com.example.remusic.utils.GreetingUtils
 import com.example.remusic.viewmodel.homeviewmodel.HomeUiState
 import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 
 @Composable
 fun HomeScreen(
     rootNavController: NavController,
-    homeViewModel: HomeViewModel = viewModel()
+    homeViewModel: HomeViewModel = viewModel(),
+    playMusicViewModel: PlayMusicViewModel,
 ) {
     // Ambil user dari state global kita
     val user = UserManager.currentUser
@@ -53,7 +55,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(brush = verticalGradientBrush)
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 70.dp)
+            .padding(bottom = 130.dp)
     ) {
         Spacer(modifier = Modifier.height(30.dp))
         HomeHeader(
@@ -80,7 +82,14 @@ fun HomeScreen(
                 val topTrending = allSongsWithArtists.drop(3).take(3)
 
                 // Langsung teruskan List<SongWithArtist> ke komponen
-                SongSection("Recently Played", rootNavController, recentlyPlayed)
+                SongSection(
+                    title = "Recently Played",
+                    items = recentlyPlayed,
+                    playMusicViewModel = playMusicViewModel,
+//                    onSongClick = {
+//                        rootNavController.navigate("playmusic")
+//                    }
+                )
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Untuk ArtistSection, kita ambil artis yang unik agar tidak duplikat
@@ -88,9 +97,23 @@ fun HomeScreen(
                 ArtistSection("Artist Recently Add", recentlyPlayedArtists)
 
                 Spacer(modifier = Modifier.height(16.dp))
-                SongSection("Top Trending", rootNavController, topTrending)
+                SongSection(
+                    title = "Top Trending",
+                    items = topTrending,
+                    playMusicViewModel = playMusicViewModel,
+//                    onSongClick = {
+//                        rootNavController.navigate("playmusic")
+//                    }
+                )
                 Spacer(modifier = Modifier.height(16.dp))
-                SongSection("All Songs", rootNavController, allSongsWithArtists)
+                SongSection(
+                    title = "All Songs",
+                    items = allSongsWithArtists,
+                    playMusicViewModel = playMusicViewModel,
+//                    onSongClick = {
+//                        rootNavController.navigate("playmusic")
+//                    }
+                )
             }
             is HomeUiState.Error -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,20 +28,27 @@ import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.example.remusic.data.UserManager
+import com.example.remusic.data.model.User
 import com.example.remusic.navigation.AppNavGraph
 import com.example.remusic.ui.theme.ReMusicTheme
 import com.example.remusic.utils.NotificationUtils
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.firestore
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var credentialManager: CredentialManager
+
+    // Buat PlayMusicViewModel di level Activity
+    private val playMusicViewModel: PlayMusicViewModel by viewModels()
 
     private var showDialog by mutableStateOf(false)
     private var errorMessage by mutableStateOf("")
@@ -55,6 +63,10 @@ class MainActivity : ComponentActivity() {
 
         // 1. Cek status login di sini, SEBELUM setContent
         val isLoggedIn = auth.currentUser != null
+        if (isLoggedIn) {
+            loadUserDataIfLoggedIn()
+        }
+
         val startDestination = if (isLoggedIn) {
             "splash" // Jika sudah login, mulai dari splash screen
         } else {
@@ -93,7 +105,8 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             startDestination = startDestination,
                             onGoogleSignInClick = { signInWithGoogle(onLoginSuccess) },
-                            notificationRoute = notificationRoute
+                            notificationRoute = notificationRoute,
+                            playMusicViewModel = playMusicViewModel
                         )
                     }
 
@@ -102,6 +115,30 @@ class MainActivity : ComponentActivity() {
                         errorMessage = errorMessage,
                         onDismiss = { showDialog = false } // Sembunyikan dialog saat di-dismiss
                     )
+                }
+            }
+        }
+    }
+
+    // Di dalam class MainActivity
+
+    private fun loadUserDataIfLoggedIn() {
+        val firebaseUser = auth.currentUser
+        if (firebaseUser != null) {
+            Log.d("MAIN_ACTIVITY", "User is already logged in. Fetching profile data...")
+            // Gunakan lifecycleScope untuk menjalankan coroutine
+            lifecycleScope.launch {
+                try {
+                    // Panggil fungsi fetch dari UserManager
+                    UserManager.fetchCurrentUser(firebaseUser.uid)
+                } catch (e: Exception) {
+                    // Tangani error jika gagal mengambil data, misalnya koneksi internet mati
+                    Log.e("MAIN_ACTIVITY", "Failed to fetch returning user data.", e)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Gagal memuat data profil. Cek koneksi internet Anda.",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -157,12 +194,12 @@ class MainActivity : ComponentActivity() {
                     Log.d("FIREBASE_AUTH", "signInWithCredential:success");
                     val user = auth.currentUser;
                     if (user != null) {
-//                        Log.d("DATA_FIREBASE_JSON", user.toPrettyJsonString())
+                        checkAndCreateUserInFirestore(user, onSuccess)
+                    }else {
+                        // Kasus yang jarang terjadi, tapi baik untuk ditangani
+                        errorMessage = "Gagal mendapatkan data user setelah login."
+                        showDialog = true
                     }
-                    // TODO: Arahkan ke halaman utama atau update UI
-                    UserManager.setUser(user)
-                    Toast.makeText(baseContext, "Login berhasil!", Toast.LENGTH_LONG).show();
-                    onSuccess();
                 } else {
                     // Login gagal
                     Log.w("FIREBASE_AUTH", "signInWithCredential:failure", task.exception)
@@ -172,6 +209,68 @@ class MainActivity : ComponentActivity() {
                 }
             }
     }
+
+    private fun checkAndCreateUserInFirestore(user: FirebaseUser, onComplete: () -> Unit) {
+        // 1. Dapatkan referensi ke koleksi 'users' di Firestore
+        val db = Firebase.firestore
+        val userRef = db.collection("users").document(user.uid)
+
+        // 2. Coba ambil dokumen user berdasarkan UID-nya
+        userRef.get()
+            .addOnSuccessListener { documentSnapshot ->
+                val fetchDataAndNavigate = {
+                    lifecycleScope.launch {
+                        try {
+                            Log.d("MAIN_ACTIVITY", "Memuat data profil untuk UserManager...")
+                            UserManager.fetchCurrentUser(user.uid)
+                            onComplete() // Navigasi SETELAH data dimuat
+                        } catch (e: Exception) {
+                            Log.e("MAIN_ACTIVITY", "Gagal memuat data profil.", e)
+                            errorMessage = "Gagal memuat data profil Anda."
+                            showDialog = true
+                        }
+                    }
+                }
+
+                // 3. Cek apakah dokumennya TIDAK ADA
+                if (!documentSnapshot.exists()) {
+                    Log.d("FIRESTORE", "User belum ada di database. Membuat data baru...")
+
+                    // Buat objek User baru dari data Firebase Auth
+                    val newUser = User(
+                        uid = user.uid,
+                        displayName = user.displayName,
+                        email = user.email,
+                        photoUrl = user.photoUrl?.toString() // Ambil URL foto sebagai String
+                        // 'role' dan 'createdAt' akan menggunakan nilai default dari data class
+                    )
+
+                    // Simpan objek user baru ke Firestore
+                    userRef.set(newUser)
+                        .addOnSuccessListener {
+                            Log.d("FIRESTORE", "Data user berhasil dibuat di Firestore.")
+                            Toast.makeText(baseContext, "Selamat datang!", Toast.LENGTH_SHORT).show()
+                            fetchDataAndNavigate()
+                        }
+                        .addOnFailureListener { e ->
+                            Log.w("FIRESTORE", "Gagal menyimpan data user.", e)
+                            errorMessage = "Gagal menyimpan profil. Silakan coba lagi nanti."
+                            showDialog = true
+                        }
+                } else {
+                    // 4. Jika dokumen SUDAH ADA, langsung lanjutkan
+                    Log.d("FIRESTORE", "User sudah ada di database. Langsung login.")
+                    Toast.makeText(baseContext, "Login berhasil!", Toast.LENGTH_SHORT).show()
+                    fetchDataAndNavigate()
+                }
+            }
+            .addOnFailureListener { exception ->
+                Log.w("FIRESTORE_CHECK", "Error saat mengecek user", exception)
+                errorMessage = "Gagal terhubung ke database. Cek koneksi internet Anda."
+                showDialog = true
+            }
+    }
+
 
     // Anda bisa meletakkan ini di file terpisah atau di bawah MainActivity
     @Composable

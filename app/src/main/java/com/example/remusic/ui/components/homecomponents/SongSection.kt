@@ -27,16 +27,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 @Composable
 fun SongSection(
     title: String,
-    rootNavController: NavController,
     items: List<SongWithArtist>,
+    playMusicViewModel: PlayMusicViewModel,
     onSeeAllClick: () -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(vertical = 10.dp)) {
@@ -79,24 +79,15 @@ fun SongSection(
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            items.forEach { item ->
+            items.forEachIndexed { index, item ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .width(100.dp)
                         .clickable {
-                            // Di SongSection saat klik item
-                            val selectedIndex = items.indexOf(item)
-
-                            rootNavController.currentBackStackEntry
-                                ?.savedStateHandle
-                                ?.set("songs", items)   // kirim daftar lagu
-                            rootNavController.currentBackStackEntry
-                                ?.savedStateHandle
-                                ?.set("index", selectedIndex) // kirim index lagu
-
-                            // lalu navigate ke screen playmusic
-                            rootNavController.navigate("playmusic")
+                            // 1. Beri tahu ViewModel untuk memulai playlist dari lagu ini
+                            playMusicViewModel.setPlaylist(items, index)
+                            playMusicViewModel.playingMusicFromPlaylist(title)
                         }
                 ) {
                     Image(

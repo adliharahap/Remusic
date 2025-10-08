@@ -19,6 +19,7 @@ class UserPreferencesRepository(private val context: Context) {
     // 1. Definisikan key untuk menyimpan state shuffle
     private val SHUFFLE_ENABLED_KEY = booleanPreferencesKey("shuffle_mode_enabled")
     private val REPEAT_MODE_KEY = intPreferencesKey("repeat_mode")
+    private val TRANSLATE_LYRICS_KEY = booleanPreferencesKey("translate_lyrics_enabled")
 
     // 2. Buat Flow untuk membaca state shuffle.
     // Jika data belum ada, akan mengembalikan `false` sebagai default.
@@ -32,6 +33,11 @@ class UserPreferencesRepository(private val context: Context) {
             preferences[REPEAT_MODE_KEY] ?: Player.REPEAT_MODE_ALL
         }
 
+    val translateLyricsFlow: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[TRANSLATE_LYRICS_KEY] ?: false
+        }
+
     // 3. Buat suspend function untuk menulis/menyimpan state shuffle.
     suspend fun setShuffleEnabled(isEnabled: Boolean) {
         context.dataStore.edit { settings ->
@@ -42,6 +48,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setRepeatMode(mode: Int) {
         context.dataStore.edit { settings ->
             settings[REPEAT_MODE_KEY] = mode
+        }
+    }
+
+    suspend fun setTranslateLyrics(isEnabled: Boolean) {
+        context.dataStore.edit { settings ->
+            settings[TRANSLATE_LYRICS_KEY] = isEnabled
         }
     }
 }

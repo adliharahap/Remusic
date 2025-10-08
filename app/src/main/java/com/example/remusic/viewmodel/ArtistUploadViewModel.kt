@@ -112,7 +112,7 @@ class ArtistUploadViewModel : ViewModel() {
 
                 } catch (e: Exception) {
                     Log.e("ArtistUploadVM", "Gagal menyimpan data artis ke Firestore", e)
-                    uiState = uiState.copy(isLoading = false, errorMessage = "Gagal menyimpan data artis.")
+                    uiState = uiState.copy(isLoading = false, errorMessage = "Gagal menyimpan data artis: $e")
                 }
 
             } else {

@@ -389,7 +389,7 @@ fun SongSelectedComponent(selectedSong: AudioFile?, onUploadMusicSuccess: () -> 
                 )
             }
 
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(150.dp))
         }
         SnackbarHost(
             hostState = snackbarHostState,

@@ -71,6 +71,12 @@ class MusicUploadViewModel : ViewModel() {
         imageUri: String?,
         artistId: String,
     ) {
+        val currentUser = UserManager.currentUser
+        if (currentUser == null) {
+            uiState = uiState.copy(errorMessage = "Tidak ada user yang login. Silakan login kembali.")
+            return
+        }
+
         if (selectedSong == null) {
             uiState = uiState.copy(errorMessage = "File audio tidak boleh kosong.")
             return
@@ -209,7 +215,7 @@ class MusicUploadViewModel : ViewModel() {
         lyrics: String,
         moods: List<String>
     ) {
-        val userId = UserManager.currentUser?.uid ?: "unknown_user"
+        val userId = UserManager.currentUser!!.uid
 
         val data = hashMapOf(
             "id" to songId,

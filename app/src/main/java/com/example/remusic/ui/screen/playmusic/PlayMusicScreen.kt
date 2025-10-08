@@ -25,70 +25,44 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.LockScreenOrientationPortrait
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
-import com.yourpackage.utils.rememberGradientColorsFromImageUrl
 import kotlinx.coroutines.launch
 
 @Composable
 fun PlayMusicScreen(
-    songs: List<SongWithArtist>,
-    initialIndex: Int,
-    playMusicViewModel: PlayMusicViewModel = viewModel(),
+    playMusicViewModel: PlayMusicViewModel,
     navController: NavController
 ) {
     LockScreenOrientationPortrait()
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
-    var currentIndex by remember { mutableIntStateOf(initialIndex) }
-    val currentSong = songs.getOrNull(currentIndex)
-
-
+    // Langsung gunakan uiState dari ViewModel yang sudah berjalan
     val uiState by playMusicViewModel.uiState.collectAsState()
-
-
-    LaunchedEffect(initialIndex, songs) {
-        currentIndex = initialIndex
-        // Panggil fungsi playSong dengan objek yang benar
-        playMusicViewModel.setPlaylist(songs, initialIndex)
-    }
-
-    //bagian ngurus warna background agar sesuai dengan poster gambar
-    // 1. Panggil utility untuk mendapatkan state warna gradasi
-    val gradientColorsState = rememberGradientColorsFromImageUrl(
-        imageUrl = uiState.currentSong?.song?.coverUrl ?: "",
-        // Anda bisa set warna default yang lebih gelap seperti ini
-        defaultColors = listOf(Color(0xFF121212), Color.Black)
-    )
 
     // 2. ANIMASIKAN setiap warna secara terpisah
     // Animasi untuk warna atas (top color)
     val animatedTopColor by animateColorAsState(
-        targetValue = gradientColorsState.value.getOrElse(0) { Color.DarkGray },
-        animationSpec = tween(durationMillis = 1000), // Animasi selama 1 detik
+        targetValue = uiState.dominantColors.getOrElse(0) { Color.DarkGray },
+        animationSpec = tween(1000),
         label = "topColorAnimation"
     )
 
     // Animasi untuk warna bawah (bottom color)
     val animatedBottomColor by animateColorAsState(
-        targetValue = gradientColorsState.value.getOrElse(1) { Color.Black },
-        animationSpec = tween(durationMillis = 1000), // Animasi selama 1 detik
+        targetValue = uiState.dominantColors.getOrElse(1) { Color.Black },
+        animationSpec = tween(1000),
         label = "bottomColorAnimation"
     )
 
@@ -146,7 +120,7 @@ fun PlayMusicScreen(
                     ) {
                         Text(
                             text = title,
-                            color = if (isSelected) Color.White else Color.LightGray,
+                            color = if (isSelected) Color.White else Color.White.copy(0.8f),
                             fontFamily = if (isSelected) AppFont.RobotoBold else AppFont.RobotoMedium,
                             fontSize = if (isSelected) 17.sp else 15.sp,
                             modifier = Modifier.padding(bottom = 4.dp)
@@ -181,7 +155,12 @@ fun PlayMusicScreen(
             modifier = Modifier.fillMaxSize()
         ) { page ->
             when (page) {
-                0 -> PageContent("🎵 Now Playing")
+                0 -> QueueScreen(
+                    songWithArtist = uiState.currentSong,
+                    playlistQueue = uiState.playlist,
+                    playMusicFromPlaylist = uiState.playingMusicFromPlaylist,
+                    onClickListener = { playMusicViewModel.playSongAt(it) }
+                )
                 1 -> NowPlaying(
                     songWithArtist = uiState.currentSong,
                     isPlaying = uiState.isPlaying,
@@ -194,30 +173,28 @@ fun PlayMusicScreen(
                     onPrevClick = { playMusicViewModel.previousSong() },
                     onShuffleClick = { playMusicViewModel.toggleShuffleMode() },
                     onRepeatClick = { playMusicViewModel.cycleRepeatMode() },
+                    posterAnimation = uiState.currentSongIndex,
+                    posterAnimationDirection = uiState.animationDirection,
                     onSeek = { positionFraction ->
                         val newPosition = (uiState.totalDuration * positionFraction).toLong()
                         playMusicViewModel.seekTo(newPosition)
-                    }
+                    },
                 )
 
                     2 -> LyricsScreen(
                         lrcString = uiState.currentSong?.song?.lyrics ?: "",
-                        currentPosition = uiState.currentPosition
+                        currentPosition = uiState.currentPosition,
+                        bottomPlayerColor = animatedBottomColor,
+                        songWithArtist = uiState.currentSong,
+                        isPlaying = uiState.isPlaying,
+                        totalDuration = uiState.totalDuration,
+                        onSeek = { positionFraction ->
+                            val newPosition = (uiState.totalDuration * positionFraction).toLong()
+                            playMusicViewModel.seekTo(newPosition)
+                        },
+                        onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
                     )
             }
         }
-    }
-}
-
-@Composable
-fun PageContent(title: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(text = title, color = Color.White)
     }
 }

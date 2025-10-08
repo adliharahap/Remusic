@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
@@ -15,9 +16,11 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.example.remusic.data.model.AudioOutputDevice
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.services.MusicService
+import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable.isActive
 import kotlinx.coroutines.delay
@@ -27,6 +30,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+enum class AnimationDirection {
+    FORWARD, // Maju
+    BACKWARD, // Mundur
+    NONE // Tidak ada animasi (misal saat pertama kali memuat)
+}
 // PlayerUiState juga didefinisikan di sini atau diimpor
 data class PlayerUiState(
     val isPlaying: Boolean = false,
@@ -34,8 +42,13 @@ data class PlayerUiState(
     val currentPosition: Long = 0,
     val totalDuration: Long = 0,
     val isShuffleModeEnabled: Boolean = false,
+    val playingMusicFromPlaylist: String = "Unknown Playlist",
     val repeatMode: Int = Player.REPEAT_MODE_OFF, // REPEAT_MODE_OFF, REPEAT_MODE_ONE, REPEAT_MODE_ALL
-    val playlist: List<SongWithArtist> = emptyList()
+    val playlist: List<SongWithArtist> = emptyList(),
+    val dominantColors: List<Color> = listOf(Color.DarkGray, Color.Black),
+    val currentAudioDevice: AudioOutputDevice? = null,
+    val currentSongIndex: Int = 0,
+    val animationDirection: AnimationDirection = AnimationDirection.NONE
 )
 
 
@@ -110,14 +123,40 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // Listener ini akan update UI jika lagu di service berubah (misal dari notifikasi)
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 super.onMediaItemTransition(mediaItem, reason)
+                val player = mediaController ?: return
+
+                val newIndex = player.currentMediaItemIndex
+                val oldIndex = _uiState.value.currentSongIndex
+
+                // Tentukan arah berdasarkan perubahan indeks
+                val direction = when {
+                    newIndex > oldIndex -> AnimationDirection.FORWARD
+                    newIndex < oldIndex -> AnimationDirection.BACKWARD
+                    else -> _uiState.value.animationDirection // pertahankan arah jika sama
+                }
+
                 if (mediaItem != null) {
                     val playlist = _uiState.value.playlist
                     val matchedSong = playlist.find { it.song.id == mediaItem.mediaId }
 
                     if (matchedSong != null) {
                         _uiState.update {
-                            it.copy(currentSong = matchedSong)
+                            it.copy(
+                                currentSong = matchedSong,
+                                currentSongIndex = newIndex,
+                                animationDirection = direction
+                            )
                         }
+                        // --- LOGIKA WARNA DITAMBAHKAN DI SINI JUGA ---
+                        // Saat lagu berganti, ekstrak warna dari lagu yang baru.
+                        viewModelScope.launch {
+                            val colors = extractGradientColorsFromImageUrl(
+                                context = getApplication(),
+                                imageUrl = matchedSong.song.coverUrl
+                            )
+                            _uiState.update { it.copy(dominantColors = colors) }
+                        }
+
                     } else {
                         // fallback kalau nggak ketemu di playlist
                         _uiState.update {
@@ -219,6 +258,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // Update UI state
         _uiState.update { it.copy(playlist = songs, currentSong = songs[startIndex]) }
 
+        // --- LOGIKA WARNA DITAMBAHKAN DI SINI ---
+        val songToPlay = songs.getOrNull(startIndex)
+        if (songToPlay != null) {
+            viewModelScope.launch {
+                val colors = extractGradientColorsFromImageUrl(
+                    context = getApplication(),
+                    imageUrl = songToPlay.song.coverUrl
+                )
+                _uiState.update { it.copy(dominantColors = colors) }
+            }
+        }
+
         // Mapping jadi MediaItems
         val mediaItems = songs.mapIndexed { index, s ->
             val meta = MediaMetadata.Builder()
@@ -286,11 +337,30 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun nextSong() {
         mediaController?.seekToNext()
+        _uiState.update { it.copy(animationDirection = AnimationDirection.FORWARD) }
     }
 
     fun previousSong() {
         mediaController?.seekToPrevious()
+        _uiState.update { it.copy(animationDirection = AnimationDirection.BACKWARD) }
     }
+
+    fun playSongAt(index: Int) {
+        val controller = mediaController ?: return
+        if (index in 0 until controller.mediaItemCount) {
+            controller.seekTo(index, C.TIME_UNSET)
+            controller.play()
+        }
+    }
+
+    fun playingMusicFromPlaylist(playlistName: String) {
+        _uiState.update {
+            it.copy(
+                playingMusicFromPlaylist = playlistName
+            )
+        }
+    }
+
 
     override fun onCleared() {
         super.onCleared()

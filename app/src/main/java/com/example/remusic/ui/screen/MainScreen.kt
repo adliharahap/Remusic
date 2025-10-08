@@ -2,6 +2,7 @@ package com.example.remusic.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -17,6 +18,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,8 +33,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.remusic.ui.LocalBottomPadding
+import com.example.remusic.ui.components.BottomPlayerCard
 import com.example.remusic.ui.screen.BottomNavItem.Home.BottomBar
-import com.example.remusic.utils.LockScreenOrientationPortrait
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 // ------ Sealed class untuk item navigasi ------
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -54,8 +59,8 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 
         // Menggunakan NavigationBar dari Material 3
         NavigationBar(
-            modifier = (Modifier.height(65.dp)),
-            containerColor = Color(0xCB000000),
+            modifier = (Modifier.height(60.dp)),
+            containerColor = Color(0xD9000000),
         ) {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route
@@ -119,9 +124,9 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 
 // ------ Navigasi antar screen (Tidak ada perubahan) ------
 @Composable
-fun AppNavGraph(navController: NavHostController, rootNavController: NavController) {
+fun AppNavGraph(navController: NavHostController, rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
-        composable(BottomNavItem.Home.route) { HomeScreen(rootNavController = rootNavController) }
+        composable(BottomNavItem.Home.route) { HomeScreen(rootNavController = rootNavController, playMusicViewModel = playMusicViewModel) }
         composable(BottomNavItem.Search.route) { SearchScreen() }
         composable(BottomNavItem.Upload.route) { UploadSongScreen(onUploadMusicSuccess = {
             // ✅ AKSI NAVIGASI DIEKSEKUSI DI SINI
@@ -130,26 +135,51 @@ fun AppNavGraph(navController: NavHostController, rootNavController: NavControll
                 popUpTo("upload") { inclusive = true }
             }
         }) }
-        composable(BottomNavItem.Playlist.route) { PlaylistScreen() }
+        composable(BottomNavItem.Playlist.route) { PlaylistDetailScreen() }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController = rootNavController) }
     }
 }
 
 // ------ Main Screen diperbarui ke Material 3 ------
 @Composable
-fun MainScreen(rootNavController: NavController) {
+fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
     val navController = rememberNavController()
-    LockScreenOrientationPortrait()
+    val playerUiState by playMusicViewModel.uiState.collectAsState()
+
+    // Tentukan tinggi dari komponen bawah untuk padding
+    val bottomBarHeight = 65.dp // Sesuaikan dengan tinggi BottomBar Anda
+    val playerCardHeight = 64.dp // Perkiraan tinggi BottomPlayerCard
+
+    // Hitung padding dinamis
+    val bottomPadding = if (playerUiState.currentSong != null) {
+        bottomBarHeight + playerCardHeight
+    } else {
+        bottomBarHeight
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Konten utama
-        AppNavGraph(navController = navController, rootNavController = rootNavController)
+        // Sediakan nilai padding ke semua "anak" composable di bawahnya
+        CompositionLocalProvider(LocalBottomPadding provides bottomPadding) {
+            // Konten utama Anda (tidak akan tertimpa)
+            AppNavGraph(
+                navController = navController,
+                rootNavController = rootNavController,
+                playMusicViewModel = playMusicViewModel,
+            )
+        }
 
-        // BottomBar selalu di bawah seperti absolute
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-        ) {
+        // --- INI BAGIAN UTAMA PERBAIKANNYA ---
+        // Gunakan Column untuk menumpuk komponen bawah secara vertikal
+        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+            // 1. BottomPlayerCard (akan muncul/hilang dengan animasi)
+            BottomPlayerCard(
+                uiState = playerUiState,
+                onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+                onCardClick = {
+                    rootNavController.navigate("playmusic")
+                }
+            )
+            // 2. BottomBar Navigasi (selalu terlihat)
             BottomBar(navController = navController)
         }
     }

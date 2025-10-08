@@ -1,6 +1,13 @@
 package com.example.remusic.ui.screen.playmusic
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.with
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -9,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -36,6 +44,10 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.WorkspacePremium
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +57,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -62,7 +76,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,15 +84,10 @@ import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.theme.AppFont
-import java.util.Locale
-import java.util.concurrent.TimeUnit
+import com.example.remusic.utils.formatDuration
+import com.example.remusic.viewmodel.playmusic.AnimationDirection
 
-fun formatDuration(millis: Long): String {
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(millis)
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
-    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
-}
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun NowPlaying(
     songWithArtist: SongWithArtist?,
@@ -88,6 +96,8 @@ fun NowPlaying(
     totalDuration: Long,
     isShuffleEnabled: Boolean,
     repeatMode: Int,
+    posterAnimation: Int,
+    posterAnimationDirection: AnimationDirection = AnimationDirection.NONE,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     onPrevClick: () -> Unit,
@@ -121,22 +131,49 @@ fun NowPlaying(
     ){
 
         Spacer(modifier = Modifier.height(70.dp).fillMaxWidth())
-        AsyncImage(
-            model = songWithArtist?.song?.coverUrl,
-            contentDescription = "Cover Album",
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .aspectRatio(1f)
-                .shadow(
-                    elevation = 6.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    clip = false
-                )
-                .clip(RoundedCornerShape(10.dp)),
-            contentScale = ContentScale.Crop,
-            placeholder = painterResource(R.drawable.ic_music_note),
-            error = painterResource(R.drawable.ic_music_note),
-        )
+        AnimatedContent(
+            targetState = posterAnimation, // Data yang "ditonton" perubahannya
+            label = "Animated Album Cover",
+            transitionSpec = {
+                // ✅ Gunakan 'when' pada state arah yang baru
+                when (posterAnimationDirection) {
+                    AnimationDirection.FORWARD -> {
+                        // Animasi "Next" (maju)
+                        slideInHorizontally { it } + fadeIn() with
+                                slideOutHorizontally { -it } + fadeOut()
+                    }
+                    AnimationDirection.BACKWARD -> {
+                        // Animasi "Previous" (mundur)
+                        slideInHorizontally { -it } + fadeIn() with
+                                slideOutHorizontally { it } + fadeOut()
+                    }
+                    else -> { // AnimationDirection.NONE
+                        // Animasi default tanpa geser, hanya fade
+                        fadeIn() with fadeOut()
+                    }
+                }
+            }
+        ) { targetvalue ->
+
+            val isRunning by remember {
+                derivedStateOf { transition.isRunning }
+            }
+            AsyncImage(
+                model = songWithArtist?.song?.coverUrl,
+                contentDescription = "Cover Album $targetvalue",
+                modifier = Modifier // Modifier Anda yang sebelumnya ditaruh di sini
+                    .fillMaxWidth(0.9f)
+                    .aspectRatio(1f)
+                    .shadow(
+                        elevation = if (isRunning) 0.dp else 6.dp,
+                        shape = RoundedCornerShape(16.dp),
+                        clip = false
+                    )
+                    .clip(RoundedCornerShape(10.dp)),
+                contentScale = ContentScale.Crop,
+                error = painterResource(R.drawable.ic_music_note),
+            )
+        }
         Box(modifier = Modifier.height(90.dp).fillMaxWidth()) {
             Card(
                 modifier = Modifier
@@ -286,7 +323,7 @@ fun NowPlaying(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(color = Color.DarkGray, shape = RoundedCornerShape(2.dp))
+                                .background(color = Color.White.copy(0.4f), shape = RoundedCornerShape(2.dp))
                         )
                         // Garis aktif
                         Box(
@@ -424,12 +461,17 @@ fun NowPlaying(
                 Icon(
                     imageVector = repeatIcon,
                     contentDescription = "Repeat",
-                    tint = iconTint
+                    tint = iconTint,
+                    modifier = Modifier.size(30.dp)
                 )
             }
 
         }
-        Spacer(modifier = Modifier.height(150.dp))
+        Spacer(modifier = Modifier.height(100.dp))
+
+        UploaderBox()
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Artist Box (sudah dinamis)
         if (songWithArtist?.artist != null) {
@@ -448,7 +490,6 @@ fun NowPlaying(
                 )
             }
         }
-
     }
 }
 
@@ -495,7 +536,6 @@ fun ArtistBox(
                     color = Color.White,
                     fontSize = 18.sp,
                     fontFamily = AppFont.RobotoBold,
-                    fontWeight = FontWeight.Bold,
                     // Menambahkan shadow pada teks
                     style = TextStyle(
                         shadow = Shadow(
@@ -522,7 +562,6 @@ fun ArtistBox(
                         color = Color.White,
                         fontSize = 24.sp,
                         fontFamily = AppFont.RobotoBold,
-                        fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -563,4 +602,159 @@ fun ArtistBox(
         }
     }
 }
+
+@Composable
+fun UploaderBox(
+    name: String = "Adli Rahman Harun Harahap",
+    role: String = "Owner",
+    profileUrl: String = "https://i.pinimg.com/1200x/6e/16/06/6e1606fca286ddfc951aeb5fe2aae3bd.jpg",
+    onSeeAllClick: () -> Unit = {}
+) {
+    // --- Definisi Warna & Brush ---
+    val cardBackgroundColor = Color(0xFF282828)
+    val buttonBgStart = Color(0xFF4C4D4C)
+    val buttonBgEnd = Color(0xFF2D2F2F)
+    val ownerGoldStart = Color(0xFFF7D43A)
+    val ownerGoldEnd = Color(0xFFB5880D)
+    val subtleTextColor = Color.White.copy(0.7f)
+
+    // Brush untuk gradasi emas, akan kita pakai di badge DAN teks
+    val ownerGoldBrush = remember {
+        Brush.verticalGradient(colors = listOf(ownerGoldStart, ownerGoldEnd))
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .background(cardBackgroundColor, shape = RoundedCornerShape(16.dp))
+            .padding(20.dp),
+    ) {
+        // --- Header Teks "Diupload oleh" ---
+        Text(
+            text = "Diupload oleh",
+            color = subtleTextColor,
+            fontSize = 14.sp,
+             fontFamily = AppFont.RobotoRegular,
+            modifier = Modifier.align(Alignment.Start)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- Row (Foto, Nama, Role) ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.size(64.dp)) {
+                AsyncImage(
+                    model = profileUrl,
+                    contentDescription = "Profile Picture",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+
+                if (role.equals("Owner", ignoreCase = true)) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(24.dp)
+                            .background(brush = ownerGoldBrush, shape = CircleShape)
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.WorkspacePremium,
+                            contentDescription = "Owner Badge",
+                            tint = Color.White,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column {
+                Text(
+                    text = name,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                     fontFamily = AppFont.RobotoBold,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // --- STYLE "OWNER" YANG LEBIH MEWAH ---
+                if (role.equals("Owner", ignoreCase = true)) {
+                    Text(
+                        text = role,
+                        fontSize = 14.sp,
+                         fontFamily = AppFont.RobotoMedium,
+                        // Terapkan gradasi emas langsung ke teks & beri shadow
+                        style = TextStyle(
+                            brush = ownerGoldBrush,
+                            shadow = Shadow(Color.Black.copy(0.4f), blurRadius = 8f)
+                        )
+                    )
+                } else {
+                    // Fallback untuk role lain
+                    Text(
+                        text = role,
+                        color = Color(0xFF1DB954), // Warna hijau biasa
+                        fontSize = 14.sp,
+                         fontFamily = AppFont.RobotoMedium,
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // --- TOMBOL DENGAN WARNA NETRAL (ABU-ABU GELAP) ---
+        Button(
+            onClick = onSeeAllClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                contentColor = Color.White
+            ),
+            contentPadding = PaddingValues(),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(buttonBgStart, buttonBgEnd)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.LibraryMusic,
+                        contentDescription = "Music Icon",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Lihat Semua Lagu",
+                        fontFamily = AppFont.RobotoBold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+
 
