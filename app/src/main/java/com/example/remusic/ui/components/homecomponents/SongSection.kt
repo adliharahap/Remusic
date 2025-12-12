@@ -35,7 +35,8 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 @Composable
 fun SongSection(
     title: String,
-    items: List<SongWithArtist>,
+    displayItems: List<SongWithArtist>,
+    fullPlaylistForPlayback: List<SongWithArtist> = displayItems,
     playMusicViewModel: PlayMusicViewModel,
     onSeeAllClick: () -> Unit = {}
 ) {
@@ -79,14 +80,14 @@ fun SongSection(
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            items.forEachIndexed { index, item ->
+            displayItems.forEachIndexed { index, item ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .width(100.dp)
                         .clickable {
                             // 1. Beri tahu ViewModel untuk memulai playlist dari lagu ini
-                            playMusicViewModel.setPlaylist(items, index)
+                            playMusicViewModel.setPlaylist(fullPlaylistForPlayback, index)
                             playMusicViewModel.playingMusicFromPlaylist(title)
                         }
                 ) {

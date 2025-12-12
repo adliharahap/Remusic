@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.remusic.R // Pastikan untuk mengimpor R dari package Anda
 import com.example.remusic.utils.LockScreenOrientationPortrait
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 
 @Composable
@@ -82,9 +83,16 @@ fun SplashScreen(navController: NavController) {
         // Tunggu sejenak sebelum navigasi
         delay(1200L)
 
-        // Navigasi ke home screen
-        navController.navigate("main") {
-            popUpTo("splash") { inclusive = true }
+        // Cek user login atau tidak
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            navController.navigate("main") {
+                popUpTo("splash") { inclusive = true }
+            }
+        } else {
+            navController.navigate("login") {
+                popUpTo("splash") { inclusive = true }
+            }
         }
     }
 

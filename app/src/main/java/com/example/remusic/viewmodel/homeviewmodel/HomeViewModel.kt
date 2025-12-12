@@ -22,10 +22,14 @@ sealed class HomeUiState {
 class HomeViewModel : ViewModel() {
 
     private val db = Firebase.firestore
-
-    // Gunakan StateFlow untuk menampung state yang akan diobservasi oleh UI
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState
+
+    // --- OPTIMISASI 1: BUAT CACHE UNTUK ARTIS ---
+    // Cache ini akan menyimpan data artis yang sudah di-fetch.
+    // Key: artistId (String), Value: Objek Artist.
+    // Cache akan hidup selama ViewModel ini ada (selama layar aktif).
+    private val artistCache = mutableMapOf<String, Artist>()
 
     init {
         fetchSongsAndArtists()
@@ -35,24 +39,21 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = HomeUiState.Loading
             try {
-                // Langkah A: Ambil semua lagu
                 val songs = getSongs()
                 if (songs.isEmpty()) {
                     _uiState.value = HomeUiState.Success(emptyList())
                     return@launch
                 }
 
-                // Langkah B: Ambil semua ID artis yang unik dari daftar lagu
                 val artistIds = songs.map { it.artistId }.distinct().filter { it.isNotBlank() }
 
-                // Langkah C: Ambil semua data artis berdasarkan ID dalam satu query
+                // Panggilan ke getArtists sekarang sudah aman dan menggunakan cache
                 val artists = getArtists(artistIds)
 
-                // Langkah D: Gabungkan data lagu dan artis
                 val songsWithArtists = songs.map { song ->
                     SongWithArtist(
                         song = song,
-                        artist = artists[song.artistId] // Ambil artis dari Map
+                        artist = artists[song.artistId]
                     )
                 }
 
@@ -64,23 +65,43 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    // Fungsi suspend untuk mengambil lagu
     private suspend fun getSongs(): List<Song> {
         return db.collection("songs")
             .get()
-            .await() // .await() mengubah Task menjadi hasil suspend function
+            .await()
             .toObjects(Song::class.java)
     }
 
-    // Fungsi suspend untuk mengambil artis
+    // --- PERBAIKAN: FUNGSI getArtists DENGAN LOGIKA CACHE DAN CHUNKING ---
     private suspend fun getArtists(artistIds: List<String>): Map<String, Artist> {
         if (artistIds.isEmpty()) return emptyMap()
 
-        return db.collection("artists")
-            .whereIn("id", artistIds) // Query efisien untuk mengambil banyak dokumen berdasarkan ID
-            .get()
-            .await()
-            .toObjects(Artist::class.java)
-            .associateBy { it.id } // Ubah List<Artist> menjadi Map<String, Artist> untuk pencarian cepat
+        // 1. Pisahkan ID: mana yang sudah ada di cache, dan mana yang perlu di-fetch dari Firebase
+        val (idsFromCache, idsToFetch) = artistIds.distinct().partition { artistCache.containsKey(it) }
+
+        // 2. Ambil data yang sudah ada langsung dari cache
+        val cachedArtists = idsFromCache.mapNotNull { artistCache[it] }.associateBy { it.id }.toMutableMap()
+
+        // 3. Hanya fetch ID yang BELUM ada di cache
+        if (idsToFetch.isNotEmpty()) {
+            // PERBAIKAN ERROR 'IN': Pecah list `idsToFetch` menjadi beberapa bagian (chunks)
+            // masing-masing maksimal 30 item.
+            idsToFetch.chunked(30).forEach { chunk ->
+                val fetchedArtists = db.collection("artists")
+                    .whereIn("id", chunk) // Query sekarang aman, hanya berisi maksimal 30 ID
+                    .get()
+                    .await()
+                    .toObjects(Artist::class.java)
+
+                // 4. Simpan hasil baru ke cache DAN ke map hasil gabungan
+                fetchedArtists.forEach { artist ->
+                    artistCache[artist.id] = artist       // Simpan ke cache untuk penggunaan berikutnya
+                    cachedArtists[artist.id] = artist   // Tambahkan ke hasil yang akan dikembalikan
+                }
+            }
+        }
+
+        // 5. Kembalikan map gabungan dari cache dan hasil fetch baru
+        return cachedArtists
     }
 }

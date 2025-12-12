@@ -54,6 +54,16 @@ data class PlayerUiState(
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
 
+    //untuk fitur fade ketika play, pause di klik
+    companion object {
+        private const val FADE_DURATION_MS = 500L // Durasi fade dalam milidetik
+        private const val FADE_INTERVAL_MS = 20L  // Seberapa sering volume diupdate
+    }
+
+    // --- VARIABEL UNTUK MENGELOLA FADE ---
+    private var volumeFadeJob: Job? = null
+    private var isFading = false
+
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState = _uiState.asStateFlow()
 
@@ -102,7 +112,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     private fun setupPlayerListener() {
         mediaController?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _uiState.update { it.copy(isPlaying = isPlaying) }
+
+                if (!isFading) {
+                    _uiState.update { it.copy(isPlaying = isPlaying) }
+                }
+
                 if (isPlaying) {
                     startUpdatingPosition()
                 } else {
@@ -308,10 +322,77 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
 
     fun togglePlayPause() {
-        if (_uiState.value.isPlaying) {
-            mediaController?.pause()
+        // Mencegah aksi jika fade sedang berjalan
+        if (isFading) return
+
+        // Simpan status saat ini sebelum diubah
+        val wasPlaying = _uiState.value.isPlaying
+
+        // 2. LANGSUNG UPDATE UI STATE (INI KUNCINYA)
+        // Ikon akan berubah seketika karena ini.
+        _uiState.update { it.copy(isPlaying = !wasPlaying) }
+
+        if (wasPlaying) {
+            fadeOutAndPause()
         } else {
-            mediaController?.play()
+            fadeInAndPlay()
+        }
+    }
+
+    // --- FUNGSI BARU UNTUK FADE OUT ---
+    private fun fadeOutAndPause() {
+        val controller = mediaController ?: return
+        volumeFadeJob?.cancel() // Batalkan fade sebelumnya jika ada
+        isFading = true
+
+        volumeFadeJob = viewModelScope.launch {
+            val startVolume = controller.volume
+            val steps = (FADE_DURATION_MS / FADE_INTERVAL_MS).toInt()
+            val volumeStep = startVolume / steps
+
+            for (i in 1..steps) {
+                val newVolume = (startVolume - (volumeStep * i)).coerceIn(0.0f, 1.0f)
+                controller.volume = newVolume
+                delay(FADE_INTERVAL_MS)
+            }
+
+            // Setelah fade selesai, pause dan kembalikan volume ke 1.0f
+            // agar saat play lagi, fade-in bisa dimulai dari volume penuh.
+            controller.pause()
+            controller.volume = 1.0f
+            isFading = false
+        }
+    }
+
+    // --- FUNGSI BARU UNTUK FADE IN ---
+    private fun fadeInAndPlay() {
+        val controller = mediaController ?: return
+        volumeFadeJob?.cancel()
+        isFading = true
+
+        volumeFadeJob = viewModelScope.launch {
+            // Set volume ke 0, lalu mulai mainkan (tidak akan terdengar)
+            controller.volume = 0.0f
+            controller.play()
+            _uiState.update { it.copy(isPlaying = true) } // Update UI secara manual
+
+            val targetVolume = 1.0f
+            val steps = (FADE_DURATION_MS / FADE_INTERVAL_MS).toInt()
+            val volumeStep = targetVolume / steps
+
+            for (i in 1..steps) {
+                val newVolume = (volumeStep * i).coerceIn(0.0f, 1.0f)
+                controller.volume = newVolume
+                delay(FADE_INTERVAL_MS)
+            }
+
+            // Pastikan volume kembali penuh
+            controller.volume = 1.0f
+            isFading = false
+            // Panggil listener secara manual jika perlu
+            if (controller.isPlaying != _uiState.value.isPlaying) {
+                _uiState.update { it.copy(isPlaying = controller.isPlaying) }
+            }
         }
     }
 

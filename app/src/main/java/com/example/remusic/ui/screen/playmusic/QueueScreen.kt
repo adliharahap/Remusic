@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -122,107 +123,6 @@ fun QueueScreen(
 
         item {
             Spacer(modifier = Modifier.height(60.dp))
-        }
-    }
-}
-
-@Composable
-fun QueueSongCard(
-    index: Int,
-    songTitle: String,
-    artistName: String,
-    posterUri: String,
-    isCurrentlyPlaying: Boolean,
-    modifier: Modifier = Modifier,
-    onClickListener: (index: Int) -> Unit = {},
-) {
-    val activeColor = Color.Black
-    val cardBackgroundColor = if (isCurrentlyPlaying) {
-        activeColor.copy(alpha = 0.15f)
-    } else {
-        Color.Transparent
-    }
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable{ onClickListener(index) },
-        colors = CardDefaults.cardColors(
-            containerColor = cardBackgroundColor
-        ),
-        elevation = CardDefaults.cardElevation(0.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (isCurrentlyPlaying) {
-                AudioWaveVisualizer(
-                    barCount = 4,
-                    maxHeight = 30.dp,
-                    minHeight = 4.dp,
-                    barWidth = 2.dp,
-                    barColor = Color.White,
-                    animationDuration = 300,
-                    modifier = Modifier.width(20.dp)
-                )
-            } else {
-                Text(
-                    text = (index + 1).toString(),
-                    color = Color.White.copy(0.7f),
-                    fontFamily = AppFont.RobotoRegular,
-                    fontSize = 14.sp,
-                    modifier = Modifier.width(20.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            AsyncImage(
-                model = posterUri,
-                contentDescription = "Poster Music",
-                modifier = Modifier
-                    .size(48.dp)
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(6.dp)),
-                contentScale = ContentScale.Crop,
-                placeholder = painterResource(R.drawable.ic_music_note),
-                error = painterResource(R.drawable.ic_music_note),
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = songTitle,
-                    color = if (isCurrentlyPlaying) Color.White else Color.White.copy(0.9f),
-                    fontFamily = AppFont.RobotoMedium,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = artistName,
-                    color = Color.White.copy(0.7f),
-                    fontFamily = AppFont.RobotoRegular,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Icon(
-                imageVector = Icons.Outlined.MoreVert,
-                contentDescription = "more",
-                tint = Color.White.copy(0.8f),
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }

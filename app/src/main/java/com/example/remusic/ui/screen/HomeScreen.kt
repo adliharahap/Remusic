@@ -21,7 +21,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.remusic.data.UserManager
+import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.navigation.HomeRoute
 import com.example.remusic.ui.components.homecomponents.ArtistSection
 import com.example.remusic.ui.components.homecomponents.HomeHeader
 import com.example.remusic.ui.components.homecomponents.SongSection
@@ -33,13 +41,76 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 @Composable
 fun HomeScreen(
-    rootNavController: NavController,
+    rootNavController: NavController, // Ini NavController UTAMA (dari MainScreen)
     homeViewModel: HomeViewModel = viewModel(),
     playMusicViewModel: PlayMusicViewModel,
 ) {
-    // Ambil user dari state global kita
+    // Buat NavController BARU untuk navigasi di dalam Home
+    val homeNavController = rememberNavController()
+
+    // HomeViewModel akan dibagikan ke semua layar di dalam nested NavHost ini
+
+    NavHost(
+        navController = homeNavController,
+        startDestination = HomeRoute.MAIN,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // --- Layar 1: Tampilan Utama Home ---
+        composable(HomeRoute.MAIN) {
+            HomeMainScreen(
+                homeViewModel = homeViewModel,
+                playMusicViewModel = playMusicViewModel,
+                homeNavController = homeNavController // Berikan nested controller
+            )
+        }
+
+        // --- Layar 2: Tampilan Detail Playlist ---
+        composable(
+            route = HomeRoute.PLAYLIST_DETAIL,
+            arguments = listOf(navArgument(HomeRoute.ARGS_PLAYLIST_TITLE) { type = NavType.StringType })
+        ) { backStackEntry ->
+            // Ambil judul playlist dari argumen navigasi
+            val playlistTitle = backStackEntry.arguments?.getString(HomeRoute.ARGS_PLAYLIST_TITLE) ?: ""
+
+            // Ambil state dari HomeViewModel yang sama
+            val homeState by homeViewModel.uiState.collectAsState()
+
+            // Tentukan data mana yang akan ditampilkan
+            val (songs, coverUrl) = when (val state = homeState) {
+                is HomeUiState.Success -> {
+                    // Logika untuk mengambil data berdasarkan judul
+                    // Anda bisa buat ini lebih canggih, misal dgn ID
+                    val songList = when (playlistTitle) {
+                        "Recently Played" -> state.songsWithArtists.take(3)
+                        "Top Trending" -> state.songsWithArtists.drop(3).take(3)
+                        "All Songs" -> state.songsWithArtists
+                        else -> emptyList()
+                    }
+                    val cover = songList.firstOrNull()?.song?.coverUrl ?: ""
+                    Pair(songList, cover)
+                }
+                else -> Pair(emptyList<SongWithArtist>(), "") // Loading atau Error
+            }
+
+            // Panggil PlaylistDetailScreen Anda yang sudah ada
+            // (pastikan impornya benar)
+            PlaylistDetailScreen(
+                songs = songs,
+                playlistName = playlistTitle,
+                playlistCoverUrl = coverUrl
+            )
+        }
+    }
+}
+
+// --- Composable Baru: Isi dari Layar Utama Home ---
+@Composable
+private fun HomeMainScreen(
+    homeViewModel: HomeViewModel,
+    playMusicViewModel: PlayMusicViewModel,
+    homeNavController: NavHostController // Controller nested
+) {
     val user = UserManager.currentUser
-    // Ambil state dari ViewModel dan observasi perubahannya
     val homeState by homeViewModel.uiState.collectAsState()
     val greeting = GreetingUtils.getGreeting()
 
@@ -55,7 +126,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(brush = verticalGradientBrush)
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 130.dp)
+            .padding(bottom = 130.dp) // Padding untuk BottomBar
     ) {
         Spacer(modifier = Modifier.height(30.dp))
         HomeHeader(
@@ -66,7 +137,6 @@ fun HomeScreen(
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tampilkan UI berdasarkan state dari ViewModel
         when (val state = homeState) {
             is HomeUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -74,45 +144,48 @@ fun HomeScreen(
                 }
             }
             is HomeUiState.Success -> {
-                // Data kita adalah List<SongWithArtist>, ini sudah benar
                 val allSongsWithArtists = state.songsWithArtists
+                val recentlyPlayed = allSongsWithArtists.take(10)
+                val topTrending = allSongsWithArtists.drop(10).take(10)
 
-                // Kita bisa langsung ambil beberapa item untuk section yang berbeda
-                val recentlyPlayed = allSongsWithArtists.take(3)
-                val topTrending = allSongsWithArtists.drop(3).take(3)
-
-                // Langsung teruskan List<SongWithArtist> ke komponen
                 SongSection(
                     title = "Recently Played",
-                    items = recentlyPlayed,
+                    displayItems = recentlyPlayed,
                     playMusicViewModel = playMusicViewModel,
-//                    onSongClick = {
-//                        rootNavController.navigate("playmusic")
-//                    }
+                    onSeeAllClick = {
+                        // Navigasi menggunakan nested controller
+                        homeNavController.navigate(HomeRoute.createRoute("Recently Played"))
+                    }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Untuk ArtistSection, kita ambil artis yang unik agar tidak duplikat
                 val recentlyPlayedArtists = recentlyPlayed.distinctBy { it.artist?.id }
                 ArtistSection("Artist Recently Add", recentlyPlayedArtists)
 
                 Spacer(modifier = Modifier.height(16.dp))
                 SongSection(
                     title = "Top Trending",
-                    items = topTrending,
+                    displayItems = topTrending,
                     playMusicViewModel = playMusicViewModel,
-//                    onSongClick = {
-//                        rootNavController.navigate("playmusic")
-//                    }
+                    onSeeAllClick = {
+                        homeNavController.navigate(HomeRoute.createRoute("Top Trending"))
+                    }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+
+                //list untuk "All Songs" yang sudah di-filter dan di-limit
+                val allSongsSorted = allSongsWithArtists
+                    .sortedByDescending { it.song.createdAt }
+                // Buat daftar TERBATAS untuk UI (dari daftar yang sudah disortir)
+                val allSongsSortedAndLimited = allSongsSorted.take(20)
                 SongSection(
                     title = "All Songs",
-                    items = allSongsWithArtists,
+                    displayItems = allSongsSortedAndLimited,
+                    fullPlaylistForPlayback = allSongsSorted,
                     playMusicViewModel = playMusicViewModel,
-//                    onSongClick = {
-//                        rootNavController.navigate("playmusic")
-//                    }
+                    onSeeAllClick = {
+                        homeNavController.navigate(HomeRoute.createRoute("All Songs"))
+                    }
                 )
             }
             is HomeUiState.Error -> {
@@ -123,4 +196,3 @@ fun HomeScreen(
         }
     }
 }
-

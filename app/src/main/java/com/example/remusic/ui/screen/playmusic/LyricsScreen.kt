@@ -300,8 +300,8 @@ fun LyricsBottomPanel(
                     )
                     .clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,
-                placeholder = painterResource(R.drawable.ic_music_note),
-                error = painterResource(R.drawable.ic_music_note),
+                placeholder = painterResource(id = R.drawable.img_placeholder),
+                error = painterResource(id = R.drawable.img_placeholder)
             )
             Spacer(modifier = Modifier.width(10.dp))
             Column (

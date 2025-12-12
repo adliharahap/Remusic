@@ -50,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +58,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -79,13 +81,18 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.utils.capitalizeWords
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.AnimationDirection
+import com.example.remusic.viewmodel.playmusic.UploaderUiState
+import com.example.remusic.viewmodel.playmusic.UploaderViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -171,7 +178,8 @@ fun NowPlaying(
                     )
                     .clip(RoundedCornerShape(10.dp)),
                 contentScale = ContentScale.Crop,
-                error = painterResource(R.drawable.ic_music_note),
+                placeholder = painterResource(id = R.drawable.img_placeholder),
+                error = painterResource(id = R.drawable.img_placeholder)
             )
         }
         Box(modifier = Modifier.height(90.dp).fillMaxWidth()) {
@@ -469,7 +477,11 @@ fun NowPlaying(
         }
         Spacer(modifier = Modifier.height(100.dp))
 
-        UploaderBox()
+        if (songWithArtist?.song?.uploaderUserId != null) {
+            UploaderBox(
+                uploaderId = songWithArtist.song.uploaderUserId
+            )
+        }
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -602,159 +614,3 @@ fun ArtistBox(
         }
     }
 }
-
-@Composable
-fun UploaderBox(
-    name: String = "Adli Rahman Harun Harahap",
-    role: String = "Owner",
-    profileUrl: String = "https://i.pinimg.com/1200x/6e/16/06/6e1606fca286ddfc951aeb5fe2aae3bd.jpg",
-    onSeeAllClick: () -> Unit = {}
-) {
-    // --- Definisi Warna & Brush ---
-    val cardBackgroundColor = Color(0xFF282828)
-    val buttonBgStart = Color(0xFF4C4D4C)
-    val buttonBgEnd = Color(0xFF2D2F2F)
-    val ownerGoldStart = Color(0xFFF7D43A)
-    val ownerGoldEnd = Color(0xFFB5880D)
-    val subtleTextColor = Color.White.copy(0.7f)
-
-    // Brush untuk gradasi emas, akan kita pakai di badge DAN teks
-    val ownerGoldBrush = remember {
-        Brush.verticalGradient(colors = listOf(ownerGoldStart, ownerGoldEnd))
-    }
-
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .fillMaxWidth()
-            .background(cardBackgroundColor, shape = RoundedCornerShape(16.dp))
-            .padding(20.dp),
-    ) {
-        // --- Header Teks "Diupload oleh" ---
-        Text(
-            text = "Diupload oleh",
-            color = subtleTextColor,
-            fontSize = 14.sp,
-             fontFamily = AppFont.RobotoRegular,
-            modifier = Modifier.align(Alignment.Start)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- Row (Foto, Nama, Role) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.size(64.dp)) {
-                AsyncImage(
-                    model = profileUrl,
-                    contentDescription = "Profile Picture",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().clip(CircleShape)
-                )
-
-                if (role.equals("Owner", ignoreCase = true)) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(24.dp)
-                            .background(brush = ownerGoldBrush, shape = CircleShape)
-                            .padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.WorkspacePremium,
-                            contentDescription = "Owner Badge",
-                            tint = Color.White,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column {
-                Text(
-                    text = name,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                     fontFamily = AppFont.RobotoBold,
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // --- STYLE "OWNER" YANG LEBIH MEWAH ---
-                if (role.equals("Owner", ignoreCase = true)) {
-                    Text(
-                        text = role,
-                        fontSize = 14.sp,
-                         fontFamily = AppFont.RobotoMedium,
-                        // Terapkan gradasi emas langsung ke teks & beri shadow
-                        style = TextStyle(
-                            brush = ownerGoldBrush,
-                            shadow = Shadow(Color.Black.copy(0.4f), blurRadius = 8f)
-                        )
-                    )
-                } else {
-                    // Fallback untuk role lain
-                    Text(
-                        text = role,
-                        color = Color(0xFF1DB954), // Warna hijau biasa
-                        fontSize = 14.sp,
-                         fontFamily = AppFont.RobotoMedium,
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // --- TOMBOL DENGAN WARNA NETRAL (ABU-ABU GELAP) ---
-        Button(
-            onClick = onSeeAllClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Transparent,
-                contentColor = Color.White
-            ),
-            contentPadding = PaddingValues(),
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(buttonBgStart, buttonBgEnd)
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.LibraryMusic,
-                        contentDescription = "Music Icon",
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Lihat Semua Lagu",
-                        fontFamily = AppFont.RobotoBold,
-                        fontSize = 16.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-
-

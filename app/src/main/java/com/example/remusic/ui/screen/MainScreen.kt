@@ -135,7 +135,7 @@ fun AppNavGraph(navController: NavHostController, rootNavController: NavControll
                 popUpTo("upload") { inclusive = true }
             }
         }) }
-        composable(BottomNavItem.Playlist.route) { PlaylistDetailScreen() }
+        composable(BottomNavItem.Playlist.route) { PlaylistScreen() }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController = rootNavController) }
     }
 }
