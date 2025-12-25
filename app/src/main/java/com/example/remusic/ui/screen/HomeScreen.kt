@@ -139,9 +139,7 @@ private fun HomeMainScreen(
 
         when (val state = homeState) {
             is HomeUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                HomeSkeletonScreen()
             }
             is HomeUiState.Success -> {
                 val allSongsWithArtists = state.songsWithArtists

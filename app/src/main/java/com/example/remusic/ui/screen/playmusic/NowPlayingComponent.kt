@@ -495,9 +495,9 @@ fun NowPlaying(
                     .background(Color(0xFF755D8D))
             ) {
                 ArtistBox(
-                    name = songWithArtist.artist.name,
-                    description = songWithArtist.artist.description,
-                    photoUrl = songWithArtist.artist.photoUrl,
+                    name = songWithArtist.artist.name?: "Unknown Artist",
+                    description = songWithArtist.artist.description ?: "No description available",
+                    photoUrl = songWithArtist.artist.photoUrl ?: "",
                     modifier = Modifier.fillMaxWidth()
                 )
             }

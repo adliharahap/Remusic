@@ -166,7 +166,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         viewModelScope.launch {
                             val colors = extractGradientColorsFromImageUrl(
                                 context = getApplication(),
-                                imageUrl = matchedSong.song.coverUrl
+                                imageUrl = matchedSong.song.coverUrl ?: ""
                             )
                             _uiState.update { it.copy(dominantColors = colors) }
                         }
@@ -278,7 +278,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             viewModelScope.launch {
                 val colors = extractGradientColorsFromImageUrl(
                     context = getApplication(),
-                    imageUrl = songToPlay.song.coverUrl
+                    imageUrl = songToPlay.song.coverUrl ?: ""
                 )
                 _uiState.update { it.copy(dominantColors = colors) }
             }
@@ -289,7 +289,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             val meta = MediaMetadata.Builder()
                 .setTitle(s.song.title)
                 .setArtist(s.artist?.name)
-                .setArtworkUri(s.song.coverUrl.takeIf { it.isNotBlank() }?.toUri())
+                .setArtworkUri(s.song.coverUrl?.takeIf { it.isNotBlank() }?.toUri())
                 .build()
 
             val item = MediaItem.Builder()

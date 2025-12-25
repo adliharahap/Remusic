@@ -1,34 +1,21 @@
-package com.example.remusic.viewmodel.playmusic // Ganti sesuai package Anda
+package com.example.remusic.viewmodel.playmusic
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.model.User
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
-import com.google.firebase.Firebase
-import com.google.firebase.firestore.firestore
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 /**
- * Model data yang merepresentasikan seorang user.
- * Pastikan field-nya cocok dengan yang ada di Firestore.
- */
-data class User(
-    val uid: String = "",
-    val displayName: String = "",
-    val role: String = "",
-    val photoUrl: String = ""
-)
-
-/**
- * Repository yang bertanggung jawab untuk mengambil data user dari Firestore.
+ * Repository yang bertanggung jawab untuk mengambil data user dari Supabase.
  */
 class UploaderRepository {
-
-    private val db = Firebase.firestore
 
     suspend fun getUploaderInfo(uploaderId: String): Result<User> {
         return try {
@@ -36,19 +23,20 @@ class UploaderRepository {
                 return Result.failure(Exception("Uploader ID kosong."))
             }
 
-            // Langsung ambil dokumen user dari koleksi 'users'
-            val userDocument = db.collection("users").document(uploaderId).get().await()
+            // LOGIKA SUPABASE:
+            // Ambil data dari tabel 'users' dimana kolom 'id' == uploaderId
+            // decodeSingle() akan otomatis mapping JSON ke object User
+            val user = SupabaseManager.client
+                .from("users")
+                .select {
+                    filter {
+                        eq("id", uploaderId)
+                    }
+                }
+                .decodeSingle<User>()
 
-            if (!userDocument.exists()) {
-                return Result.failure(Exception("User dengan ID '$uploaderId' tidak ditemukan."))
-            }
-
-            val user = userDocument.toObject(User::class.java)
-            if (user != null) {
-                Result.success(user.copy(uid = userDocument.id))
-            } else {
-                Result.failure(Exception("Gagal mem-parsing data user."))
-            }
+            // Jika berhasil decode, berarti user ditemukan
+            Result.success(user)
 
         } catch (e: Exception) {
             Result.failure(e)
@@ -56,10 +44,6 @@ class UploaderRepository {
     }
 }
 
-/**
- * State untuk merepresentasikan kondisi UI: Loading, Success, atau Error.
- */
-// State SEKARANG MENYIMPAN WARNA GRADIEN JUGA
 sealed interface UploaderUiState {
     object Loading : UploaderUiState
     data class Success(
@@ -91,17 +75,22 @@ class UploaderViewModel : ViewModel() {
             repository.getUploaderInfo(uploaderId)
                 .onSuccess { user ->
                     // Ambil warna dari cache atau ekstrak jika belum ada
+                    // Perhatikan: user.photoUrl sekarang bisa null (String?), jadi pakai Elvis Operator (?:)
+                    val photoUrlSafe = user.photoUrl ?: ""
+
                     val colors = colorCache[uploaderId] ?: extractGradientColorsFromImageUrl(
                         context = context,
-                        imageUrl = user.photoUrl
+                        imageUrl = photoUrlSafe
                     )
+
                     // Simpan hasil ke cache
                     userCache[uploaderId] = user
                     colorCache[uploaderId] = colors
                     _uiState.value = UploaderUiState.Success(user, colors)
                 }
                 .onFailure { exception ->
-                    _uiState.value = UploaderUiState.Error(exception.message ?: "Terjadi kesalahan")
+                    exception.printStackTrace()
+                    _uiState.value = UploaderUiState.Error(exception.message ?: "Terjadi kesalahan memuat info uploader")
                 }
         }
     }

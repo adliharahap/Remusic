@@ -32,7 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.remusic.viewmodel.playmusic.UploaderUiState
 import com.example.remusic.viewmodel.playmusic.UploaderViewModel
-import com.example.remusic.viewmodel.playmusic.User
+import com.example.remusic.data.model.User
 import java.util.*
 
 // UTILITY FUNCTION
@@ -88,7 +88,11 @@ private fun ActualUploaderBoxContent(
     user: User,
     onSeeAllClick: () -> Unit
 ) {
-    val isOwner = user.role.equals("Owner", ignoreCase = true)
+    val role = user.role ?: "Uploader"
+    val displayName = user.displayName ?: "Unknown User"
+    val photoUrl = user.photoUrl ?: ""
+
+    val isOwner = role.equals("Owner", ignoreCase = true)
     val cardBackgroundColor = if (isOwner) Color.Black.copy(alpha = 0.8f) else Color(0xFF282828)
 
     Column(
@@ -111,7 +115,7 @@ private fun ActualUploaderBoxContent(
         ) {
             Box(modifier = Modifier.size(64.dp)) {
                 AsyncImage(
-                    model = user.photoUrl,
+                    model = photoUrl, // Sudah aman karena default string kosong
                     contentDescription = "Profile Picture",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -125,7 +129,7 @@ private fun ActualUploaderBoxContent(
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
-                    text = user.displayName.capitalizeWords(),
+                    text = displayName.capitalizeWords(),
                     color = Color.White,
                     fontSize = 18.sp,
                     maxLines = 1,
@@ -133,9 +137,9 @@ private fun ActualUploaderBoxContent(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 if (isOwner) {
-                    ShimmerText(text = user.role)
+                    ShimmerText(text = role)
                 } else {
-                    AnimatedUploaderRoleText(text = user.role)
+                    AnimatedUploaderRoleText(text = role)
                 }
             }
         }

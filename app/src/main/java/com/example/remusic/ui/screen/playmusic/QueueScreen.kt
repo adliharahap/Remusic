@@ -86,7 +86,7 @@ fun QueueScreen(
                         index = 0,
                         songTitle = current.song.title.takeIf { it.isNotBlank() } ?: "Unknown Song",
                         artistName = current.artist?.name ?: "Unknown Artist",
-                        posterUri = current.song.coverUrl,
+                        posterUri = current.song.coverUrl ?: "",
                         isCurrentlyPlaying = true
                     )
                 }
@@ -115,7 +115,7 @@ fun QueueScreen(
                 index = index,
                 songTitle = songWithArtist.song.title,
                 artistName = songWithArtist.artist?.name ?: "Unknown Artist",
-                posterUri = songWithArtist.song.coverUrl,
+                posterUri = songWithArtist.song.coverUrl ?: "",
                 isCurrentlyPlaying = currentlyPlayingId != null && songWithArtist.song.id == currentlyPlayingId,
                 onClickListener = onClickListener,
             )

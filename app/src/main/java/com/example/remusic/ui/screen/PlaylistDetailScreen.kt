@@ -122,23 +122,59 @@ private val mockArtists = listOf(
 
 private val mockSongs = listOf(
     SongWithArtist(
-        song = Song(id = "s1", title = "The Beginning", artistId = "a1", coverUrl = "https://i.scdn.co/image/ab67616d0000b2737d6e65e63833d780e77ad6f6", durationMs = 295000, createdAt = Timestamp(Date(System.currentTimeMillis() - 100000))),
+        song = Song(
+            id = "s1",
+            title = "The Beginning",
+            artistId = "a1",
+            coverUrl = "https://i.scdn.co/image/ab67616d0000b2737d6e65e63833d780e77ad6f6",
+            durationMs = 295000,
+            // Ubah jadi String ISO (Supabase Format)
+            createdAt = "2025-01-01T10:00:00Z"
+        ),
         artist = mockArtists[0]
     ),
     SongWithArtist(
-        song = Song(id = "s2", title = "Yoru ni Kakeru", artistId = "a2", coverUrl = "https://i.scdn.co/image/ab67616d0000b27330c6a7a01b43b6de9d8a1835", durationMs = 261000, createdAt = Timestamp(Date(System.currentTimeMillis() - 50000))),
+        song = Song(
+            id = "s2",
+            title = "Yoru ni Kakeru",
+            artistId = "a2",
+            coverUrl = "https://i.scdn.co/image/ab67616d0000b27330c6a7a01b43b6de9d8a1835",
+            durationMs = 261000,
+            createdAt = "2025-01-02T12:00:00Z" // Lebih baru
+        ),
         artist = mockArtists[1]
     ),
     SongWithArtist(
-        song = Song(id = "s3", title = "Usseewa", artistId = "a3", coverUrl = "https://i.scdn.co/image/ab67616d0000b27341d3b2a30d977e5e3c50ea51", durationMs = 206000, createdAt = Timestamp(Date(System.currentTimeMillis() - 200000))),
+        song = Song(
+            id = "s3",
+            title = "Usseewa",
+            artistId = "a3",
+            coverUrl = "https://i.scdn.co/image/ab67616d0000b27341d3b2a30d977e5e3c50ea51",
+            durationMs = 206000,
+            createdAt = "2024-12-30T09:00:00Z" // Lebih lama
+        ),
         artist = mockArtists[2]
     ),
     SongWithArtist(
-        song = Song(id = "s4", title = "We Are", artistId = "a1", coverUrl = "https://i.scdn.co/image/ab67616d0000b2731802d28e7636e651f93e9b1f", durationMs = 250000, createdAt = Timestamp(Date(System.currentTimeMillis() - 300000))),
+        song = Song(
+            id = "s4",
+            title = "We Are",
+            artistId = "a1",
+            coverUrl = "https://i.scdn.co/image/ab67616d0000b2731802d28e7636e651f93e9b1f",
+            durationMs = 250000,
+            createdAt = "2023-01-01T10:00:00Z" // Paling lama
+        ),
         artist = mockArtists[0]
     ),
     SongWithArtist(
-        song = Song(id = "s5", title = "Idol", artistId = "a2", coverUrl = "https://i.scdn.co/image/ab67616d0000b27393c83e25d8a2455f46f32e65", durationMs = 213000, createdAt = Timestamp(Date(System.currentTimeMillis() - 10000))),
+        song = Song(
+            id = "s5",
+            title = "Idol",
+            artistId = "a2",
+            coverUrl = "https://i.scdn.co/image/ab67616d0000b27393c83e25d8a2455f46f32e65",
+            durationMs = 213000,
+            createdAt = "2025-01-03T15:00:00Z" // Paling baru
+        ),
         artist = mockArtists[1]
     )
 )
@@ -364,7 +400,7 @@ fun PlaylistDetailScreen(
                     index = index + 1,
                     songTitle = songWithArtist.song.title,
                     artistName = songWithArtist.artist?.name ?: "Unknown Artist",
-                    posterUri = songWithArtist.song.coverUrl,
+                    posterUri = songWithArtist.song.coverUrl ?: "",
                     isCurrentlyPlaying = (currentPlayingIndex == index),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     // --- REVISI: Hubungkan ke ViewModel ---

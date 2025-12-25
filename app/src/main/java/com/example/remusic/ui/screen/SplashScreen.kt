@@ -36,37 +36,39 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.remusic.R // Pastikan untuk mengimpor R dari package Anda
+import com.example.remusic.R
 import com.example.remusic.utils.LockScreenOrientationPortrait
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
+
+// --- IMPORT SUPABASE ---
+import com.example.remusic.data.SupabaseManager
+import io.github.jan.supabase.auth.auth
 
 @Composable
 fun SplashScreen(navController: NavController) {
     LockScreenOrientationPortrait()
 
-    // Kumpulan state animasi untuk kontrol yang lebih detail
+    // Kumpulan state animasi
     val logoScale = remember { Animatable(0f) }
     val loadingAlpha = remember { Animatable(0f) }
     val textAlpha = remember { Animatable(0f) }
     val subtextAlpha = remember { Animatable(0f) }
 
-    // Rangkaian animasi yang lebih kompleks
     LaunchedEffect(key1 = true) {
-        // 1. Logo muncul dengan animasi scale up
+        // 1. Animasi Logo
         logoScale.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 800)
         )
 
-        // 2. Loading indicator muncul
+        // 2. Loading muncul
         loadingAlpha.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 300)
         )
-        delay(1500L) // Jeda untuk simulasi loading
+        delay(1500L)
 
-        // 3. Loading indicator hilang, teks utama muncul
+        // 3. Loading hilang, Teks muncul
         loadingAlpha.animateTo(
             targetValue = 0f,
             animationSpec = tween(durationMillis = 300)
@@ -80,23 +82,26 @@ fun SplashScreen(navController: NavController) {
             animationSpec = tween(durationMillis = 500)
         )
 
-        // Tunggu sejenak sebelum navigasi
         delay(1200L)
 
-        // Cek user login atau tidak
-        val currentUser = FirebaseAuth.getInstance().currentUser
-        if (currentUser != null) {
+        // --- INI PERUBAHAN UTAMANYA ---
+        // Cek Login pakai Supabase (Bukan Firebase lagi)
+        val session = SupabaseManager.client.auth.currentSessionOrNull()
+
+        if (session != null) {
+            // User ada sesi -> Masuk Main
             navController.navigate("main") {
                 popUpTo("splash") { inclusive = true }
             }
         } else {
+            // User tidak ada sesi -> Masuk Login
             navController.navigate("login") {
                 popUpTo("splash") { inclusive = true }
             }
         }
     }
 
-    // Warna untuk gradien radial
+    // ... (SISA KODE UI KE BAWAH TIDAK PERLU DIUBAH, SAMA PERSIS) ...
     val gradientColors = listOf(
         Color(0xFF441088),
         Color(0xFF121212)
@@ -113,18 +118,16 @@ fun SplashScreen(navController: NavController) {
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Konten utama di tengah (Logo, Judul, Loading)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Logo dibuat bulat dengan border dan animasi scale
             Image(
                 painter = painterResource(id = R.drawable.app_logo),
                 contentDescription = "App Logo",
                 modifier = Modifier
-                    .size(140.dp * logoScale.value) // Terapkan animasi scale
-                    .clip(CircleShape) // Membuat gambar menjadi bulat
+                    .size(140.dp * logoScale.value)
+                    .clip(CircleShape)
                     .border(
                         width = 2.dp,
                         color = Color.White.copy(alpha = 0.5f),
@@ -134,14 +137,11 @@ fun SplashScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Box untuk menampung antara Loading dan Judul
             Box(contentAlignment = Alignment.Center, modifier = Modifier.height(48.dp)) {
-                // Loader 3 titik yang baru
                 JumpingDotsLoader(
                     modifier = Modifier.alpha(loadingAlpha.value)
                 )
 
-                // Nama Aplikasi
                 Text(
                     text = "ReMusic",
                     color = Color.White,
@@ -153,7 +153,6 @@ fun SplashScreen(navController: NavController) {
             }
         }
 
-        // Subteks di bagian bawah layar
         Text(
             text = "Your Music, Reimagined",
             color = Color.White.copy(alpha = 0.8f),
@@ -183,7 +182,6 @@ fun JumpingDotsLoader(
 
     dots.forEachIndexed { index, animatable ->
         LaunchedEffect(animatable) {
-            // Delay untuk membuat animasi setiap titik berbeda
             delay(index * 150L)
             animatable.animateTo(
                 targetValue = 1f,
