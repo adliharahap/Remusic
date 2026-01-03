@@ -7,6 +7,7 @@ import com.example.remusic.data.model.Artist
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -34,7 +35,17 @@ class HomeViewModel : ViewModel() {
                 // decodeList<Song>() otomatis mengubah JSON Supabase jadi List<Song>
                 val songs = SupabaseManager.client
                     .from("songs")
-                    .select()
+                    .select(
+                        columns = Columns.list(
+                            "id",
+                            "title",
+                            "audio_url",
+                            "cover_url",
+                            "artist_id",
+                            "duration_ms",
+                            "telegram_audio_file_id",
+                        )
+                    )
                     .decodeList<Song>()
 
                 if (songs.isEmpty()) {
@@ -43,7 +54,9 @@ class HomeViewModel : ViewModel() {
                 }
 
                 // 2. Kumpulkan semua Artist ID yang unik
-                val artistIds = songs.map { it.artistId }.distinct().filter { it.isNotBlank() }
+                val artistIds = songs.mapNotNull { it.artistId }
+                    .filter { it.isNotBlank() }
+                    .distinct()
 
                 // 3. Ambil data Artis (Bulk Fetch)
                 // Di Supabase/Postgres, kita tidak perlu 'chunking' (pecah 30-30)
@@ -65,10 +78,10 @@ class HomeViewModel : ViewModel() {
 
                 // 4. Gabungkan Lagu dengan Artisnya
                 val songsWithArtists = songs.map { song ->
+                    val artist = song.artistId?.let { id -> artistsMap[id] }
                     SongWithArtist(
                         song = song,
-                        artist = artistsMap[song.artistId]
-                        // Jika artis tidak ketemu (null), UI harus bisa handle (misal tampilkan "Unknown Artist")
+                        artist = artist
                     )
                 }
 

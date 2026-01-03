@@ -111,7 +111,6 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
-    //    implementation("io.github.jan-tennert.supabase:postgrest-kt")
 
     implementation("com.google.code.gson:gson:2.13.2")
 
@@ -122,4 +121,11 @@ dependencies {
 
     implementation("androidx.palette:palette:1.0.0")
     implementation("androidx.mediarouter:mediarouter:1.8.1")
+
+    // --- NETWORK (RETROFIT) ---
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+
+    // Opsional: Untuk logging request (biar kelihatan di Logcat kalau ada error)
+    implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
 }

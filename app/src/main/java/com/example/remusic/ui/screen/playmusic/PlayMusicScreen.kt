@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -71,88 +75,48 @@ fun PlayMusicScreen(
         colors = listOf(animatedTopColor, animatedBottomColor)
     )
 
-    Column(
+    // Scroll state untuk halaman NowPlaying (agar Header bisa baca posisi scroll)
+    val nowPlayingScrollState = rememberScrollState()
+
+    // Gunakan BoxWithConstraints di root untuk mendapatkan tinggi layar (maxHeight)
+    BoxWithConstraints (
         modifier = Modifier
             .fillMaxSize()
             .background(brush = animatedGradientBrush)
     ) {
-        // HEADER
-        Spacer(modifier = Modifier.height(30.dp).fillMaxWidth())
-        val tabs = listOf("Queue", "Playing", "Lyrics")
-        val coroutineScope = rememberCoroutineScope()
+        val screenHeight = maxHeight
+        val density = LocalDensity.current
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Back icon
-            IconButton(onClick = { navController.popBackStack() }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
-            }
+        // LOGIKA TRANSPARANSI HEADER
+        // 10% dari tinggi layar dalam pixel
+        val scrollThresholdPx = with(density) { (screenHeight * 0.1f).toPx() }
 
-            // TABS (Queue, Now Playing, Lyrics)
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    val isSelected = pagerState.currentPage == index
-                    Column(
-                        modifier = Modifier
-                            .padding(horizontal = 8.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                // pindah page manual kalau diklik
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = title,
-                            color = if (isSelected) Color.White else Color.White.copy(0.8f),
-                            fontFamily = if (isSelected) AppFont.RobotoBold else AppFont.RobotoMedium,
-                            fontSize = if (isSelected) 17.sp else 15.sp,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        if (isSelected) {
-                            Box(
-                                modifier = Modifier
-                                    .height(2.dp)
-                                    .width(40.dp)
-                                    .background(Color.White, shape = RoundedCornerShape(1.dp))
-                            )
-                        } else {
-                            Spacer(modifier = Modifier.height(2.dp))
-                        }
-                    }
+        // Hitung alpha berdasarkan scroll saat ini
+        val headerAlpha by remember {
+            derivedStateOf {
+                // Hanya aktifkan efek ini jika sedang di halaman NowPlaying (Page 1)
+                if (pagerState.currentPage == 1) {
+                    val scrollPos = nowPlayingScrollState.value
+                    // Hitung progress 0.0 -> 1.0 berdasarkan threshold 10%
+                    // Jika scrollPos >= threshold (10%), hasil = 1.0 (Full Color)
+                    // Jika scrollPos < threshold, hasil proporsional (0.7 di 7% = 0.7 alpha)
+                    (scrollPos / scrollThresholdPx).coerceIn(0f, 1f)
+                } else {
+                    0f // Default transparan untuk halaman lain (atau ubah jadi 1f jika mau solid)
                 }
-            }
-
-            // 3 dots vertical (menu)
-            IconButton(onClick = { /* TODO: action menu */ }) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = "More",
-                    tint = Color.White
-                )
             }
         }
 
-        // PAGER
+        // Warna background header (menggunakan warna dominan atas dengan alpha dinamis)
+        val headerBackgroundColor = animatedTopColor.copy(alpha = headerAlpha)
+
+
+        // ==========================================
+        // LAYER 1 (BELAKANG): PAGER FULL SCREEN
+        // ==========================================
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize() // Full layar sampai mentok atas
         ) { page ->
             when (page) {
                 0 -> QueueScreen(
@@ -168,6 +132,8 @@ fun PlayMusicScreen(
                     totalDuration = uiState.totalDuration,
                     isShuffleEnabled = uiState.isShuffleModeEnabled,
                     repeatMode = uiState.repeatMode,
+                    // PASSING SCROLL STATE KE NOWPLAYING
+                    scrollState = nowPlayingScrollState,
                     onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
                     onNextClick = { playMusicViewModel.nextSong() },
                     onPrevClick = { playMusicViewModel.previousSong() },
@@ -180,20 +146,105 @@ fun PlayMusicScreen(
                         playMusicViewModel.seekTo(newPosition)
                     },
                 )
+                2 -> LyricsScreen(
+                    lrcString = uiState.currentSong?.song?.lyrics ?: "",
+                    currentPosition = uiState.currentPosition,
+                    bottomPlayerColor = animatedBottomColor,
+                    songWithArtist = uiState.currentSong,
+                    isPlaying = uiState.isPlaying,
+                    totalDuration = uiState.totalDuration,
+                    onSeek = { positionFraction ->
+                        val newPosition = (uiState.totalDuration * positionFraction).toLong()
+                        playMusicViewModel.seekTo(newPosition)
+                    },
+                    onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+                )
+            }
+        }
 
-                    2 -> LyricsScreen(
-                        lrcString = uiState.currentSong?.song?.lyrics ?: "",
-                        currentPosition = uiState.currentPosition,
-                        bottomPlayerColor = animatedBottomColor,
-                        songWithArtist = uiState.currentSong,
-                        isPlaying = uiState.isPlaying,
-                        totalDuration = uiState.totalDuration,
-                        onSeek = { positionFraction ->
-                            val newPosition = (uiState.totalDuration * positionFraction).toLong()
-                            playMusicViewModel.seekTo(newPosition)
-                        },
-                        onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+        // ==========================================
+        // LAYER 2 (DEPAN): HEADER FLOATING
+        // ==========================================
+        // Kita bungkus Header dalam Column biar Spacer tetap jalan dorong ke bawah
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter) // Paksa nempel di atas tengah
+                .fillMaxWidth()
+                // APLIKASIKAN BACKGROUND DINAMIS DI SINI
+                .background(headerBackgroundColor)
+        ) {
+
+            // Spacer Status Bar
+            Spacer(modifier = Modifier.height(30.dp).fillMaxWidth())
+
+            val tabs = listOf("Queue", "Playing", "Lyrics")
+            val coroutineScope = rememberCoroutineScope()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Back icon
+                IconButton(onClick = { navController.popBackStack() }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
                     )
+                }
+
+                // TABS
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        val isSelected = pagerState.currentPage == index
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = title,
+                                color = if (isSelected) Color.White else Color.White.copy(0.8f),
+                                fontFamily = if (isSelected) AppFont.RobotoBold else AppFont.RobotoMedium,
+                                fontSize = if (isSelected) 17.sp else 15.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(40.dp)
+                                        .background(Color.White, shape = RoundedCornerShape(1.dp))
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.height(2.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Menu Icon
+                IconButton(onClick = { /* TODO */ }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "More",
+                        tint = Color.White
+                    )
+                }
             }
         }
     }

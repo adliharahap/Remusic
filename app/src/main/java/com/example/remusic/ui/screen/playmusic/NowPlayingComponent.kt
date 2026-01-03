@@ -9,12 +9,14 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.with
 import androidx.compose.foundation.MarqueeAnimationMode
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -103,6 +105,7 @@ fun NowPlaying(
     totalDuration: Long,
     isShuffleEnabled: Boolean,
     repeatMode: Int,
+    scrollState: ScrollState = rememberScrollState(),
     posterAnimation: Int,
     posterAnimationDirection: AnimationDirection = AnimationDirection.NONE,
     onPlayPauseClick: () -> Unit,
@@ -110,400 +113,376 @@ fun NowPlaying(
     onPrevClick: () -> Unit,
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
-    onSeek: (Float) -> Unit // Menerima Float (0.0f - 1.0f)
+    onSeek: (Float) -> Unit
 ) {
-    val scrollState = rememberScrollState()
     val context = LocalContext.current
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {}
     }
 
-    // State lokal untuk menghandle saat user menggeser slider
+    // State lokal untuk slider
     var isUserSeeking by remember { mutableStateOf(false) }
     var userSeekPosition by remember { mutableFloatStateOf(0f) }
 
-    // Menentukan posisi slider
     val sliderValue = if (isUserSeeking) {
         userSeekPosition
     } else {
         if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()) else 0f
     }
 
-    Column (
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .nestedScroll(nestedScrollConnection),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ){
+    // 1. Gunakan BoxWithConstraints untuk mendapatkan tinggi layar (viewport)
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Simpan tinggi layar ke variabel
+        val screenHeight = maxHeight
 
-        Spacer(modifier = Modifier.height(70.dp).fillMaxWidth())
-        AnimatedContent(
-            targetState = posterAnimation, // Data yang "ditonton" perubahannya
-            label = "Animated Album Cover",
-            transitionSpec = {
-                // ✅ Gunakan 'when' pada state arah yang baru
-                when (posterAnimationDirection) {
-                    AnimationDirection.FORWARD -> {
-                        // Animasi "Next" (maju)
-                        slideInHorizontally { it } + fadeIn() with
-                                slideOutHorizontally { -it } + fadeOut()
-                    }
-                    AnimationDirection.BACKWARD -> {
-                        // Animasi "Previous" (mundur)
-                        slideInHorizontally { -it } + fadeIn() with
-                                slideOutHorizontally { it } + fadeOut()
-                    }
-                    else -> { // AnimationDirection.NONE
-                        // Animasi default tanpa geser, hanya fade
-                        fadeIn() with fadeOut()
-                    }
-                }
-            }
-        ) { targetvalue ->
-
-            val isRunning by remember {
-                derivedStateOf { transition.isRunning }
-            }
-            AsyncImage(
-                model = songWithArtist?.song?.coverUrl,
-                contentDescription = "Cover Album $targetvalue",
-                modifier = Modifier // Modifier Anda yang sebelumnya ditaruh di sini
-                    .fillMaxWidth(0.9f)
-                    .aspectRatio(1f)
-                    .shadow(
-                        elevation = if (isRunning) 0.dp else 6.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        clip = false
-                    )
-                    .clip(RoundedCornerShape(10.dp)),
-                contentScale = ContentScale.Crop,
-                placeholder = painterResource(id = R.drawable.img_placeholder),
-                error = painterResource(id = R.drawable.img_placeholder)
-            )
-        }
-        Box(modifier = Modifier.height(90.dp).fillMaxWidth()) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.4f)
-                    .height(30.dp)
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 5.dp),
-                shape = RoundedCornerShape(100.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Headset,
-                        contentDescription = "TWS Icon",
-                        tint = Color.Green,
-                        modifier = Modifier.size(20.dp),
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Text(
-                        text = "Soundcore R50i",
-                        color = Color.Green,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontFamily = AppFont.RobotoRegular,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        }
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .verticalScroll(scrollState) // Scrollable container utama
+                .nestedScroll(nestedScrollConnection),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column (
-                modifier = Modifier.weight(0.7f)
-            ){
-                Text(
-                    text = songWithArtist?.song?.title ?: "Unknown Title",
-                    color = Color.White,
-                    fontFamily = AppFont.RobotoBold,
-                    fontSize = 20.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .basicMarquee(
-                            animationMode = MarqueeAnimationMode.Immediately,
-                            velocity = 70.dp,             // kecepatan scroll
-                            initialDelayMillis = 2000,  // delay sebelum scroll pertama
-                            repeatDelayMillis = 5000,   // delay di ujung sebelum loop
-                            iterations = Int.MAX_VALUE, // scroll terus-menerus
+
+            // ==========================================
+            // COLUMN 1: PLAYER CONTROL (FULL SCREEN 100%)
+            // ==========================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(screenHeight) // Kunci: Set tinggi sama dengan tinggi layar
+                    .padding(top = screenHeight * 0.1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                // UBAH DARI SpaceBetween KE Top AGAR SEMUA KE ATAS
+                verticalArrangement = Arrangement.Top
+            ) {
+
+                // --- Bagian Atas (Album Art) ---
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Padding top di sini (misal 50dp + margin status bar)
+                    Spacer(modifier = Modifier.height(70.dp))
+
+                    AnimatedContent(
+                        targetState = posterAnimation,
+                        label = "Animated Album Cover",
+                        transitionSpec = {
+                            when (posterAnimationDirection) {
+                                AnimationDirection.FORWARD -> {
+                                    slideInHorizontally { it } + fadeIn() with slideOutHorizontally { -it } + fadeOut()
+                                }
+                                AnimationDirection.BACKWARD -> {
+                                    slideInHorizontally { -it } + fadeIn() with slideOutHorizontally { it } + fadeOut()
+                                }
+                                else -> {
+                                    fadeIn() with fadeOut()
+                                }
+                            }
+                        }
+                    ) { targetvalue ->
+                        val isRunning by remember { derivedStateOf { transition.isRunning } }
+                        AsyncImage(
+                            model = songWithArtist?.song?.coverUrl,
+                            contentDescription = "Cover Album $targetvalue",
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .aspectRatio(1f)
+                                .shadow(
+                                    elevation = if (isRunning) 0.dp else 6.dp,
+                                    shape = RoundedCornerShape(16.dp),
+                                    clip = false
+                                )
+                                .clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Crop,
+                            placeholder = painterResource(id = R.drawable.img_placeholder),
+                            error = painterResource(id = R.drawable.img_placeholder)
                         )
-                        .padding(start = 16.dp, bottom = 5.dp)
-                )
-                Text(
-                    text = songWithArtist?.artist?.name ?: "Unknown Artist",
-                    color = Color(0xCCFFFFFF),
-                    fontFamily = AppFont.RobotoRegular,
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    }
+
+                    // TWS Badge (Soundcore) - Ditempel di bawah art
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth(0.4f)
+                                .height(30.dp)
+                                .align(Alignment.TopEnd) // Ubah alignment jika perlu
+                                .padding(end = 16.dp, top = 10.dp),
+                            shape = RoundedCornerShape(100.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Headset,
+                                    contentDescription = "TWS Icon",
+                                    tint = Color.Green,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Soundcore R50i",
+                                    color = Color.Green,
+                                    fontFamily = AppFont.RobotoRegular,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Jarak antara Album Art dan Judul
+                Spacer(modifier = Modifier.height(30.dp))
+
+                // --- Bagian Tengah (Judul & Info Lagu) ---
+                // HAPUS weight(1f) agar tidak mendorong ke bawah
+                Column(
                     modifier = Modifier
-                        .padding(start = 16.dp)
-                        .fillMaxWidth()
-                )
-            }
-            Row (
-                modifier = Modifier.weight(0.3f).padding(start = 5.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ){
-                Icon(
-                    imageVector = Icons.Filled.FavoriteBorder,
-                    contentDescription = "add song to favorite",
-                    modifier = Modifier.size(25.dp),
-                    tint = Color.White
-                )
-                Icon(
-                    imageVector = Icons.Filled.Share,
-                    contentDescription = "Share Song",
-                    modifier = Modifier.size(25.dp),
-                    tint = Color.White
-                )
-                Icon(
-                    imageVector = Icons.Outlined.Timer,
-                    contentDescription = "Sleep Timer",
-                    modifier = Modifier.size(25.dp),
-                    tint = Color.White
-                )
-            }
-        }
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(0.7f)) {
+                            Text(
+                                text = songWithArtist?.song?.title ?: "Unknown Title",
+                                color = Color.White,
+                                fontFamily = AppFont.RobotoBold,
+                                fontSize = 20.sp,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .basicMarquee(
+                                        animationMode = MarqueeAnimationMode.Immediately,
+                                        velocity = 70.dp,
+                                        iterations = Int.MAX_VALUE,
+                                    )
+                                    .padding(start = 16.dp, bottom = 5.dp)
+                            )
+                            Text(
+                                text = songWithArtist?.artist?.name ?: "Unknown Artist",
+                                color = Color(0xCCFFFFFF),
+                                fontFamily = AppFont.RobotoRegular,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .padding(start = 16.dp)
+                                    .fillMaxWidth()
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .weight(0.3f)
+                                .padding(start = 5.dp, end = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Icon(Icons.Filled.FavoriteBorder, "Fav", Modifier.size(25.dp), Color.White)
+                            Icon(Icons.Filled.Share, "Share", Modifier.size(25.dp), Color.White)
+                            Icon(Icons.Outlined.Timer, "Timer", Modifier.size(25.dp), Color.White)
+                        }
+                    }
+                }
 
-        Spacer(modifier = Modifier.height(18.dp).fillMaxWidth())
+                // Jarak antara Judul dan Slider/Kontrol
+                Spacer(modifier = Modifier.height(30.dp))
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(10.dp)
-        ) {
-            Slider(
-                value = sliderValue,
-                onValueChange = { newValue ->
-                    isUserSeeking = true
-                    userSeekPosition = newValue
-                },
-                onValueChangeFinished = {
-                    isUserSeeking = false
-                    onSeek(userSeekPosition) // Kirim posisi akhir ke ViewModel
-                },
-                valueRange = 0f..1f,
-                modifier = Modifier.padding(horizontal = 8.dp),
-                // 1. Sembunyikan thumb & track default M3 dengan membuatnya transparan
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.Transparent,
-                    activeTrackColor = Color.Transparent,
-                    inactiveTrackColor = Color.Transparent
-                ),
+                // --- Bagian Bawah (Slider & Controls) ---
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Slider
+                    Box(modifier = Modifier.fillMaxWidth().height(10.dp)) {
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { newValue ->
+                                isUserSeeking = true
+                                userSeekPosition = newValue
+                            },
+                            onValueChangeFinished = {
+                                isUserSeeking = false
+                                onSeek(userSeekPosition)
+                            },
+                            valueRange = 0f..1f,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.Transparent,
+                                activeTrackColor = Color.Transparent,
+                                inactiveTrackColor = Color.Transparent
+                            ),
+                            thumb = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .background(color = Color.White, shape = CircleShape)
+                                )
+                            },
+                            track = { sliderPositions ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                color = Color.White.copy(0.4f),
+                                                shape = RoundedCornerShape(2.dp)
+                                            )
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(sliderPositions.value)
+                                            .fillMaxHeight()
+                                            .background(
+                                                color = Color.White,
+                                                shape = RoundedCornerShape(2.dp)
+                                            )
+                                    )
+                                }
+                            }
+                        )
+                    }
 
-                // 2. Gambar THUMB kita sendiri yang bulat sempurna
-                thumb = {
-                    Box(
-                        modifier = Modifier
-                            .size(14.dp) // Atur ukuran bulatan di sini
-                            .background(color = Color.White, shape = CircleShape) // CircleShape membuatnya bulat
-                    )
-                },
-
-                // 3. Gambar TRACK kita sendiri yang lebih tipis
-                track = { sliderPositions ->
-                    Box(
+                    // Waktu (Duration)
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(3.dp)
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Garis sisa (inactive)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(color = Color.White.copy(0.4f), shape = RoundedCornerShape(2.dp))
-                        )
-                        // Garis aktif
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(sliderPositions.value)
-                                .fillMaxHeight()
-                                .background(color = Color.White, shape = RoundedCornerShape(2.dp))
-                        )
-                    }
-                }
-            )
-        }
-
-        Row (
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ){
-            Text(
-                text = formatDuration(currentPosition),
-                color = Color.White,
-                fontFamily = AppFont.RobotoRegular,
-                fontSize = 14.sp,
-            )
-            Text(
-                text = formatDuration(totalDuration),
-                color = Color.White,
-                fontFamily = AppFont.RobotoRegular,
-                fontSize = 14.sp,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(15.dp).fillMaxWidth())
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Shuffle di kiri
-            Icon(
-                imageVector = Icons.Outlined.Shuffle,
-                contentDescription = "Shuffle",
-                modifier = Modifier
-                    .size(30.dp)
-                    .clickable {
-                    onShuffleClick()
-
-                    val message = if (isShuffleEnabled) {
-                        "Shuffle Off"
-                    } else {
-                        "Shuffle On"
+                        Text(formatDuration(currentPosition), color = Color.White, fontSize = 14.sp)
+                        Text(formatDuration(totalDuration), color = Color.White, fontSize = 14.sp)
                     }
 
-                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                },
-                tint = if (isShuffleEnabled) Color.Green else Color.White
-            )
+                    Spacer(modifier = Modifier.height(15.dp))
 
-            Spacer(modifier = Modifier.weight(1f)) // <-- flexible space
+                    // Tombol Kontrol (Play/Pause/Shuffle)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Shuffle,
+                            contentDescription = "Shuffle",
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clickable {
+                                    onShuffleClick()
+                                    val msg = if (isShuffleEnabled) "Shuffle Off" else "Shuffle On"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                            tint = if (isShuffleEnabled) Color.Green else Color.White
+                        )
 
-            // Row tengah: prev, play, next
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.SkipPrevious,
-                    contentDescription = "Previous",
-                    modifier = Modifier.size(50.dp).clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onPrevClick() },
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(22.dp))
-                Icon(
-                    imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                    contentDescription = "Play/Pause",
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            onPlayPauseClick()
-                          },
-                    tint = Color.White
-                )
+                        Spacer(modifier = Modifier.weight(1f))
 
-                Spacer(modifier = Modifier.width(22.dp))
-                Icon(
-                    imageVector = Icons.Filled.SkipNext,
-                    contentDescription = "Next",
-                    modifier = Modifier.size(50.dp).clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onNextClick() },
-                    tint = Color.White
-                )
-            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.SkipPrevious,
+                                contentDescription = "Prev",
+                                modifier = Modifier.size(50.dp).clickable { onPrevClick() },
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(22.dp))
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                contentDescription = "Play/Pause",
+                                modifier = Modifier.size(80.dp).clickable { onPlayPauseClick() },
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(22.dp))
+                            Icon(
+                                imageVector = Icons.Filled.SkipNext,
+                                contentDescription = "Next",
+                                modifier = Modifier.size(50.dp).clickable { onNextClick() },
+                                tint = Color.White
+                            )
+                        }
 
-            Spacer(modifier = Modifier.weight(1f)) // <-- flexible space
+                        Spacer(modifier = Modifier.weight(1f))
 
-            val repeatIcon = when (repeatMode) {
-                Player.REPEAT_MODE_ONE -> Icons.Filled.RepeatOne
-                Player.REPEAT_MODE_ALL -> Icons.Outlined.Repeat
-                else -> Icons.Outlined.Repeat
-            }
-            val iconTint = if (repeatMode == Player.REPEAT_MODE_OFF) {
-                Color.Gray // OFF → abu-abu
-            } else {
-                Color.White // ONE/ALL → aktif
-            }
-            IconButton(onClick = {
-                onRepeatClick() // ⬅️ ini update repeatMode dulu (UIState berubah)
+                        val repeatIcon = when (repeatMode) {
+                            Player.REPEAT_MODE_ONE -> Icons.Filled.RepeatOne
+                            Player.REPEAT_MODE_ALL -> Icons.Outlined.Repeat
+                            else -> Icons.Outlined.Repeat
+                        }
+                        val iconTint = if (repeatMode == Player.REPEAT_MODE_OFF) Color.Gray else Color.White
 
-                // Ambil repeatMode terbaru setelah update
-                val newMode = when (repeatMode) {
-                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                    Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_OFF
-                    else -> Player.REPEAT_MODE_OFF
+                        IconButton(onClick = {
+                            onRepeatClick()
+                            val nextMode = when (repeatMode) {
+                                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                else -> Player.REPEAT_MODE_OFF
+                            }
+                            val msg = when (nextMode) {
+                                Player.REPEAT_MODE_OFF -> "Mengulang dimatikan"
+                                Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
+                                Player.REPEAT_MODE_ALL -> "Mengulang semua"
+                                else -> ""
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(repeatIcon, "Repeat", tint = iconTint, modifier = Modifier.size(30.dp))
+                        }
+                    }
+
+                    // Spacer kecil di paling bawah column 1
+                    Spacer(modifier = Modifier.height(20.dp))
                 }
-
-                // 🔥 Munculin toast sesuai mode
-                val message = when (newMode) {
-                    Player.REPEAT_MODE_OFF -> "mengulang dimatikan"
-                    Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
-                    Player.REPEAT_MODE_ALL -> "Mengulang semua lagu dalam playlist"
-                    else -> ""
-                }
-
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            }) {
-                Icon(
-                    imageVector = repeatIcon,
-                    contentDescription = "Repeat",
-                    tint = iconTint,
-                    modifier = Modifier.size(30.dp)
-                )
             }
 
-        }
-        Spacer(modifier = Modifier.height(100.dp))
 
-        if (songWithArtist?.song?.uploaderUserId != null) {
-            UploaderBox(
-                uploaderId = songWithArtist.song.uploaderUserId
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Artist Box (sudah dinamis)
-        if (songWithArtist?.artist != null) {
-            Box(
+            // ==========================================
+            // COLUMN 2: INFO (UPLOADER & ARTIST)
+            // ==========================================
+            Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF755D8D))
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp) // Beri padding kiri kanan
             ) {
-                ArtistBox(
-                    name = songWithArtist.artist.name?: "Unknown Artist",
-                    description = songWithArtist.artist.description ?: "No description available",
-                    photoUrl = songWithArtist.artist.photoUrl ?: "",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Spacer agar ada jarak sedikit saat user mulai scroll ke bawah
+                Spacer(modifier = Modifier.height(20.dp))
+
+                if (songWithArtist?.song?.uploaderUserId != null) {
+                    UploaderBox( // Pastikan nama composable ini benar sesuai kode kamu (UploaderBox?)
+                        uploaderId = songWithArtist.song.uploaderUserId
+                    )
+                    // Jika "UploaderUiState" di kode asli adalah "UploaderBox", ganti saja namanya
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                if (songWithArtist?.artist != null) {
+                    ArtistBox(
+                        name = songWithArtist.artist.name ?: "Unknown Artist",
+                        description = songWithArtist.artist.description ?: "No description available",
+                        photoUrl = songWithArtist.artist.photoUrl ?: "",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Spacer tambahan di paling bawah agar tidak mentok layar saat discroll habis
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }
 }
+
 
 @Composable
 fun ArtistBox(
