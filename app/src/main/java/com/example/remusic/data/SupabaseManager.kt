@@ -7,6 +7,8 @@ import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
+import io.ktor.client.plugins.HttpTimeout
+import io.github.jan.supabase.annotations.SupabaseInternal
 
 object SupabaseManager {
 
@@ -14,6 +16,7 @@ object SupabaseManager {
     lateinit var client: SupabaseClient
 
     // Fungsi ini wajib dipanggil sekali saat aplikasi pertama kali jalan
+    @OptIn(SupabaseInternal::class)
     fun initialize(context: Context) {
         client = createSupabaseClient(
             supabaseUrl = BuildConfig.SUPABASE_URL,
@@ -25,6 +28,13 @@ object SupabaseManager {
             }
             install(Postgrest)
             install(Storage)
+            httpConfig {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 60000 // 60 Detik (1 Menit)
+                    connectTimeoutMillis = 60000 // 60 Detik
+                    socketTimeoutMillis = 60000  // 60 Detik
+                }
+            }
         }
     }
 }

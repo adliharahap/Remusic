@@ -457,7 +457,8 @@ fun PlaylistDetailScreen(
             Text(
                 text = "Cari Lagu di Playlist",
                 color = Color.White,
-                fontFamily = AppFont.PoppinsRegular,
+                fontFamily = AppFont.Poppins,
+                fontWeight = FontWeight.Normal,
                 fontSize = 12.sp
             )
         }
@@ -543,7 +544,8 @@ fun PlaylistDetailScreen(
                             Text(
                                 text = "Music Yang Disukai",
                                 color = Color.White,
-                                fontFamily = AppFont.PoppinsBold,
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                             )
                         }

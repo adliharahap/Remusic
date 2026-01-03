@@ -1,8 +1,14 @@
 package com.example.remusic.ui.screen.playmusic
 
+import android.annotation.SuppressLint
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
@@ -20,7 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
@@ -61,11 +68,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.LyricLine
@@ -75,100 +83,156 @@ import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+@SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
 fun LyricsScreen(
-    currentPosition: Long,
-    lrcString: String,
+    lyricsViewModel: LyricsViewModel,
+    topPlayerColor: Color,
     bottomPlayerColor: Color,
     songWithArtist: SongWithArtist?,
     isPlaying: Boolean,
     totalDuration: Long,
+    isLoading: Boolean,
+    headerHeight: Dp,
     onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
 ) {
-    val lyricsViewModel: LyricsViewModel = viewModel()
-
-    // load lirik sekali saat lrcString berubah
-    LaunchedEffect(lrcString) {
-        lyricsViewModel.loadLyrics(lrcString)
-    }
-
-    // setiap currentPosition berubah, update ViewModel lirik
-    LaunchedEffect(currentPosition) {
-        lyricsViewModel.updatePlaybackPosition(currentPosition)
-    }
-
+    // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
     val activeIndex by lyricsViewModel.activeLyricIndex.collectAsState()
     val isTranslateLyrics by lyricsViewModel.isTranslateLyrics.collectAsState()
+    val currentPosition by lyricsViewModel.currentPosition.collectAsState()
 
+    // Variable UI
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
-
-    // Menghitung padding untuk membuat item bisa berada di tengah layar
     val screenHeight = configuration.screenHeightDp.dp
 
+    // Auto Scroll Logic (Hanya jalan jika lirik ada)
     LaunchedEffect(lazyListState) {
         snapshotFlow { activeIndex }
             .distinctUntilChanged()
             .collect { index ->
                 if (index >= 0 && index < lyrics.size) {
+
                     lazyListState.animateScrollToItem(
                         index = index,
-                        scrollOffset = -(screenHeight.value * 0.2f).toInt()
+                        scrollOffset = -(screenHeight.value * 0.5f).toInt()
                     )
                 }
             }
     }
 
-    // Tinggi panel bawah Anda adalah 130.dp
-    val bottomPanelHeight = 130.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Konten utama = lirik
-        LazyColumn(
-            state = lazyListState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 200.dp, bottom = screenHeight / 2),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
 
-            itemsIndexed(lyrics) { index, line ->
+        // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
+        Crossfade(
+            targetState = when {
+                // PRIORITAS 1: Tampilkan Skeleton JIKA:
+                // a. Sedang Loading (dari VM)
+                // b. ATAU Lirik kosong & lagu baru mulai (< 2 detik) -> Ini "Safety Buffer" anti-kedip
+                isLoading || (lyrics.isEmpty() && currentPosition < 2000L) -> "LOADING"
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    LyricLineItem(
-                        line = line,
-                        isActive = index == activeIndex,
-                        isTranslateLyrics = isTranslateLyrics
-                    )
+                // PRIORITAS 2: Lirik Kosong -> Empty View
+                lyrics.isEmpty() -> "EMPTY"
+
+                // PRIORITAS 3: Lirik Ada -> Content
+                else -> "CONTENT"
+            },
+            animationSpec = tween(500), // Durasi animasi fade (0.5 detik)
+            label = "LyricsStateAnimation"
+        ) { state ->
+
+            when (state) {
+                "LOADING" -> {
+                    LyricsSkeletonLoader()
+                }
+                "EMPTY" -> {
+                    EmptyLyricsView()
+                }
+                "CONTENT" -> {
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(top = 200.dp, bottom = screenHeight / 2),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        itemsIndexed(lyrics) { index, line ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                LyricLineItem(
+                                    line = line,
+                                    isActive = index == activeIndex,
+                                    isTranslateLyrics = isTranslateLyrics
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
-        val fadeHeight = 100.dp
+
+        // 1. Gradient ATAS (Fade dari Warna ke Transparan)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(fadeHeight)
-                .align(Alignment.BottomCenter) // Menempel di bawah
-                // Offset ke atas setinggi panel bawah agar gradasi MULAI tepat di atas panel
-                .offset(y = -bottomPanelHeight)
+                .height(headerHeight + 40.dp) // Total: 94 + 40 = 134.dp
+                .heightIn(min = 100.dp, max = 200.dp)
+                .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
-                        // Warna sudah benar, dari transparan ke warna dasar layar
-                        colors = listOf(Color.Transparent, bottomPlayerColor)
+                        // KUNCI RAHASIA: Gunakan banyak titik (Stops) untuk bikin kurva halus
+                        colorStops = arrayOf(
+                            0.0f to topPlayerColor,                    // Atas: Solid
+                            0.5f to topPlayerColor,
+                            0.6f to topPlayerColor.copy(alpha = 0.8f), // Mulai pudar dikit
+                            0.8f to topPlayerColor.copy(alpha = 0.5f), // Pudar makin banyak (efek blur/glow terjadi disini)
+                            1.0f to topPlayerColor.copy(alpha = 0f)    // Bawah: Transparan Total
+                        )
                     )
                 )
         )
 
-        // Panel bawah
+        // 2. Gradient BAWAH (Fade dari Transparan ke Warna)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.65f)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            // Titik 0.0 (Paling Atas Box):
+                            // Pakai warna Bottom tapi Alpha 0 (Invisible).
+                            // Ini kuncinya biar gak belang/abu-abu.
+                            0.0f to bottomPlayerColor.copy(alpha = 0f),
+
+                            // Titik 0.3 (30% ke bawah):
+                            // Masih sangat tipis (10% opacity).
+                            // Ini bikin efek "glow" halus di batas atas.
+                            0.4f to bottomPlayerColor.copy(alpha = 0.1f),
+
+                            // Titik 0.6 (60% ke bawah):
+                            // Mulai tebal (60% opacity). Teks mulai susah dibaca disini.
+                            0.6f to bottomPlayerColor.copy(alpha = 0.5f),
+
+                            // Titik 0.9 - 1.0 (Bawah):
+                            // Solid total. Menutupi panel kontrol biar gak tabrakan.
+                            0.8f to bottomPlayerColor,
+                            1.0f to bottomPlayerColor
+                        )
+                    )
+                )
+        )
+
+        // --- PANEL KONTROL BAWAH ---
         LyricsBottomPanel(
             modifier = Modifier.align(Alignment.BottomCenter),
-            bottomPlayerColor = bottomPlayerColor,
             currentPosition = currentPosition,
             totalDuration = totalDuration,
             onSeek = onSeek,
@@ -182,6 +246,77 @@ fun LyricsScreen(
     }
 }
 
+@Composable
+fun LyricsSkeletonLoader() {
+    // 1. Setup Animasi Shimmer (Kedip-kedip)
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    // 2. Gunakan LazyColumn agar bisa scroll (atau memenuhi layar) tanpa error
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 120.dp, bottom = 150.dp, start = 24.dp, end = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        userScrollEnabled = false
+    ) {
+        // 3. Ulangi sebanyak 25 kali (cukup untuk memenuhi layar HP panjang sekalipun)
+        items(25) { index ->
+            // Variasi panjang lebar (Pendek, Panjang, Sedang) biar lebih natural
+            val widthFraction = when (index % 3) {
+                0 -> 0.6f // Pendek
+                1 -> 0.8f // Panjang
+                else -> 0.4f // Sangat Pendek
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(widthFraction)
+                    .height(20.dp) // Tinggi per baris
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White.copy(alpha = alpha)) // Warna skeleton
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyLyricsView() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Rounded.Lyrics,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Lirik tidak tersedia",
+                color = Color.White.copy(alpha = 0.7f),
+                fontFamily = AppFont.RobotoMedium,
+                fontSize = 18.sp
+            )
+            Text(
+                text = "Tenang saja, kami akan menambahkannya nanti.",
+                color = Color.White.copy(alpha = 0.4f),
+                fontFamily = AppFont.RobotoRegular,
+                fontSize = 14.sp
+            )
+        }
+    }
+}
+
 
 @Composable
 fun LyricLineItem(
@@ -190,12 +325,12 @@ fun LyricLineItem(
     isTranslateLyrics: Boolean
 ) {
     // Spesifikasi animasi (durasi 200ms) untuk semua transisi
-    val animationSpec = tween<Float>(durationMillis = 200)
-    val colorAnimationSpec = tween<Color>(durationMillis = 200)
+    val animationSpec = tween<Float>(durationMillis = 200, delayMillis = 80)
+    val colorAnimationSpec = tween<Color>(durationMillis = 200, delayMillis = 80)
 
     // 1. Animasikan Ukuran Font
     val fontSize by animateFloatAsState(
-        targetValue = if (isActive) 22f else 20f,
+        targetValue = if (isActive) 20f else 20f,
         animationSpec = animationSpec,
         label = "fontSizeAnimation"
     )
@@ -209,7 +344,7 @@ fun LyricLineItem(
 
     // 3. Animasikan Warna Font Terjemahan
     val translatedColor by animateColorAsState(
-        targetValue = if (isActive) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.4f),
+        targetValue = if (isActive) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.5f),
         animationSpec = colorAnimationSpec,
         label = "translatedColorAnimation"
     )
@@ -224,7 +359,9 @@ fun LyricLineItem(
             text = line.originalText,
             color = fontColor, // Gunakan warna yang dianimasikan
             fontSize = fontSize.sp, // Gunakan ukuran yang dianimasikan
-            fontFamily = if (isActive) AppFont.RobotoBold else AppFont.RobotoRegular,
+            fontFamily = AppFont.Poppins,
+//            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Left
         )
 
@@ -233,8 +370,9 @@ fun LyricLineItem(
             Text(
                 text = line.translatedText,
                 color = translatedColor, // Gunakan warna yang dianimasikan
-                fontSize = 18.sp, // Ukuran terjemahan bisa tetap
-                fontFamily = AppFont.RobotoRegular,
+                fontSize = 17.sp, // Ukuran terjemahan bisa tetap
+                fontFamily = AppFont.Poppins,
+                fontWeight = FontWeight.Normal,
                 textAlign = TextAlign.Left
             )
         }
@@ -245,7 +383,6 @@ fun LyricLineItem(
 @Composable
 fun LyricsBottomPanel(
     modifier: Modifier = Modifier,
-    bottomPlayerColor: Color,
     currentPosition: Long,
     totalDuration: Long,
     onSeek: (Float) -> Unit,
@@ -277,7 +414,7 @@ fun LyricsBottomPanel(
         modifier = modifier
             .fillMaxWidth()
             .height(140.dp)
-            .background(bottomPlayerColor)
+//            .background(bottomPlayerColor)
             .verticalScroll(scrollState)
             .nestedScroll(nestedScrollConnection),
         horizontalAlignment = Alignment.CenterHorizontally,

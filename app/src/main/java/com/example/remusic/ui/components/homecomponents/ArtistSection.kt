@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,7 +48,8 @@ fun ArtistSection(
         ) {
             Text(
                 text = title,
-                fontFamily = AppFont.PoppinsSemiBold,
+                fontFamily = AppFont.Poppins,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(start = 16.dp),
@@ -56,7 +58,8 @@ fun ArtistSection(
             )
             Text(
                 text = "See All",
-                fontFamily = AppFont.PoppinsSemiBold,
+                fontFamily = AppFont.Poppins,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -97,7 +100,8 @@ fun ArtistSection(
                     Text(
                         text = item.artist?.name ?: "unknown Artist",
                         fontSize = 14.sp,
-                        fontFamily = AppFont.PoppinsMedium,
+                        fontFamily = AppFont.Poppins,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         color = Color.White,
                         textAlign = TextAlign.Center,

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -25,10 +26,12 @@ import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.services.MusicService
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable.isActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -54,7 +57,8 @@ data class PlayerUiState(
     val dominantColors: List<Color> = listOf(Color.DarkGray, Color.Black),
     val currentAudioDevice: AudioOutputDevice? = null,
     val currentSongIndex: Int = 0,
-    val animationDirection: AnimationDirection = AnimationDirection.NONE
+    val animationDirection: AnimationDirection = AnimationDirection.NONE,
+    val isLoadingLyrics: Boolean = false
 )
 
 
@@ -65,6 +69,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         private const val FADE_DURATION_MS = 500L // Durasi fade dalam milidetik
         private const val FADE_INTERVAL_MS = 20L  // Seberapa sering volume diupdate
     }
+
+    private var fetchLyricsJob: Job? = null
 
     // variabel untuk playsongat
     private var jumpJob: Job? = null
@@ -306,45 +312,82 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         positionJob = null
     }
 
-    private fun fetchFullSongDetails(songId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+    private fun fetchFullSongDetails(songId: String, forceUpdate: Boolean = false) {
+        // 1. CEK ANTI-SPAM:
+        // Jika sedang loading lagu yang SAMA, hentikan request baru (Hemat Bandwidth!)
+        if (fetchLyricsJob?.isActive == true && !forceUpdate) {
+            // Kita cek apakah job yang jalan itu untuk ID yang sama? (Simplifikasi: Asumsikan iya di context ini)
+            Log.d("DEBUG_PLAYER", "✋ SKIP: Request untuk ID $songId sedang berjalan. Jangan spam.")
+            return
+        }
+
+        // 2. BATALKAN JOB LAMA:
+        // Jika ada request lirik lagu SEBELUMNYA yang belum kelar, matikan!
+        fetchLyricsJob?.cancel()
+
+        fetchLyricsJob = viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLoadingLyrics = true) }
+
             try {
-                // Cek dulu, apakah data sekarang liriknya sudah ada?
-                // Kalau sudah ada (misal hasil fetch sebelumnya), gak usah fetch lagi biar hemat.
-                val currentSongData = _uiState.value.currentSong?.song
-                if (currentSongData?.id == songId && !currentSongData.lyrics.isNullOrBlank()) {
-                    Log.d("PlayMusicViewModel", "Lirik sudah ada di cache memory, skip fetch.")
+                val currentSongState = _uiState.value.currentSong
+                Log.d("DEBUG_PLAYER", "🔍 FETCH REQ: Mencari ID '$songId'")
+
+                // Cek apakah ID-nya valid?
+                if (songId.isBlank()) {
+                    Log.e("DEBUG_PLAYER", "❌ FETCH ERROR: ID Lagu kosong/invalid!")
                     return@launch
                 }
 
-                Log.d("PlayMusicViewModel", "Fetching FULL details for song ID: $songId")
+                // Cek Cache (Logic sama seperti sebelumnya)
+                if (!forceUpdate && currentSongState?.song?.id == songId && !currentSongState.song.lyrics.isNullOrBlank()) {
+                    Log.d("DEBUG_PLAYER", "🛑 SKIP FETCH: Lirik sudah ada.")
+                    return@launch
+                }
 
-                // Request ke Supabase: Ambil satu baris penuh berdasarkan ID
+                Log.d("DEBUG_PLAYER", "🚀 START FETCH: Query Supabase...")
+
+                // --- PERBAIKAN QUERY SUPABASE ---
+                // Menggunakan decodeSingleOrNull agar tidak crash jika data kosong
                 val fullSongData = SupabaseManager.client
                     .from("songs")
-                    .select {
-                        filter {
-                            eq("id", songId)
-                        }
+                    .select(columns = Columns.list("id", "lyrics", "uploader_user_id")) {
+                        filter { eq("id", songId) }
                     }
-                    .decodeSingle<Song>() // Ini akan mengisi lyrics, uploader_id, created_at, dll
+                    .decodeSingleOrNull<Song>()
 
-                // Update UI State dengan data lengkap
+                // Cek apakah job ini dibatalkan di tengah jalan?
+                ensureActive()
+
+                if (fullSongData == null) {
+                    Log.e("DEBUG_PLAYER", "❌ FETCH GAGAL: Lagu dengan ID '$songId' TIDAK DITEMUKAN di database 'songs'.")
+                    return@launch
+                }
+
+                Log.d("DEBUG_PLAYER", "📦 DATA DITERIMA: ID=${fullSongData.id}, Lyrics Length=${fullSongData.lyrics?.length ?: 0}")
+
                 _uiState.update { state ->
-                    // Pastikan lagu yang sedang diputar MASIH lagu yang sama dengan yang kita fetch
-                    // (Menghindari race condition kalau user ganti lagu cepat banget)
                     if (state.currentSong?.song?.id == songId) {
+                        Log.d("DEBUG_PLAYER", "✅ UPDATE STATE: Memasukkan lirik ke UI.")
                         state.copy(
-                            currentSong = state.currentSong.copy(song = fullSongData)
+                            isLoadingLyrics = false,
+                            currentSong = state.currentSong.copy(
+                                song = state.currentSong.song.copy(
+                                    lyrics = fullSongData.lyrics,
+                                    uploaderUserId = fullSongData.uploaderUserId
+                                )
+                            )
                         )
                     } else {
-                        state
+                        Log.w("DEBUG_PLAYER", "⚠️ UPDATE SKIPPED: User sudah ganti lagu.")
+                        state.copy(isLoadingLyrics = false)
                     }
                 }
-                Log.d("PlayMusicViewModel", "Full details updated (Lyrics: ${fullSongData.lyrics?.take(20)}...)")
 
             } catch (e: Exception) {
-                Log.e("PlayMusicViewModel", "Failed to fetch full song details: ${e.message}")
+                // Log exception lengkap biar tau jenis errornya (Network/Serialization/dll)
+                Log.e("DEBUG_PLAYER", "❌ FETCH EXCEPTION: ${e.javaClass.simpleName} - ${e.message}")
+                _uiState.update { it.copy(isLoadingLyrics = false) }
+                e.printStackTrace()
             }
         }
     }
@@ -738,6 +781,21 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             val newItem = createMediaItem(song, newUrl)
             controller.replaceMediaItem(index, newItem)
             Log.d("Remusic", "Berhasil update link streaming untuk lagu index: $index")
+        }
+    }
+
+    fun refreshCurrentSongData() {
+        val currentSong = _uiState.value.currentSong
+
+        // 1. Cek Data Lirik: Kalau lagu ada tapi lirik kosong, paksa ambil dari database
+        if (currentSong != null && currentSong.song.lyrics.isNullOrBlank()) {
+            Log.d("DEBUG_PLAYER","🔄 REFRESH: UI baru bangun, lirik kosong. Mengambil ulang detail lagu...")
+            fetchFullSongDetails(currentSong.song.id)
+        }
+
+        // 2. Cek Posisi: Pastikan seekbar jalan lagi
+        mediaController?.let {
+            if (it.isPlaying) startUpdatingPosition()
         }
     }
 

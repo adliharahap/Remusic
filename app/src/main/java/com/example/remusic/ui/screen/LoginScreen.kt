@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.remusic.R
@@ -129,7 +130,8 @@ fun LoginScreen(onGoogleSignInClick: () -> Unit) {
                 color = Color.White.copy(0.8f),
                 modifier = Modifier.padding(bottom = 10.dp),
                 fontSize = 17.sp,
-                fontFamily = AppFont.PoppinsMedium
+                fontFamily = AppFont.Poppins,
+                fontWeight = FontWeight.Medium,
             )
         }
 
