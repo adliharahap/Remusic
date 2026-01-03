@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,9 +55,14 @@ fun QueueScreen(
     // --- State untuk LazyColumn dan Drag-and-Drop ---
     val listState = rememberLazyListState()
 
+    //untuk memberikan padding top
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize()
+            .padding(top = screenHeight * 0.1f)
     ) {
         // Bagian Header
         item {
