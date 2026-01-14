@@ -6,6 +6,7 @@ plugins {
     id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin") version "2.0.1"
     id("kotlin-parcelize")
     kotlin("plugin.serialization") version "2.1.0"
+    id("com.google.devtools.ksp") version "2.1.0-1.0.29"
 }
 
 android {
@@ -64,6 +65,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.foundation.layout.android)
+    implementation(libs.androidx.compose.ui.graphics)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -81,6 +83,9 @@ dependencies {
     implementation(libs.androidx.media3.session)
     // UI komponen player khusus Jetpack Compose (progress bar, tombol, dsb)
     implementation(libs.androidx.media3.ui.compose)
+    // untuk canvas video
+    implementation("androidx.media3:media3-ui:1.9.0")
+    implementation("androidx.media3:media3-common:1.9.0")
     // Untuk streaming audio/video dari internet (via HTTP/HTTPS)
     implementation("androidx.media3:media3-datasource-okhttp:1.9.0")
     // Menyimpan data lokal seperti setting, tema, atau last played (pengganti SharedPreferences)
@@ -92,7 +97,7 @@ dependencies {
     //ambil gambar dari http
     implementation("io.coil-kt:coil-compose:2.7.0")
     // Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     // (Opsional) Firebase Analytics
      implementation("com.google.firebase:firebase-analytics")
     // Dependensi untuk Firebase Authentication
@@ -106,7 +111,7 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     // Tambahkan Supabase BOM (Bill of Materials)
-    implementation(platform("io.github.jan-tennert.supabase:bom:3.2.6"))
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.3.0"))
     // Tambahkan modul-modul Supabase yang dibutuhkan
     implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
@@ -128,4 +133,10 @@ dependencies {
 
     // Opsional: Untuk logging request (biar kelihatan di Logcat kalau ada error)
     implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
+
+    // --- ROOM DATABASE (SQLITE) ---
+    val roomVersion = "2.8.4"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion") // Wajib buat Coroutines/Flow
+    ksp("androidx.room:room-compiler:$roomVersion") // Pakai ksp, bukan kapt/annotationProcessor
 }

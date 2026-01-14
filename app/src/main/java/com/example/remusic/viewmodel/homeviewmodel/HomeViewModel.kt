@@ -42,6 +42,7 @@ class HomeViewModel : ViewModel() {
                             "audio_url",
                             "cover_url",
                             "artist_id",
+                            "canvas_url",
                             "duration_ms",
                             "telegram_audio_file_id",
                         )

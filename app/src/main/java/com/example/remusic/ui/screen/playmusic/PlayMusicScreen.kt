@@ -142,30 +142,6 @@ fun PlayMusicScreen(
     ) {
         val screenHeight = maxHeight
 
-        // LOGIKA TRANSPARANSI HEADER
-        // 10% dari tinggi layar dalam pixel
-        val scrollThresholdPx = with(density) { (screenHeight * 0.1f).toPx() }
-
-        // Hitung alpha berdasarkan scroll saat ini
-        val headerAlpha by remember {
-            derivedStateOf {
-                // Hanya aktifkan efek ini jika sedang di halaman NowPlaying (Page 1)
-                if (pagerState.currentPage == 1) {
-                    val scrollPos = nowPlayingScrollState.value
-                    // Hitung progress 0.0 -> 1.0 berdasarkan threshold 10%
-                    // Jika scrollPos >= threshold (10%), hasil = 1.0 (Full Color)
-                    // Jika scrollPos < threshold, hasil proporsional (0.7 di 7% = 0.7 alpha)
-                    (scrollPos / scrollThresholdPx).coerceIn(0f, 1f)
-                } else {
-                    0f // Default transparan untuk halaman lain (atau ubah jadi 1f jika mau solid)
-                }
-            }
-        }
-
-        // Warna background header (menggunakan warna dominan atas dengan alpha dinamis)
-        val headerBackgroundColor = animatedTopColor.copy(alpha = headerAlpha)
-
-
         // ==========================================
         // LAYER 1 (BELAKANG): PAGER FULL SCREEN
         // ==========================================
@@ -227,8 +203,6 @@ fun PlayMusicScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter) // Paksa nempel di atas tengah
                 .fillMaxWidth()
-                // APLIKASIKAN BACKGROUND DINAMIS DI SINI
-                .background(headerBackgroundColor)
                 // --- UKUR TINGGI DI SINI ---
                 .onGloballyPositioned { coordinates ->
                     // Konversi pixel ke dp
