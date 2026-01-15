@@ -8,23 +8,45 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -35,6 +57,8 @@ import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.UserManager
 import com.example.remusic.navigation.AppNavGraph
 import com.example.remusic.ui.theme.ReMusicTheme
+import com.example.remusic.utils.ConnectivityObserver
+import com.example.remusic.utils.NetworkConnectivityObserver
 import com.example.remusic.utils.NotificationUtils
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -48,6 +72,9 @@ class MainActivity : ComponentActivity() {
     // Hapus variable auth: FirebaseAuth
     private lateinit var credentialManager: CredentialManager
 
+    // Inisialisasi Observer
+    private lateinit var connectivityObserver: ConnectivityObserver
+
     private val playMusicViewModel: PlayMusicViewModel by viewModels()
 
     private var showDialog by mutableStateOf(false)
@@ -55,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        connectivityObserver = NetworkConnectivityObserver(applicationContext)
         SupabaseManager.initialize(applicationContext)
 
         credentialManager = CredentialManager.create(this)
@@ -78,6 +106,11 @@ class MainActivity : ComponentActivity() {
 
                 // State untuk loading screen (biar layar gak putih doang)
                 var isLoadingSession by remember { mutableStateOf(true) }
+
+                // Ambil status koneksi secara real-time
+                val status by connectivityObserver.observe().collectAsState(
+                    initial = ConnectivityObserver.Status.Available
+                )
 
                 // LOGIKA BARU: Cek Login secara Asynchronous
                 LaunchedEffect (Unit) {
@@ -132,13 +165,25 @@ class MainActivity : ComponentActivity() {
                                 notificationRoute = notificationRoute,
                                 playMusicViewModel = playMusicViewModel
                             )
-                        }
 
-                        LoginErrorDialog(
-                            show = showDialog,
-                            errorMessage = errorMessage,
-                            onDismiss = { showDialog = false }
-                        )
+                            // 2. Layer Tengah: Notifikasi Offline (Overlay)
+                            if (status != ConnectivityObserver.Status.Available) {
+                                OfflineBanner(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 80.dp)
+                                )
+                            }
+
+                            // 3. Layer Paling Atas: Dialog Error
+                            if (showDialog) {
+                                LoginErrorDialog(
+                                    show = showDialog,
+                                    errorMessage = errorMessage,
+                                    onDismiss = { showDialog = false }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -228,6 +273,46 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+fun OfflineBanner(modifier: Modifier = Modifier) {
+    // Animasi biar munculnya halus (Slide dari bawah + Fade In)
+    AnimatedVisibility(
+        visible = true,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier
+    ) {
+        Surface(
+            color = Color.Red.copy(alpha = 0.9f), // Warna Merah Transparan
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .height(40.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.WifiOff, // Ikon Wifi Mati
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Anda sedang Offline",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

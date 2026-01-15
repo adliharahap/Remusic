@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.ComponentName
 import android.util.Log
 import androidx.annotation.OptIn
-import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -18,11 +17,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.local.MusicDatabase
 import com.example.remusic.data.model.AudioOutputDevice
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
-import com.example.remusic.data.network.RetrofitInstance
 import com.example.remusic.data.preferences.UserPreferencesRepository
+import com.example.remusic.data.repository.MusicRepository
 import com.example.remusic.services.MusicService
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import io.github.jan.supabase.postgrest.from
@@ -83,7 +83,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(PlayerUiState())
 
     // Cache memory: Key = TelegramFileID, Value = Link Streaming Direct
-    private val urlCache = mutableMapOf<String, String>()
+    private val database = MusicDatabase.getDatabase(application)
+    private val repository = MusicRepository(database.musicDao())
 
     val uiState = _uiState.asStateFlow()
 
@@ -199,24 +200,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                 animationDirection = direction
                             )
                         }
-
-                        val teleId = matchedSong.song.telegramFileId
-                        val isCached = urlCache.containsKey(teleId)
-                        val currentUrl = urlCache[teleId]
-
-                        Log.d("DEBUG_PLAYER", "   🎵 Lagu Terdeteksi: ${matchedSong.song.title}")
-                        Log.d("DEBUG_PLAYER", "   🆔 Telegram ID: $teleId")
-
-                        if (isCached) {
-                            Log.d("DEBUG_PLAYER", "   ✅ CACHE HIT: URL Stream sudah siap! ($currentUrl)")
-                        } else {
-                            Log.w("DEBUG_PLAYER", "   ⚠️ CACHE MISS: URL Stream BELUM ADA di cache!")
-                            // Jika ini muncul saat klik manual, itulah penyebab macetnya.
-                            // Player mencoba memutar URL kosong/mentah dari database.
-                        }
-
-                        // 2. Fetch Detail Lengkap (Lirik, Uploader, dll)
-                        // Karena matchedSong dari playlist datanya masih "Parsial"
+                        Log.d("DEBUG_PLAYER", "🎵 Lagu Terdeteksi: ${matchedSong.song.title}")
                         fetchFullSongDetails(matchedSong.song.id)
 
                         // --- LOGIKA WARNA DITAMBAHKAN DI SINI JUGA ---
@@ -235,7 +219,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         _uiState.update {
                             it.copy(
                                 currentSong = SongWithArtist(
-                                    song = com.example.remusic.data.model.Song(
+                                    song = Song(
                                         id = mediaItem.mediaId,
                                         title = mediaItem.mediaMetadata.title?.toString() ?: "Unknown",
                                         audioUrl = mediaItem.localConfiguration?.uri.toString(),
@@ -344,16 +328,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                Log.d("DEBUG_PLAYER", "🚀 START FETCH: Query Supabase...")
+                Log.d("DEBUG_PLAYER", "🔍 LYRICS: Meminta lirik ke Repository untuk ID: $songId")
 
-                // --- PERBAIKAN QUERY SUPABASE ---
-                // Menggunakan decodeSingleOrNull agar tidak crash jika data kosong
-                val fullSongData = SupabaseManager.client
-                    .from("songs")
-                    .select(columns = Columns.list("id", "lyrics", "uploader_user_id")) {
-                        filter { eq("id", songId) }
-                    }
-                    .decodeSingleOrNull<Song>()
+                // Fungsi ini akan otomatis: Cek SQLite -> Kalau kosong -> Ambil Supabase -> Simpan SQLite
+                val fullSongData = repository.getFullSongDetails(songId)
 
                 // Cek apakah job ini dibatalkan di tengah jalan?
                 ensureActive()
@@ -373,7 +351,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             currentSong = state.currentSong.copy(
                                 song = state.currentSong.song.copy(
                                     lyrics = fullSongData.lyrics,
-                                    uploaderUserId = fullSongData.uploaderUserId
+                                    uploaderUserId = fullSongData.uploaderUserId,
                                 )
                             )
                         )
@@ -415,7 +393,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 3. MULAI PROSES ASYNC (Resolve URL & Warna)
         // Kita bungkus semua proses mapping & player setup di sini
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
 
             // A. Ambil Lagu yang mau dimainkan
             val songToPlay = songs.getOrNull(startIndex) ?: return@launch
@@ -472,7 +450,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
             // E. Set ke MediaController (Pindah ke Main Thread)
             // Wajib pakai withContext(Main) karena menyentuh UI/Player
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
                 Log.d("DEBUG_PLAYER", "▶ PLAYER: Menyiapkan dan memutar playlist...")
                 mediaController?.apply {
                     setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
@@ -617,47 +595,24 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 2. MULAI JOB BARU
         jumpJob = viewModelScope.launch(Dispatchers.IO) {
+            Log.d("DEBUG_PLAYER", "👇 CLICK MANUAL: Meminta URL untuk index $index...")
 
-            // Cek apakah URL valid sudah ada di Cache?
-            val telegramId = targetSong.song.telegramFileId
-            val isCached = !telegramId.isNullOrBlank() && urlCache.containsKey(telegramId)
+            val newUrl = resolveSongUrl(targetSong)
 
-            Log.d("DEBUG_PLAYER", "   ❓ Status Cache: $isCached")
+            // Update player dengan URL yang didapat (baik dari cache DB atau Internet)
+            updateMediaItemUrlInPlayer(index, targetSong, newUrl)
 
-            if (!isCached) {
-                // JIKA BELUM ADA DI CACHE -> REQUEST API DULU!
-                Log.d("DEBUG_PLAYER", "   ⏳ WAITING: URL belum siap, meminta link stream baru ke API...")
-
-                // Resolve URL (Request ke Vercel/Telegram)
-                val newUrl = resolveSongUrl(targetSong)
-
-                Log.d("DEBUG_PLAYER", "   ✅ URL RESOLVED: $newUrl")
-                Log.d("DEBUG_PLAYER", "   🔄 UPDATE PLAYER: Mengganti URL dummy dengan URL asli...")
-
-                // Update URL di Playlist Player agar saat di-seek nanti tidak error
-                updateMediaItemUrlInPlayer(index, targetSong, newUrl)
-            } else {
-                Log.d("DEBUG_PLAYER", "   🚀 READY: URL sudah ada di cache, langsung gas!")
-            }
-
-            // 3. SETELAH URL SIAP, BARU SURUH PLAYER PINDAH
             withContext(Dispatchers.Main) {
-                // Cek lagi apakah index masih valid (siapa tau playlist berubah saat loading)
                 if (index < controller.mediaItemCount) {
-                    Log.d("DEBUG_PLAYER", "   ▶ SEEK & PLAY: Melompat ke index $index sekarang.")
                     controller.seekTo(index, C.TIME_UNSET)
                     controller.play()
-                } else {
-                    Log.e("DEBUG_PLAYER", "   ❌ ERROR: Index $index sudah tidak valid saat mau seek.")
                 }
             }
 
-            // 4. Update data tambahan (Lirik & Warna) sambil jalan
+            // Update data tambahan (Lirik & Warna)
             fetchFullSongDetails(targetSong.song.id)
             val colors = extractGradientColorsFromImageUrl(getApplication(), targetSong.song.coverUrl ?: "")
             _uiState.update { it.copy(dominantColors = colors) }
-
-            Log.d("DEBUG_PLAYER", "==================================================")
         }
     }
 
@@ -670,68 +625,23 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun resolveSongUrl(song: SongWithArtist): String {
-        val title = song.song.title
-        val telegramId = song.song.telegramFileId
-        val originalUrl = song.song.audioUrl
+        // Logika disederhanakan: Serahkan ke Repository
+        // Repository akan otomatis cek SQLite -> Cek Expired -> Request API jika perlu
+        val finalUrl = repository.getPlayableUrl(
+            songId = song.song.id,
+            title = song.song.title,
+            telegramFileId = song.song.telegramFileId,
+            fallbackUrl = song.song.audioUrl
+        )
 
-        Log.d("DEBUG_PLAYER", "🔍 RESOLVE: Mulai mencari link untuk lagu: '$title'")
-        Log.d("DEBUG_PLAYER", "   - ID Telegram: $telegramId")
-        Log.d("DEBUG_PLAYER", "   - URL Database (Fallback): $originalUrl")
-
-        // 1. Cek: Apakah lagu ini punya ID Telegram?
-        if (!telegramId.isNullOrBlank()) {
-
-            // 2. Cek Cache: Udah pernah request belum?
-            if (urlCache.containsKey(telegramId)) {
-                val cachedUrl = urlCache[telegramId]!!
-
-                // LOG INI MEMBUKTIKAN KAMU HEMAT KUOTA & WAKTU
-                Log.d("DEBUG_PLAYER", "   🧠 MEMORY CHECK: Data ditemukan di RAM Cache!")
-                Log.d("DEBUG_PLAYER", "   🛑 API CALL: SKIPPED (Tidak ada request ke server)")
-                Log.d("DEBUG_PLAYER", "   ✅ CACHE HIT: Menggunakan URL yang sudah tersimpan.")
-                Log.d("DEBUG_PLAYER", "   -> URL: $cachedUrl")
-                Log.d("DEBUG_PLAYER", "--------------------------------------------------")
-                return cachedUrl
-            }
-
-            Log.d("DEBUG_PLAYER", "   💨 MEMORY CHECK: Kosong/Belum ada.")
-            Log.d("DEBUG_PLAYER", "   🌐 NETWORK: Membuka koneksi ke API Vercel...")
-
-            // 3. Kalau belum, Request ke Vercel (Panggil Retrofit)
-            try {
-                Log.d("DEBUG_PLAYER", "   🌐 NETWORK: Requesting new link from Vercel API...")
-                // Pastikan RetrofitInstance sudah dibuat sesuai langkah sebelumnya
-                val response = RetrofitInstance.api.getStreamUrl(telegramId)
-
-                if (response.success && !response.url.isNullOrBlank()) {
-                    urlCache[telegramId] = response.url
-
-                    Log.d("DEBUG_PLAYER", "   ✅ API SUKSES: Link baru didapatkan.")
-                    Log.d("DEBUG_PLAYER", "   💾 CACHING: Menyimpan URL ke RAM agar request berikutnya instan.")
-                    Log.d("DEBUG_PLAYER", "   -> URL: ${response.url}")
-                    Log.d("DEBUG_PLAYER", "--------------------------------------------------")
-
-                    return response.url
-                }else {
-                    Log.e("DEBUG_PLAYER", "   ❌ API GAGAL: Response success=false atau url kosong.")
-                }
-            } catch (e: Exception) {
-                Log.e("DEBUG_PLAYER", "   ❌ API ERROR: ${e.message}")
-            }
-        }else {
-            Log.w("DEBUG_PLAYER", "   ⚠️ SKIP: Tidak ada Telegram ID.")
-        }
-
-        // Fallback
-        Log.w("DEBUG_PLAYER", "   ⚠️ FALLBACK: Menggunakan URL asli dari database Supabase.")
-        Log.d("DEBUG_PLAYER", "   -> URL PLAY: $originalUrl")
-        Log.d("DEBUG_PLAYER", "--------------------------------------------------")
-        return song.song.audioUrl ?: ""
+        Log.d("PlayMusicViewModel", "✅ RESOLVED URL: $finalUrl")
+        return finalUrl
     }
 
     // --- [TAMBAHKAN 3 FUNGSI INI DI PALING BAWAH] ---
 
     // 1. Helper buat bikin MediaItem biar gak duplikat kode
+    @OptIn(UnstableApi::class)
     private fun createMediaItem(data: SongWithArtist, streamUrl: String): MediaItem {
         val meta = MediaMetadata.Builder()
             .setTitle(data.song.title)
@@ -742,6 +652,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         return MediaItem.Builder()
             .setMediaId(data.song.id)
             .setUri(streamUrl) // URL bisa dari Telegram atau Supabase
+            .setCustomCacheKey(data.song.id)
             .setMediaMetadata(meta)
             .build()
     }
@@ -756,15 +667,19 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         val targetSong = playlist[index]
 
         viewModelScope.launch(Dispatchers.IO) {
+            // ⏳ DELAY PENTING: Tunggu 2 detik!
+            // Biarkan lagu utama loading dulu sampai selesai, baru kita urus background.
+            delay(2000)
+
+            // Cek lagi (siapa tau user udah ganti lagu dalam 2 detik tadi)
+            if (index == _uiState.value.currentSongIndex) return@launch
+
             // Cek apakah lagu ini punya Telegram ID dan BELUM ada di Cache?
-            if (!targetSong.song.telegramFileId.isNullOrBlank() &&
-                !urlCache.containsKey(targetSong.song.telegramFileId)) {
+            if (!targetSong.song.telegramFileId.isNullOrBlank()) {
+                Log.d("PlayMusicViewModel", "🚀 PRE-FETCH START: Menyiapkan lagu tetangga (Index $index): ${targetSong.song.title}")
 
-                Log.d("DEBUG_PLAYER", "🔮 PRE-FETCH: Menyiapkan lagu index $index ('${targetSong.song.title}')...")
+                val newUrl = resolveSongUrl(targetSong)
 
-                val newUrl = resolveSongUrl(targetSong) // Request API Vercel
-
-                // Kalau URL berhasil didapat, update player diam-diam
                 if (newUrl != targetSong.song.audioUrl) {
                     updateMediaItemUrlInPlayer(index, targetSong, newUrl)
                 }
@@ -774,7 +689,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     // 3. Update Playlist ExoPlayer Diam-diam
     private suspend fun updateMediaItemUrlInPlayer(index: Int, song: SongWithArtist, newUrl: String) {
-        withContext(kotlinx.coroutines.Dispatchers.Main) {
+        withContext(Dispatchers.Main) {
             val controller = mediaController ?: return@withContext
             if (index >= controller.mediaItemCount) return@withContext
 

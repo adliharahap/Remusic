@@ -129,15 +129,13 @@ fun LyricsScreen(
         // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
         Crossfade(
             targetState = when {
-                // PRIORITAS 1: Tampilkan Skeleton JIKA:
-                // a. Sedang Loading (dari VM)
-                // b. ATAU Lirik kosong & lagu baru mulai (< 2 detik) -> Ini "Safety Buffer" anti-kedip
-                isLoading || (lyrics.isEmpty() && currentPosition < 2000L) -> "LOADING"
+                // HANYA Loading kalau statusnya BENAR-BENAR loading
+                isLoading -> "LOADING"
 
-                // PRIORITAS 2: Lirik Kosong -> Empty View
+                // Kalau tidak loading, tapi datanya kosong -> Empty View
                 lyrics.isEmpty() -> "EMPTY"
 
-                // PRIORITAS 3: Lirik Ada -> Content
+                // Sisanya -> Konten
                 else -> "CONTENT"
             },
             animationSpec = tween(500), // Durasi animasi fade (0.5 detik)

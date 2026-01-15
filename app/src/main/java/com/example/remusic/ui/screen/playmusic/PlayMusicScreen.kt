@@ -93,7 +93,7 @@ fun PlayMusicScreen(
     }
 
     // 2. Monitor Lyrics: Pass raw lyrics from PlayMusicVM to LyricsVM
-    LaunchedEffect(uiState.currentSong?.song?.lyrics) {
+    LaunchedEffect(uiState.currentSong?.song?.id, uiState.currentSong?.song?.lyrics) {
         val rawLyrics = uiState.currentSong?.song?.lyrics
         if (!rawLyrics.isNullOrBlank()) {
             lyricsViewModel.loadLyrics(rawLyrics)
