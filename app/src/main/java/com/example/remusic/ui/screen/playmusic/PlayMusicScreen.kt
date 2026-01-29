@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -54,6 +55,7 @@ import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayMusicScreen(
     playMusicViewModel: PlayMusicViewModel,
@@ -134,6 +136,10 @@ fun PlayMusicScreen(
     val density = LocalDensity.current
     var headerHeight by remember { mutableStateOf(120.dp) }
 
+    // --- SLEEP TIMER STATE ---
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
+    val sleepTimerSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+
     // Gunakan BoxWithConstraints di root untuk mendapatkan tinggi layar (maxHeight)
     BoxWithConstraints (
         modifier = Modifier
@@ -170,6 +176,7 @@ fun PlayMusicScreen(
                     onPrevClick = { playMusicViewModel.previousSong() },
                     onShuffleClick = { playMusicViewModel.toggleShuffleMode() },
                     onRepeatClick = { playMusicViewModel.cycleRepeatMode() },
+                    onTimerClick = { showSleepTimerSheet = true },
                     posterAnimation = uiState.currentSongIndex,
                     posterAnimationDirection = uiState.animationDirection,
                     onSeek = { positionFraction ->
@@ -288,5 +295,21 @@ fun PlayMusicScreen(
                 }
             }
         }
+    }
+
+    if (showSleepTimerSheet) {
+        SleepTimerBottomSheet(
+            sheetState = sleepTimerSheetState,
+            isTimerActive = uiState.isSleepTimerActive,
+            dominantColors = uiState.dominantColors,
+            onDismiss = { showSleepTimerSheet = false },
+            onSetTimer = { minutes ->
+                playMusicViewModel.setSleepTimer(minutes)
+                // Sheet will be dismissed by onDismiss call inside the sheet logic or user action
+            },
+            onCancelTimer = {
+                playMusicViewModel.cancelSleepTimer()
+            }
+        )
     }
 }

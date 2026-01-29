@@ -11,8 +11,8 @@ import com.example.remusic.data.SupabaseManager
 
 class MusicRepository(private val musicDao: MusicDao) {
 
-    // Tag Log biar gampang difilter: ketik "FLOW_LOG" di Logcat
-    private val TAG = "FLOW_LOG"
+    // Tag Log biar gampang difilter: ketik "DEBUG_PLAYER" di Logcat
+    private val TAG = "DEBUG_PLAYER"
 
     // --- LOGIC 1: RESOLVE URL (SMART CACHE) ---
     suspend fun getPlayableUrl(songId: String, title: String, telegramFileId: String?, fallbackUrl: String?): String {
@@ -46,6 +46,7 @@ class MusicRepository(private val musicDao: MusicDao) {
 
             musicDao.insertSong(cacheDataToSave)
             Log.d(TAG, "💾 [SUCCESS] Lagu Non-Telegram berhasil dicatat di Database (Untuk History/Lirik).")
+            Log.d(TAG, "🎵 [AUDIO SOURCE] CACHE (Offline/Direct) - Non Telegram")
             // ---------------------------------------------
 
             return directUrl
@@ -69,7 +70,7 @@ class MusicRepository(private val musicDao: MusicDao) {
                     Log.d(TAG, "✅ [CACHE HIT] URL Valid ditemukan!")
                     Log.d(TAG, "   ⏳ Status: Masih berlaku (Sisa $timeLeft menit)")
                     Log.d(TAG, "   🔗 Link: ${cachedSong.telegramDirectUrl}")
-//                    Log.d(TAG, "   🔗 Data: ${cachedSong}")
+                    Log.d(TAG, "🎵 [AUDIO SOURCE] CACHE (Offline/Direct)")
                     Log.d(TAG, "================================================================")
                     return cachedSong.telegramDirectUrl
                 } else {
@@ -87,36 +88,57 @@ class MusicRepository(private val musicDao: MusicDao) {
         // 4. Jika Cache Miss/Expired -> Request Baru ke Vercel/API
         Log.d(TAG, "3️⃣ [NETWORK] Membuka koneksi ke API Vercel/Telegram...")
         try {
-            val response = RetrofitInstance.api.getStreamUrl(telegramFileId)
+            val response = RetrofitInstance.api.getStreamUrl(songId, telegramFileId)
 
             if (response.success && !response.url.isNullOrBlank()) {
                 val newUrl = response.url
-                // Set Expired 1 jam dari sekarang
-                val expiryTime = System.currentTimeMillis() + (60 * 60 * 1000)
+                // Set Expired sesuai response API (atau default 1 jam)
+                val expiryTime = try {
+                    if (response.expires_at != null) {
+                        val time = java.time.Instant.parse(response.expires_at).toEpochMilli()
+                        Log.d(TAG, "⚠️ [DATE PARSE SUCCESS] Parse tanggal berhasil: ${response.expires_at}.")
+                        time
+                    } else {
+                        Log.d(TAG, "⚠️ [DATE PARSE SUCCESS] Parse tanggal gagal: ${response.expires_at}. Default 1 jam.")
+                        System.currentTimeMillis() + (60 * 60 * 1000)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "⚠️ [DATE PARSE FAIL] Gagal parse tanggal: ${response.expires_at}. Default 1 jam.")
+                    System.currentTimeMillis() + (60 * 60 * 1000)
+                }
 
                 // 5. Simpan/Update ke SQLite
                 Log.d(TAG, "4️⃣ [DB SAVE] Menyimpan data baru ke SQLite...")
 
-                // Kita gunakan copy() kalau data sudah ada, atau buat baru kalau belum
-                val newCacheData = cachedSong?.copy(
-                    telegramDirectUrl = newUrl,
-                    urlExpiryTime = expiryTime,
-                    lastPlayedAt = System.currentTimeMillis()
-                ) ?: CachedSong(
-                    id = songId,
-                    title = "Loading...", // Placeholder, nanti diupdate fetchFullDetails
-                    uploaderUserId = null,
-                    artistName = "Unknown",
-                    coverUrl = null,
-                    lyrics = null,
-                    telegramFileId = telegramFileId,
-                    telegramDirectUrl = newUrl,
-                    urlExpiryTime = expiryTime
-                )
+                if (cachedSong != null) {
+                    // PARTIAL UPDATE: Hanya update URL & Expiry
+                    musicDao.updateSongUrl(
+                        id = songId,
+                        url = newUrl,
+                        expiry = expiryTime,
+                        lastPlayed = System.currentTimeMillis()
+                    )
+                    Log.d(TAG, "💾 [SUCCESS] URL Streaming diperbarui (Partial Update).")
+                } else {
+                    // INSERT BARU
+                    val newCacheData = CachedSong(
+                        id = songId,
+                        title = "Loading...",
+                        uploaderUserId = null,
+                        artistName = "Unknown",
+                        coverUrl = null,
+                        lyrics = null,
+                        telegramFileId = telegramFileId,
+                        telegramDirectUrl = newUrl,
+                        urlExpiryTime = expiryTime
+                    )
+                    musicDao.insertSong(newCacheData)
+                    Log.d(TAG, "💾 [SUCCESS] Lagu baru disimpan ke Database.")
+                }
 
-                musicDao.insertSong(newCacheData)
-                Log.d(TAG, "💾 [SUCCESS] URL Streaming berhasil diperbarui di Database!")
                 Log.d(TAG, "   🔗 New URL: $newUrl")
+                Log.d(TAG, "   🌐 SOURCE: NETWORK REQUEST (Vercel)")
+                Log.d(TAG, "📡 [AUDIO SOURCE] STREAMING (Network)")
                 Log.d(TAG, "================================================================")
 
                 return newUrl
@@ -129,6 +151,7 @@ class MusicRepository(private val musicDao: MusicDao) {
 
         // 6. Jika semua gagal, kembalikan fallback
         Log.e(TAG, "💀 [FALLBACK] Semua metode gagal. Menggunakan URL asli dari Supabase.")
+        Log.d(TAG, "🎵 [AUDIO SOURCE] CACHE (Offline/Direct) - Fallback")
         return fallbackUrl ?: ""
     }
 
@@ -142,6 +165,7 @@ class MusicRepository(private val musicDao: MusicDao) {
         // Kalau sudah ada liriknya, return langsung (OFFLINE MODE)
         if (cached != null && !cached.lyrics.isNullOrBlank()) {
             Log.d(TAG, "📜 [LYRICS CACHE] Lirik ditemukan di SQLite (Mode Offline). Tidak perlu internet.")
+            Log.d(TAG, "📜 [LYRICS SOURCE] CACHE (Offline)")
             return cached
         }
 
@@ -161,24 +185,41 @@ class MusicRepository(private val musicDao: MusicDao) {
 
                 val oldData = musicDao.getSongById(songId)
 
-                val updatedData = oldData?.copy(
-                    title = supabaseSong.title,
-                    lyrics = supabaseSong.lyrics,
-                    coverUrl = supabaseSong.coverUrl
-                ) ?: CachedSong(
-                    id = songId,
-                    title = supabaseSong.title,
-                    uploaderUserId = supabaseSong.uploaderUserId,
-                    artistName = "Unknown",
-                    coverUrl = supabaseSong.coverUrl,
-                    lyrics = supabaseSong.lyrics,
-                    telegramFileId = supabaseSong.telegramFileId,
-                    telegramDirectUrl = null // Jangan timpa URL streaming kalau ini object baru
-                )
-
-                musicDao.insertSong(updatedData)
-                Log.d(TAG, "💾 [DETAILS SAVED] Lirik & Detail berhasil disimpan ke cache lokal.")
-                return updatedData
+                if (oldData != null) {
+                    // PARTIAL UPDATE: Hanya update Detail (Judul, Lirik, Cover)
+                    musicDao.updateSongDetails(
+                        id = songId,
+                        title = supabaseSong.title,
+                        lyrics = supabaseSong.lyrics,
+                        cover = supabaseSong.coverUrl,
+                        uploaderId = supabaseSong.uploaderUserId
+                    )
+                    Log.d(TAG, "💾 [DETAILS SAVED] Detail lagu diperbarui (Partial Update).")
+                    
+                    // Return object gabungan untuk UI
+                    return oldData.copy(
+                        title = supabaseSong.title,
+                        lyrics = supabaseSong.lyrics,
+                        coverUrl = supabaseSong.coverUrl,
+                        uploaderUserId = supabaseSong.uploaderUserId
+                    )
+                } else {
+                    // INSERT BARU (Jarang terjadi kalau flow benar)
+                    val newData = CachedSong(
+                        id = songId,
+                        title = supabaseSong.title,
+                        uploaderUserId = supabaseSong.uploaderUserId,
+                        artistName = "Unknown",
+                        coverUrl = supabaseSong.coverUrl,
+                        lyrics = supabaseSong.lyrics,
+                        telegramFileId = supabaseSong.telegramFileId,
+                        telegramDirectUrl = null
+                    )
+                    musicDao.insertSong(newData)
+                    Log.d(TAG, "💾 [DETAILS SAVED] Detail lagu baru disimpan.")
+                    Log.d(TAG, "☁️ [LYRICS SOURCE] VERCEL/SUPABASE")
+                    return newData
+                }
             } else {
                 Log.w(TAG, "⚠️ [SUPABASE EMPTY] Lagu tidak ditemukan di server.")
             }

@@ -8,6 +8,7 @@ import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -46,7 +47,9 @@ class HomeViewModel : ViewModel() {
                             "duration_ms",
                             "telegram_audio_file_id",
                         )
-                    )
+                    ) {
+                        order(column = "created_at", order = Order.DESCENDING)
+                    }
                     .decodeList<Song>()
 
                 if (songs.isEmpty()) {

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,8 +42,6 @@ import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
@@ -52,7 +51,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -75,14 +73,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.example.remusic.R
-import com.example.remusic.data.model.Artist
-import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.components.MusicSlider
 import com.example.remusic.ui.theme.AppFont
@@ -106,6 +101,7 @@ fun NowPlaying(
     onPrevClick: () -> Unit,
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
+    onTimerClick: () -> Unit,
     onSeek: (Float) -> Unit
 ) {
     val context = LocalContext.current
@@ -186,7 +182,7 @@ fun NowPlaying(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Black.copy(0.4f))
+                                    .background(Color.Black.copy(0.3f))
                             )
 
                             Box(
@@ -212,7 +208,7 @@ fun NowPlaying(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .fillMaxHeight(0.3f)
+                                    .fillMaxHeight(0.32f)
                                     .align(Alignment.BottomCenter),
                                 verticalArrangement = Arrangement.Top,
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -220,12 +216,13 @@ fun NowPlaying(
                                 Row(
                                     modifier = Modifier
                                         .padding(horizontal = 16.dp, vertical = 16.dp)
-                                        .fillMaxWidth(),
+                                        .fillMaxWidth()
+                                        .heightIn(max = 50.dp),
                                 ) {
                                     AsyncImage(
                                         model = songWithArtist?.song?.coverUrl,
                                         contentDescription = "Cover Album",
-                                        modifier = Modifier
+                                        modifier = Modifier.padding(end = 10.dp)
                                             .width(50.dp)
                                             .aspectRatio(1f)
                                             .shadow(
@@ -239,13 +236,14 @@ fun NowPlaying(
                                         error = painterResource(id = R.drawable.img_placeholder)
                                     )
                                     Column(
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(0.7f).fillMaxHeight(),
+                                        verticalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
                                             text = songWithArtist?.song?.title ?: "Unknown Title",
                                             color = Color.White,
-                                            fontFamily = AppFont.RobotoBold,
-                                            fontSize = 20.sp,
+                                            fontFamily = AppFont.MontserratBold,
+                                            fontSize = 19.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier
@@ -257,21 +255,38 @@ fun NowPlaying(
                                                     repeatDelayMillis = 5000,   // delay di ujung sebelum loop
                                                     iterations = Int.MAX_VALUE, // scroll terus-menerus
                                                 )
-                                                .padding(start = 16.dp, bottom = 5.dp)
                                         )
                                         Text(
                                             text = songWithArtist?.artist?.name ?: "Unknown Artist",
                                             color = Color(0xCCFFFFFF),
-                                            fontFamily = AppFont.RobotoRegular,
+                                            fontFamily = AppFont.MontserratRegular,
                                             fontSize = 15.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier
-                                                .padding(start = 16.dp)
-                                                .fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(0.3f).fillMaxHeight().padding(start = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.FavoriteBorder,
+                                            "Fav",
+                                            Modifier.size(30.dp),
+                                            Color.White
+                                        )
+                                        Icon(
+                                            Icons.Outlined.Timer,
+                                            "Timer",
+                                            Modifier.size(30.dp).clickable { onTimerClick() },
+                                            Color.White
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.fillMaxWidth().height(10.dp))
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -302,13 +317,13 @@ fun NowPlaying(
                                     Text(
                                         text = formatDuration(currentPosition),
                                         color = Color.White,
-                                        fontFamily = AppFont.RobotoRegular,
+                                        fontFamily = AppFont.MontserratRegular,
                                         fontSize = 14.sp,
                                     )
                                     Text(
                                         text = formatDuration(totalDuration),
                                         color = Color.White,
-                                        fontFamily = AppFont.RobotoRegular,
+                                        fontFamily = AppFont.MontserratRegular,
                                         fontSize = 14.sp,
                                     )
                                 }
@@ -343,14 +358,14 @@ fun NowPlaying(
 
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
-                                            imageVector = Icons.Filled.SkipPrevious,
+                                            painter = painterResource(R.drawable.previous_svgrepo_com),
                                             contentDescription = "Prev",
                                             modifier = Modifier
-                                                .size(50.dp)
+                                                .size(40.dp)
                                                 .clickable { onPrevClick() },
                                             tint = Color.White
                                         )
-                                        Spacer(modifier = Modifier.width(22.dp))
+                                        Spacer(modifier = Modifier.width(30.dp))
                                         Icon(
                                             imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                                             contentDescription = "Play/Pause",
@@ -359,12 +374,12 @@ fun NowPlaying(
                                                 .clickable { onPlayPauseClick() },
                                             tint = Color.White
                                         )
-                                        Spacer(modifier = Modifier.width(22.dp))
+                                        Spacer(modifier = Modifier.width(30.dp))
                                         Icon(
-                                            imageVector = Icons.Filled.SkipNext,
+                                            painter = painterResource(R.drawable.next_svgrepo_com),
                                             contentDescription = "Next",
                                             modifier = Modifier
-                                                .size(50.dp)
+                                                .size(40.dp)
                                                 .clickable { onNextClick() },
                                             tint = Color.White
                                         )
@@ -453,43 +468,8 @@ fun NowPlaying(
                                     error = painterResource(id = R.drawable.img_placeholder)
                                 )
                             }
-
                             // Jarak antara Album Art dan Judul
-                            Spacer(modifier = Modifier.height(30.dp))
-
-                            // TWS Badge (Soundcore) - Ditempel di bawah art
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.4f)
-                                        .height(30.dp)
-                                        .align(Alignment.TopEnd) // Ubah alignment jika perlu
-                                        .padding(end = 16.dp, top = 10.dp),
-                                    shape = RoundedCornerShape(100.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxSize(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Headset,
-                                            contentDescription = "TWS Icon",
-                                            tint = Color.Green,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            text = "Soundcore R50i",
-                                            color = Color.Green,
-                                            fontFamily = AppFont.RobotoRegular,
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                }
-                            }
+                            Spacer(modifier = Modifier.height(60.dp))
                         }
 
                         // --- Bagian Tengah (Judul & Info Lagu) ---
@@ -554,7 +534,7 @@ fun NowPlaying(
                                     Icon(
                                         Icons.Outlined.Timer,
                                         "Timer",
-                                        Modifier.size(25.dp),
+                                        Modifier.size(25.dp).clickable { onTimerClick() },
                                         Color.White
                                     )
                                 }
@@ -633,14 +613,14 @@ fun NowPlaying(
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Filled.SkipPrevious,
+                                        painter = painterResource(R.drawable.previous_svgrepo_com),
                                         contentDescription = "Prev",
                                         modifier = Modifier
-                                            .size(50.dp)
+                                            .size(40.dp)
                                             .clickable { onPrevClick() },
                                         tint = Color.White
                                     )
-                                    Spacer(modifier = Modifier.width(22.dp))
+                                    Spacer(modifier = Modifier.width(30.dp))
                                     Icon(
                                         imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                                         contentDescription = "Play/Pause",
@@ -649,12 +629,12 @@ fun NowPlaying(
                                             .clickable { onPlayPauseClick() },
                                         tint = Color.White
                                     )
-                                    Spacer(modifier = Modifier.width(22.dp))
+                                    Spacer(modifier = Modifier.width(30.dp))
                                     Icon(
-                                        imageVector = Icons.Filled.SkipNext,
+                                        painter = painterResource(R.drawable.next_svgrepo_com),
                                         contentDescription = "Next",
                                         modifier = Modifier
-                                            .size(50.dp)
+                                            .size(40.dp)
                                             .clickable { onNextClick() },
                                         tint = Color.White
                                     )
@@ -708,7 +688,7 @@ fun NowPlaying(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(if(hasCanvas) Color.Black else Color.Transparent)
+                    .background(if (hasCanvas) Color.Black else Color.Transparent)
                     .padding(horizontal = 20.dp) // Beri padding kiri kanan
             ) {
                 // Spacer agar ada jarak sedikit saat user mulai scroll ke bawah
@@ -738,63 +718,6 @@ fun NowPlaying(
         }
     }
 }
-
-@Preview(
-    showBackground = true,
-    showSystemUi = true,
-    device = "id:pixel_5", // Or "spec:width=411dp,height=891dp"
-    backgroundColor = 0xFF121212 // Dark background simulating your app theme
-)
-@Composable
-fun NowPlayingScreenPreview() {
-    // 1. Create Dummy Song Data
-    val dummySong = Song(
-        id = "123",
-        title = "The Fate of Ophelia",
-        audioUrl = "",
-        coverUrl = "https://raw.githubusercontent.com/SimalayaAssets/AssetsAudio/main/uploads/818c674f-1f9d-4b8f-b0da-3fddc91a6d53/cover_818c674f-1f9d-4b8f-b0da-3fddc91a6d53.jpeg",
-        artistId = "artist_123",
-        canvasUrl = "",
-        durationMs = 245000L, // ~4:05
-        telegramFileId = "CQACAgUAAyEFAATCKiCuAAMXaVfaPjoar-MaqMHK1Swj5zMGlSwAAukaAALPg7lWZgqJtC5Y0jI4BA",
-        uploaderUserId = "user_uploader_1"
-    )
-
-    // 2. Create Dummy Artist Data
-    val dummyArtist = Artist(
-        id = "artist_123",
-        name = "Hindia & Lomba Sihir",
-        description = "Band Indie Pop asal Indonesia yang sangat populer.",
-        photoUrl = "https://example.com/artist.jpg"
-    )
-
-    // 3. Combine into SongWithArtist
-    val dummySongWithArtist = SongWithArtist(
-        song = dummySong,
-        artist = dummyArtist
-    )
-
-    // 4. Render the Composable
-    // Note: We wrap it in a Theme if you have one, otherwise MaterialTheme
-    MaterialTheme {
-        NowPlaying(
-            songWithArtist = dummySongWithArtist,
-            isPlaying = true,
-            currentPosition = 120000L, // 2:00
-            totalDuration = 245000L,   // 4:05
-            isShuffleEnabled = false,
-            repeatMode = 0, // Player.REPEAT_MODE_OFF (Assuming 0 is OFF based on ExoPlayer constants)
-            posterAnimation = 0,
-            onPlayPauseClick = {},
-            onNextClick = {},
-            onPrevClick = {},
-            onShuffleClick = {},
-            onRepeatClick = {},
-            onSeek = {}
-        )
-    }
-}
-
 
 @Composable
 fun ArtistBox(

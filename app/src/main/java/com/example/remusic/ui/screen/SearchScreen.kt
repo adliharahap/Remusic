@@ -32,10 +32,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.draw.clip
 import com.example.remusic.ui.components.searchcomponents.HeaderSearchSection
 import com.example.remusic.ui.components.searchcomponents.RecentlyPlayedSection
-import com.example.remusic.ui.components.searchcomponents.SearchHistorySection
 import com.example.remusic.ui.theme.AppFont
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import com.example.remusic.data.local.entity.CachedSong
 
 // Data class lagu
 data class Song2(
@@ -47,27 +52,27 @@ data class Song2(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen() {
+fun SearchScreen(
+    searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    // Tambahkan parameter navigasi atau callback play jika perlu
+    onSongClick: (com.example.remusic.data.model.SongWithArtist) -> Unit = {}
+) {
     var isFullSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    
+    // Collect State from ViewModel
+    val searchQuery by searchViewModel.searchQuery.collectAsState()
+    val searchResults by searchViewModel.searchResults.collectAsState()
+    val recentSongs by searchViewModel.recentSongs.collectAsState()
+    val topArtist by searchViewModel.topArtist.collectAsState()
+    val searchHistory by searchViewModel.searchHistory.collectAsState(initial = emptyList<CachedSong>())
 
-    // 👇 Tambahkan BackHandler di sini
     BackHandler(enabled = isFullSearch) {
-        // Blok ini hanya akan dijalankan jika 'enabled' bernilai true.
-        // Saat tombol kembali ditekan, ubah state isFullSearch menjadi false.
         isFullSearch = false
+        searchViewModel.onSearchQueryChanged("") // Clear query saat back
     }
 
-
     if (!isFullSearch) {
-        // Mode awal pencarian
-        val searchHistory = listOf("Top Hits Indonesia", "Lagu Galau", "Indie Folk")
-        val recentlyPlayed = listOf(
-            Song2(1, "Monokrom", "Tulus", "https://i.pinimg.com/736x/27/a1/fa/27a1faa850e8041d9a2c59ba6c7fb91f.jpg"),
-            Song2(2, "Secukupnya", "Hindia", "https://i.pinimg.com/736x/27/a1/fa/27a1faa850e8041d9a2c59ba6c7fb91f.jpg"),
-            Song2(3, "Sial", "Mahalini", "https://i.pinimg.com/736x/27/a1/fa/27a1faa850e8041d9a2c59ba6c7fb91f.jpg")
-        )
-
+        // ... (Existing code for initial search screen)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -80,56 +85,142 @@ fun SearchScreen() {
                     Spacer(modifier = Modifier.height(30.dp))
                 }
                 item {
-                    HeaderSearchSection(
-                        profileImageUrl = "https://i.pinimg.com/736x/0c/86/83/0c86831120a35560280ce0e235fd7e57.jpg",
-                        title = "Pencarian",
-                        onSearchClick = { isFullSearch = true }
-                    )
+                    com.example.remusic.data.UserManager.currentUser?.photoUrl?.let {
+                        HeaderSearchSection(
+                            profileImageUrl = it,
+                            title = "Pencarian",
+                            onSearchClick = { isFullSearch = true }
+                        )
+                    }
                 }
-                item { SearchHistorySection(historyItems = searchHistory, onRemoveClick = {}) }
-                item {
-                    RecentlyPlayedSection(
-                        title = "Baru Saja Ditambahkan",
-                        songs = recentlyPlayed,
-                        onMoreOptionsClick = { song ->
-                            // Logika tampilkan opsi lagu, misal show bottom sheet atau dialog
+                
+                // History Section (Real Data from Room)
+                if (searchHistory.isNotEmpty()) {
+                    item { 
+                        Text(
+                            text = "Riwayat Pencarian",
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontFamily = AppFont.RobotoBold,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    
+                    items(searchHistory.size) { index ->
+                        val historyItem = searchHistory[index]
+                        // Custom Card for History
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clickable {
+                                    val song = com.example.remusic.data.model.Song(
+                                        id = historyItem.id,
+                                        title = historyItem.title,
+                                        coverUrl = historyItem.coverUrl,
+                                        audioUrl = historyItem.telegramDirectUrl,
+                                        artistId = null,
+                                        telegramFileId = historyItem.telegramFileId
+                                    )
+                                    val artist = com.example.remusic.data.model.Artist(id = "", name = historyItem.artistName)
+                                    onSongClick(com.example.remusic.data.model.SongWithArtist(song, artist))
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Poster Kiri
+                            androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                            coil.compose.AsyncImage(
+                                model = historyItem.coverUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            
+                            Spacer(modifier = Modifier.width(16.dp))
+                            
+                            // Judul Kanan
+                            Column {
+                                Text(
+                                    text = historyItem.title,
+                                    style = TextStyle(
+                                        fontSize = 16.sp,
+                                        fontFamily = AppFont.MontserratBold,
+                                        color = Color.White
+                                    )
+                                )
+                                Text(
+                                    text = historyItem.artistName,
+                                    style = TextStyle(
+                                        fontSize = 14.sp,
+                                        fontFamily = AppFont.RobotoRegular,
+                                        color = Color.Gray
+                                    )
+                                )
+                            }
                         }
-                    )
+                    }
+                }
+
+                // Recently Added Section
+                if (recentSongs.isNotEmpty()) {
+                    item {
+                        val mappedSongs = recentSongs.map { 
+                            Song2(
+                                id = it.song.id.hashCode(),
+                                title = it.song.title,
+                                artist = it.artist?.name ?: "Unknown",
+                                imageUrl = it.song.coverUrl ?: ""
+                            )
+                        }
+                        
+                        RecentlyPlayedSection(
+                            title = "Baru Saja Ditambahkan",
+                            songs = mappedSongs,
+                            onMoreOptionsClick = { song2 ->
+                                val original = recentSongs.find { it.song.title == song2.title }
+                                original?.let { 
+                                    searchViewModel.onSongPlayed(it)
+                                    onSongClick(it) 
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
     } else {
         // Mode pencarian aktif (full search)
-        // Menggunakan Column agar lebih mudah menambahkan list hasil pencarian nanti
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF121212)) // Samakan background agar transisi mulus
+                .background(Color(0xFF121212))
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .background(color = Color(0xFF2A2A2A))
                     .padding(top = 40.dp),
-                verticalAlignment = Alignment.CenterVertically // Agar icon dan text field sejajar
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Tombol kembali, ditempatkan di dalam Row sebelum TextField
                 IconButton(
-                    // 1. Aksi untuk kembali adalah mengubah isFullSearch menjadi false
-                    onClick = { isFullSearch = false }
+                    onClick = { 
+                        isFullSearch = false 
+                        searchViewModel.onSearchQueryChanged("")
+                    }
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color.White // Sesuaikan warna agar terlihat di background gelap
+                        tint = Color.White
                     )
                 }
 
-                // TextField untuk input pencarian
                 OutlinedTextField(
-                    // 2. Gunakan state 'searchQuery' yang sudah ada
                     value = searchQuery,
-                    // 3. Update state 'searchQuery' saat teks berubah
-                    onValueChange = { searchQuery = it },
+                    onValueChange = { searchViewModel.onSearchQueryChanged(it) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(end = 2.dp),
@@ -146,10 +237,8 @@ fun SearchScreen() {
                         color = Color.White
                     ),
                     keyboardOptions = KeyboardOptions(
-                        // 5. Mengubah tombol 'Enter' di keyboard menjadi ikon 'Search'
                         imeAction = ImeAction.Search
                     ),
-                    // 4. Gunakan OutlinedTextFieldDefaults untuk OutlinedTextField
                     colors = OutlinedTextFieldDefaults.colors(
                         cursorColor = Color.White,
                         focusedBorderColor = Color.Transparent,
@@ -161,11 +250,112 @@ fun SearchScreen() {
                     )
                 )
             }
-            // Di sini Anda bisa menambahkan LazyColumn untuk menampilkan hasil pencarian
-            // Contoh:
-            // LazyColumn(modifier = Modifier.fillMaxSize()) {
-            //     // items(hasilPencarian) { ... }
-            // }
+            
+            // Hasil Pencarian
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                
+                // --- TOP RESULT (ARTIST) ---
+                if (topArtist != null) {
+                    item {
+                        Text(
+                            text = "Top Result",
+                            style = TextStyle(
+                                fontSize = 18.sp,
+                                fontFamily = AppFont.MontserratBold,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                        )
+                        
+                        // Artist Card
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                .clickable { /* Handle Artist Click - Maybe show all songs */ }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = topArtist!!.photoUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = topArtist!!.name,
+                                    style = TextStyle(
+                                        fontSize = 20.sp,
+                                        fontFamily = AppFont.MontserratBold,
+                                        color = Color.White
+                                    )
+                                )
+                                Text(
+                                    text = "Artist",
+                                    style = TextStyle(
+                                        fontSize = 14.sp,
+                                        fontFamily = AppFont.RobotoRegular,
+                                        color = Color.Gray
+                                    )
+                                )
+                            }
+                        }
+                        
+                        Text(
+                            text = "Songs",
+                            style = TextStyle(
+                                fontSize = 18.sp,
+                                fontFamily = AppFont.MontserratBold,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                }
+
+                items(searchResults.size) { index ->
+                    val song = searchResults[index]
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                searchViewModel.onSongPlayed(song)
+                                onSongClick(song)
+                            }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        coil.compose.AsyncImage(
+                            model = song.song.coverUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = song.song.title,
+                                color = Color.White,
+                                fontFamily = AppFont.MontserratBold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = song.artist?.name ?: "Unknown Artist",
+                                color = Color.Gray,
+                                fontFamily = AppFont.RobotoRegular,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

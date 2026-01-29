@@ -16,7 +16,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.local.MusicDatabase
 import com.example.remusic.data.model.AudioOutputDevice
 import com.example.remusic.data.model.Song
@@ -25,8 +24,6 @@ import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.data.repository.MusicRepository
 import com.example.remusic.services.MusicService
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
-import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable.isActive
@@ -58,7 +55,8 @@ data class PlayerUiState(
     val currentAudioDevice: AudioOutputDevice? = null,
     val currentSongIndex: Int = 0,
     val animationDirection: AnimationDirection = AnimationDirection.NONE,
-    val isLoadingLyrics: Boolean = false
+    val isLoadingLyrics: Boolean = false,
+    val isSleepTimerActive: Boolean = false
 )
 
 
@@ -362,6 +360,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    Log.d("DEBUG_PLAYER", "✋ FETCH CANCELLED: Request untuk ID '$songId' dibatalkan.")
+                    throw e
+                }
                 // Log exception lengkap biar tau jenis errornya (Network/Serialization/dll)
                 Log.e("DEBUG_PLAYER", "❌ FETCH EXCEPTION: ${e.javaClass.simpleName} - ${e.message}")
                 _uiState.update { it.copy(isLoadingLyrics = false) }
@@ -560,13 +562,28 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun nextSong() {
-        mediaController?.seekToNext()
-        _uiState.update { it.copy(animationDirection = AnimationDirection.FORWARD) }
+        val controller = mediaController ?: return
+        val nextIndex = controller.nextMediaItemIndex
+        if (nextIndex != C.INDEX_UNSET) {
+            _uiState.update { it.copy(animationDirection = AnimationDirection.FORWARD) }
+            playSongAt(nextIndex)
+        }
     }
 
     fun previousSong() {
-        mediaController?.seekToPrevious()
-        _uiState.update { it.copy(animationDirection = AnimationDirection.BACKWARD) }
+        val controller = mediaController ?: return
+
+        // Fitur: Jika lagu sudah main lebih dari 3 detik, restart lagu ini (bukan mundur ke lagu sebelumnya)
+        if (controller.currentPosition > 3000) {
+            controller.seekTo(0)
+            return
+        }
+
+        val prevIndex = controller.previousMediaItemIndex
+        if (prevIndex != C.INDEX_UNSET) {
+            _uiState.update { it.copy(animationDirection = AnimationDirection.BACKWARD) }
+            playSongAt(prevIndex)
+        }
     }
 
     fun playSongAt(index: Int) {
@@ -593,26 +610,100 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         jumpJob?.cancel()
         setPlaylistJob?.cancel()
 
-        // 2. MULAI JOB BARU
+        // 🛑 PAUSE SEGERA! (Agar lagu lama berhenti saat buffering lagu baru)
+        controller.pause()
+
+        // 2. OPTIMISTIC UI UPDATE (Update Tampilan Dulu Biar Sat-Set!)
+        _uiState.update {
+            it.copy(
+                currentSong = targetSong,
+                currentSongIndex = index,
+                // Reset loading state sementara
+                isLoadingLyrics = false,
+                // 🔄 RESET SLIDER KE 0 (Biar kelihatan mulai dari awal)
+                currentPosition = 0L
+            )
+        }
+
         jumpJob = viewModelScope.launch(Dispatchers.IO) {
-            Log.d("DEBUG_PLAYER", "👇 CLICK MANUAL: Meminta URL untuk index $index...")
+            try {
+                // 3. CEK APAKAH URL SUDAH VALID?
+                val currentUrl = targetSong.song.audioUrl
+                val isUrlValid = !currentUrl.isNullOrBlank() && (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
 
-            val newUrl = resolveSongUrl(targetSong)
+                if (isUrlValid) {
+                    // JIKA URL VALID: Play Langsung (Optimistic)
+                    Log.d("DEBUG_PLAYER", "🚀 URL VALID: Play langsung tanpa menunggu.")
+                    withContext(Dispatchers.Main) {
+                        if (index < controller.mediaItemCount) {
+                            if (controller.currentMediaItemIndex != index) {
+                                controller.seekTo(index, C.TIME_UNSET)
+                                controller.play()
+                            }
+                        }
+                    }
+                } else {
+                    // JIKA URL KOSONG: Tampilkan Loading & Resolve Dulu
+                    Log.d("DEBUG_PLAYER", "⏳ URL KOSONG: Resolving URL dulu... (Player dipause sementara)")
+                    withContext(Dispatchers.Main) {
+                         _uiState.update { it.copy(isLoadingLyrics = true) } // Pakai loading indicator yang ada
+                    }
+                }
 
-            // Update player dengan URL yang didapat (baik dari cache DB atau Internet)
-            updateMediaItemUrlInPlayer(index, targetSong, newUrl)
+                // 2. RESOLVE URL (Pastikan dapat yang fresh)
+                Log.d("DEBUG_PLAYER", "🌐 FETCH: Resolving URL...")
+                val newUrl = resolveSongUrl(targetSong)
 
-            withContext(Dispatchers.Main) {
-                if (index < controller.mediaItemCount) {
-                    controller.seekTo(index, C.TIME_UNSET)
-                    controller.play()
+                // 3. UPDATE PLAYER (Hanya update item yang sedang aktif)
+                withContext(Dispatchers.Main) {
+                    // VALIDASI URL: Jangan play kalau URL kosong/gagal resolve
+                    if (newUrl.isBlank()) {
+                        Log.e("DEBUG_PLAYER", "❌ ERROR: URL kosong/gagal resolve. Skip playback.")
+                        // Kembalikan UI ke state aman atau tampilkan error
+                        _uiState.update { it.copy(isLoadingLyrics = false) }
+                        // Opsional: Toast error
+                        return@withContext
+                    }
+
+                    if (index < controller.mediaItemCount) {
+                        // Buat MediaItem baru dengan URL valid
+                        val newItem = createMediaItem(targetSong, newUrl)
+
+                        // KUNCI: Gunakan setMediaItem di index spesifik untuk update source
+                        controller.replaceMediaItem(index, newItem)
+
+                        // Jika tadi kita menunda play (karena URL kosong), sekarang play!
+                        if (!isUrlValid || controller.playbackState == Player.STATE_IDLE || controller.playbackState == Player.STATE_ENDED) {
+                             // Cek lagi apakah index masih sama (user gak ganti lagu lagi pas loading)
+                             // Tapi karena kita replaceMediaItem di index spesifik, aman untuk seek ke situ.
+                             if (controller.currentMediaItemIndex != index) {
+                                 controller.seekTo(index, C.TIME_UNSET)
+                             }
+                             controller.prepare()
+                             controller.play()
+                        }
+                    }
+                    _uiState.update { it.copy(isLoadingLyrics = false) }
+                }
+
+                // 4. UPDATE LIRIK & WARNA (Sekali saja!)
+                // Ambil data detail
+                fetchFullSongDetails(targetSong.song.id, forceUpdate = true)
+
+                val colors = extractGradientColorsFromImageUrl(getApplication(), targetSong.song.coverUrl ?: "")
+                _uiState.update { it.copy(dominantColors = colors) }
+
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e // Biarkan cancel lewat
+                
+                // TANGKAP ERROR BIAR GAK CRASH
+                Log.e("DEBUG_PLAYER", "❌ CRASH HANDLED di playSongAt: ${e.message}")
+                e.printStackTrace()
+
+                withContext(Dispatchers.Main) {
+                     _uiState.update { it.copy(isLoadingLyrics = false) }
                 }
             }
-
-            // Update data tambahan (Lirik & Warna)
-            fetchFullSongDetails(targetSong.song.id)
-            val colors = extractGradientColorsFromImageUrl(getApplication(), targetSong.song.coverUrl ?: "")
-            _uiState.update { it.copy(dominantColors = colors) }
         }
     }
 
@@ -636,6 +727,43 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         Log.d("PlayMusicViewModel", "✅ RESOLVED URL: $finalUrl")
         return finalUrl
+    }
+
+    // --- SLEEP TIMER ---
+    fun setSleepTimer(minutes: Int) {
+        Log.d("PlayMusicViewModel", "⏰ setSleepTimer called: $minutes minutes")
+        val controller = mediaController
+        if (controller == null) {
+            Log.e("PlayMusicViewModel", "❌ ERROR: MediaController is NULL. Cannot set timer.")
+            return
+        }
+
+        val durationMs = minutes * 60 * 1000L
+        val command = androidx.media3.session.SessionCommand("START_SLEEP_TIMER", android.os.Bundle.EMPTY)
+        
+        val args = android.os.Bundle().apply {
+            putLong("DURATION", durationMs)
+        }
+        
+        val result = controller.sendCustomCommand(command, args)
+        Log.d("PlayMusicViewModel", "🚀 Command START_SLEEP_TIMER sent with duration: $durationMs ms")
+        
+        _uiState.update { it.copy(isSleepTimerActive = true) }
+    }
+
+    fun cancelSleepTimer() {
+        Log.d("PlayMusicViewModel", "⏰ cancelSleepTimer called")
+        val controller = mediaController
+        if (controller == null) {
+             Log.e("PlayMusicViewModel", "❌ ERROR: MediaController is NULL.")
+             return
+        }
+
+        val command = androidx.media3.session.SessionCommand("STOP_SLEEP_TIMER", android.os.Bundle.EMPTY)
+        controller.sendCustomCommand(command, android.os.Bundle.EMPTY)
+        
+        _uiState.update { it.copy(isSleepTimerActive = false) }
+        Log.d("PlayMusicViewModel", "🚀 Command STOP_SLEEP_TIMER sent")
     }
 
     // --- [TAMBAHKAN 3 FUNGSI INI DI PALING BAWAH] ---

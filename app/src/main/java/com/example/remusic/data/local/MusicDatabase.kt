@@ -7,10 +7,11 @@ import androidx.room.RoomDatabase
 import com.example.remusic.data.local.entity.CachedArtist
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.local.entity.LikedSong
+import com.example.remusic.data.local.entity.SearchHistoryEntity
 
 @Database(
-    entities = [CachedSong::class, CachedArtist::class, LikedSong::class],
-    version = 1,
+    entities = [CachedSong::class, CachedArtist::class, LikedSong::class, SearchHistoryEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -27,7 +28,9 @@ abstract class MusicDatabase : RoomDatabase() {
                     context.applicationContext,
                     MusicDatabase::class.java,
                     "remusic_local_db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration() // HAPUS DATA LAMA SAAT UPDATE SCHEMA (DEV MODE)
+                .build()
                 INSTANCE = instance
                 instance
             }

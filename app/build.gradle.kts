@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,6 +10,25 @@ plugins {
     id("kotlin-parcelize")
     kotlin("plugin.serialization") version "2.1.0"
     id("com.google.devtools.ksp") version "2.3.4"
+}
+
+// 2. LOGIKA MEMBACA FILE LOCAL.PROPERTIES (Wajib Ada!)
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+// CETAK LOG KE TERMINAL BUILD (Biar ketahuan filenya ketemu atau nggak)
+if (localPropertiesFile.exists()) {
+    println("✅ [GRADLE DEBUG] File local.properties DITEMUKAN di: ${localPropertiesFile.absolutePath}")
+    localProperties.load(FileInputStream(localPropertiesFile))
+
+    // Cek apakah key terbaca?
+    val secretCheck = localProperties.getProperty("APP_SECRET")
+    if (secretCheck != null && secretCheck.isNotEmpty()) {
+        println("✅ [GRADLE DEBUG] APP_SECRET terbaca! Panjang: ${secretCheck.length} karakter")
+    } else {
+        println("❌ [GRADLE DEBUG] File ketemu, tapi APP_SECRET kosong/null!")
+    }
+} else {
+    println("❌ [GRADLE DEBUG] File local.properties TIDAK DITEMUKAN di: ${localPropertiesFile.absolutePath}")
 }
 
 android {
@@ -23,10 +45,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // ambil dari gradle/local.properties
-        buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
-        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"${project.findProperty("GOOGLE_SERVER_CLIENT_ID") ?: ""}\"")
+        val supabaseUrl = localProperties.getProperty("SUPABASE_URL") ?: ""
+        val supabaseKey = localProperties.getProperty("SUPABASE_ANON_KEY") ?: ""
+        val googleClientId = localProperties.getProperty("GOOGLE_SERVER_CLIENT_ID") ?: ""
+        val appSecret = localProperties.getProperty("APP_SECRET") ?: ""
+
+        // Inject ke BuildConfig (Dibungkus kutip miring \")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
+        buildConfigField("String", "APP_SECRET", "\"$appSecret\"")
     }
 
     buildTypes {
@@ -140,4 +168,6 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion") // Wajib buat Coroutines/Flow
     ksp("androidx.room:room-compiler:$roomVersion") // Pakai ksp, bukan kapt/annotationProcessor
+
+    implementation("com.github.commandiron:WheelPickerCompose:1.1.11")
 }
