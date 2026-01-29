@@ -119,6 +119,13 @@ fun NowPlaying(
         if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()) else 0f
     }
 
+    // Hitung waktu yang ditampilkan (Realtime saat digeser)
+    val displayCurrentTime = if (isUserSeeking) {
+        (userSeekPosition * totalDuration).toLong()
+    } else {
+        currentPosition
+    }
+
     // 1. Gunakan BoxWithConstraints untuk mendapatkan tinggi layar (viewport)
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
@@ -295,10 +302,12 @@ fun NowPlaying(
                                     MusicSlider(
                                         value = sliderValue,
                                         onValueChange = { newValue ->
+                                            isUserSeeking = true // User sedang memegang slider
                                             userSeekPosition = newValue
                                         },
                                         onValueChangeFinished = {
                                             onSeek(userSeekPosition)
+                                            isUserSeeking = false // User melepas slider
                                         },
                                         modifier = Modifier.padding(horizontal = 8.dp),
                                         // Kamu bisa override warna atau ukuran jika mau, atau pakai default
@@ -315,7 +324,7 @@ fun NowPlaying(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = formatDuration(currentPosition),
+                                        text = formatDuration(displayCurrentTime),
                                         color = Color.White,
                                         fontFamily = AppFont.MontserratRegular,
                                         fontSize = 14.sp,
@@ -555,10 +564,12 @@ fun NowPlaying(
                                 MusicSlider(
                                     value = sliderValue,
                                     onValueChange = { newValue ->
+                                        isUserSeeking = true
                                         userSeekPosition = newValue
                                     },
                                     onValueChangeFinished = {
                                         onSeek(userSeekPosition)
+                                        isUserSeeking = false
                                     },
                                     modifier = Modifier.padding(horizontal = 8.dp),
                                     // Kamu bisa override warna atau ukuran jika mau, atau pakai default
@@ -575,7 +586,7 @@ fun NowPlaying(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    formatDuration(currentPosition),
+                                    formatDuration(displayCurrentTime),
                                     color = Color.White,
                                     fontSize = 14.sp
                                 )
