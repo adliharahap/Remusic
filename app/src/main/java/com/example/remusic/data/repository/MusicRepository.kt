@@ -8,6 +8,7 @@ import com.example.remusic.data.network.RetrofitInstance
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import com.example.remusic.data.SupabaseManager
+import kotlinx.coroutines.delay
 
 class MusicRepository(private val musicDao: MusicDao) {
 
@@ -86,67 +87,71 @@ class MusicRepository(private val musicDao: MusicDao) {
         }
 
         // 4. Jika Cache Miss/Expired -> Request Baru ke Vercel/API
-        Log.d(TAG, "3️⃣ [NETWORK] Membuka koneksi ke API Vercel/Telegram...")
-        try {
-            val response = RetrofitInstance.api.getStreamUrl(songId, telegramFileId)
+        Log.d(TAG, "[NETWORK] Membuka koneksi ke API Vercel/Telegram...")
 
-            if (response.success && !response.url.isNullOrBlank()) {
-                val newUrl = response.url
-                // Set Expired sesuai response API (atau default 1 jam)
-                val expiryTime = try {
-                    if (response.expires_at != null) {
-                        val time = java.time.Instant.parse(response.expires_at).toEpochMilli()
-                        Log.d(TAG, "⚠️ [DATE PARSE SUCCESS] Parse tanggal berhasil: ${response.expires_at}.")
-                        time
-                    } else {
-                        Log.d(TAG, "⚠️ [DATE PARSE SUCCESS] Parse tanggal gagal: ${response.expires_at}. Default 1 jam.")
+        var attempt = 1
+        val maxAttempts = 4
+        var finalUrl = ""
+
+        while (attempt <= maxAttempts) {
+            try {
+                if (attempt > 1) Log.d(TAG, "🔄 RETRY NETWORK: Percobaan ke-$attempt...")
+
+                // --- REQUEST START ---
+                val response = RetrofitInstance.api.getStreamUrl(songId, telegramFileId)
+                // --- REQUEST END ---
+
+                if (response.success && !response.url.isNullOrBlank()) {
+                    val newUrl = response.url
+                    val expiryTime = try {
+                        if (response.expires_at != null) {
+                            java.time.Instant.parse(response.expires_at).toEpochMilli()
+                        } else {
+                            System.currentTimeMillis() + (60 * 60 * 1000)
+                        }
+                    } catch (e: Exception) {
                         System.currentTimeMillis() + (60 * 60 * 1000)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "⚠️ [DATE PARSE FAIL] Gagal parse tanggal: ${response.expires_at}. Default 1 jam.")
-                    System.currentTimeMillis() + (60 * 60 * 1000)
-                }
 
-                // 5. Simpan/Update ke SQLite
-                Log.d(TAG, "4️⃣ [DB SAVE] Menyimpan data baru ke SQLite...")
+                    // 5. Simpan/Update ke SQLite
+                    Log.d(TAG, "4️⃣ [DB SAVE] Menyimpan data baru ke SQLite...")
+                    if (cachedSong != null) {
+                        musicDao.updateSongUrl(songId, newUrl, expiryTime, System.currentTimeMillis())
+                        Log.d(TAG, "💾 [SUCCESS] URL Streaming diperbarui (Partial Update).")
+                    } else {
+                        val newCacheData = CachedSong(
+                            id = songId, title = title, uploaderUserId = null, artistName = "Unknown",
+                            coverUrl = null, lyrics = null, telegramFileId = telegramFileId,
+                            telegramDirectUrl = newUrl, urlExpiryTime = expiryTime
+                        )
+                        musicDao.insertSong(newCacheData)
+                        Log.d(TAG, "💾 [SUCCESS] Lagu baru disimpan ke Database.")
+                    }
 
-                if (cachedSong != null) {
-                    // PARTIAL UPDATE: Hanya update URL & Expiry
-                    musicDao.updateSongUrl(
-                        id = songId,
-                        url = newUrl,
-                        expiry = expiryTime,
-                        lastPlayed = System.currentTimeMillis()
-                    )
-                    Log.d(TAG, "💾 [SUCCESS] URL Streaming diperbarui (Partial Update).")
+                    finalUrl = newUrl
+                    break // 🛑 SUKSES! KELUAR DARI LOOP
                 } else {
-                    // INSERT BARU
-                    val newCacheData = CachedSong(
-                        id = songId,
-                        title = "Loading...",
-                        uploaderUserId = null,
-                        artistName = "Unknown",
-                        coverUrl = null,
-                        lyrics = null,
-                        telegramFileId = telegramFileId,
-                        telegramDirectUrl = newUrl,
-                        urlExpiryTime = expiryTime
-                    )
-                    musicDao.insertSong(newCacheData)
-                    Log.d(TAG, "💾 [SUCCESS] Lagu baru disimpan ke Database.")
+                    Log.e(TAG, "❌ [API FAIL] Server merespon success=false.")
                 }
 
-                Log.d(TAG, "   🔗 New URL: $newUrl")
-                Log.d(TAG, "   🌐 SOURCE: NETWORK REQUEST (Vercel)")
-                Log.d(TAG, "📡 [AUDIO SOURCE] STREAMING (Network)")
-                Log.d(TAG, "================================================================")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [API ERROR] Gagal koneksi (Attempt $attempt): ${e.message}")
 
-                return newUrl
-            } else {
-                Log.e(TAG, "❌ [API FAIL] Server merespon success=false atau URL kosong.")
+                // Jika ini percobaan pertama dan gagal, tunggu 1.5 detik sebelum coba lagi
+                if (attempt < maxAttempts) {
+                    Log.d(TAG, "⏳ Menunggu 1.5 detik untuk retry...")
+                    delay(1500)
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [API ERROR] Gagal koneksi: ${e.message}")
+            attempt++
+        }
+
+        if (finalUrl.isNotBlank()) {
+            Log.d(TAG, "   🔗 New URL: $finalUrl")
+            Log.d(TAG, "   🌐 SOURCE: NETWORK REQUEST (Vercel)")
+            Log.d(TAG, "📡 [AUDIO SOURCE] STREAMING (Network)")
+            Log.d(TAG, "================================================================")
+            return finalUrl
         }
 
         // 6. Jika semua gagal, kembalikan fallback

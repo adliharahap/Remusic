@@ -37,7 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RepeatOne
@@ -46,8 +45,6 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,12 +80,17 @@ import com.example.remusic.ui.components.MusicSlider
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.AnimationDirection
+import com.example.remusic.ui.components.shimmerEffect
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun NowPlaying(
     songWithArtist: SongWithArtist?,
     isPlaying: Boolean,
+    isBuffering: Boolean,
+    isLoadingData: Boolean,
+    debugStatus: String = "",
+    errorMsg: String? = null,
     currentPosition: Long,
     totalDuration: Long,
     isShuffleEnabled: Boolean,
@@ -125,6 +127,10 @@ fun NowPlaying(
     } else {
         currentPosition
     }
+
+    // Slider Box
+    // Jika buffering atau loading data, tampilkan skeleton loading
+    val isBusy = isBuffering || isLoadingData
 
     // 1. Gunakan BoxWithConstraints untuk mendapatkan tinggi layar (viewport)
     BoxWithConstraints(
@@ -336,7 +342,24 @@ fun NowPlaying(
                                         fontSize = 14.sp,
                                     )
                                 }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().height(20.dp).padding(horizontal = 16.dp, vertical = 0.dp),
+                                    horizontalArrangement = Arrangement.Start,
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    val statusText = when {
+                                        isLoadingData -> "Loading Get Data..."
+                                        isBuffering -> "Buffering..."
+                                        else -> debugStatus
+                                    }
 
+                                    Text(
+                                        text = statusText,
+                                        color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
+                                        fontFamily = AppFont.MontserratBold,
+                                        fontSize = 12.sp,
+                                    )
+                                }
                                 // Tombol Kontrol (Play/Pause/Shuffle)
                                 Row(
                                     modifier = Modifier
@@ -375,14 +398,22 @@ fun NowPlaying(
                                             tint = Color.White
                                         )
                                         Spacer(modifier = Modifier.width(30.dp))
-                                        Icon(
-                                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                            contentDescription = "Play/Pause",
-                                            modifier = Modifier
-                                                .size(80.dp)
-                                                .clickable { onPlayPauseClick() },
-                                            tint = Color.White
-                                        )
+                                        if (isBusy) {
+                                            androidx.compose.material3.CircularProgressIndicator(
+                                                modifier = Modifier.size(80.dp).padding(10.dp),
+                                                color = Color.White,
+                                                strokeWidth = 4.dp
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                                contentDescription = "Play/Pause",
+                                                modifier = Modifier
+                                                    .size(80.dp)
+                                                    .clickable { onPlayPauseClick() },
+                                                tint = Color.White
+                                            )
+                                        }
                                         Spacer(modifier = Modifier.width(30.dp))
                                         Icon(
                                             painter = painterResource(R.drawable.next_svgrepo_com),
@@ -557,26 +588,24 @@ fun NowPlaying(
                         Column(
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            // Slider
-                            Box(modifier = Modifier
-                                .fillMaxWidth()
-                                .height(10.dp)) {
-                                MusicSlider(
-                                    value = sliderValue,
-                                    onValueChange = { newValue ->
-                                        isUserSeeking = true
-                                        userSeekPosition = newValue
-                                    },
-                                    onValueChangeFinished = {
-                                        onSeek(userSeekPosition)
-                                        isUserSeeking = false
-                                    },
-                                    modifier = Modifier.padding(horizontal = 8.dp),
-                                    // Kamu bisa override warna atau ukuran jika mau, atau pakai default
-                                    activeColor = Color.White,
-                                    inactiveColor = Color.White.copy(0.4f)
-                                )
-                            }
+                                Box(modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(10.dp)) {
+                                    MusicSlider(
+                                        value = sliderValue,
+                                        onValueChange = { newValue ->
+                                            isUserSeeking = true
+                                            userSeekPosition = newValue
+                                        },
+                                        onValueChangeFinished = {
+                                            onSeek(userSeekPosition)
+                                            isUserSeeking = false
+                                        },
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                        activeColor = Color.White,
+                                        inactiveColor = Color.White.copy(0.4f)
+                                    )
+                                }
 
                             // Waktu (Duration)
                             Row(
@@ -586,19 +615,34 @@ fun NowPlaying(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    formatDuration(displayCurrentTime),
+                                    text = formatDuration(displayCurrentTime),
                                     color = Color.White,
                                     fontSize = 14.sp
                                 )
                                 Text(
-                                    formatDuration(totalDuration),
+                                    text = formatDuration(totalDuration),
                                     color = Color.White,
                                     fontSize = 14.sp
                                 )
                             }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(20.dp).padding(horizontal = 16.dp, vertical = 0.dp),
+                                horizontalArrangement = Arrangement.Start,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                val statusText = when {
+                                    isLoadingData -> "Loading Get Data..."
+                                    isBuffering -> "Buffering..."
+                                    else -> debugStatus
+                                }
 
-                            Spacer(modifier = Modifier.height(15.dp))
-
+                                Text(
+                                    text = statusText,
+                                    color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
+                                    fontFamily = AppFont.MontserratBold,
+                                    fontSize = 12.sp,
+                                )
+                            }
                             // Tombol Kontrol (Play/Pause/Shuffle)
                             Row(
                                 modifier = Modifier
@@ -632,14 +676,22 @@ fun NowPlaying(
                                         tint = Color.White
                                     )
                                     Spacer(modifier = Modifier.width(30.dp))
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                        contentDescription = "Play/Pause",
-                                        modifier = Modifier
-                                            .size(80.dp)
-                                            .clickable { onPlayPauseClick() },
-                                        tint = Color.White
-                                    )
+                                    if (isBusy) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(80.dp).padding(10.dp),
+                                            color = Color.White,
+                                            strokeWidth = 4.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                            contentDescription = "Play/Pause",
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .clickable { onPlayPauseClick() },
+                                            tint = Color.White
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.width(30.dp))
                                     Icon(
                                         painter = painterResource(R.drawable.next_svgrepo_com),

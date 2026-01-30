@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 enum class AnimationDirection {
     FORWARD, // Maju
@@ -56,7 +57,11 @@ data class PlayerUiState(
     val currentSongIndex: Int = 0,
     val animationDirection: AnimationDirection = AnimationDirection.NONE,
     val isLoadingLyrics: Boolean = false,
-    val isSleepTimerActive: Boolean = false
+    val isSleepTimerActive: Boolean = false,
+    val isBuffering: Boolean = false,
+    val isLoadingData: Boolean = false,
+    val debugStatus: String = "Ready",
+    val errorMessage: String? = null
 )
 
 
@@ -69,6 +74,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private var fetchLyricsJob: Job? = null
+    private var searchDebounceJob: Job? = null
 
     // variabel untuk playsongat
     private var jumpJob: Job? = null
@@ -130,6 +136,15 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun setupPlayerListener() {
         mediaController?.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                super.onPlaybackStateChanged(playbackState)
+                _uiState.update {
+                    it.copy(
+                        isBuffering = playbackState == Player.STATE_BUFFERING
+                    )
+                }
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
 
                 if (!isFading) {
@@ -151,6 +166,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         currentPosition = player.currentPosition.coerceAtLeast(0L)
                     )
                 }
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                super.onPlayerError(error)
+                Log.e("PlayMusicViewModel", "Player Error: ${error.message}")
+                 // Opsional: Bisa update state error jika perlu, tapi user minta buffering text saja dulu
             }
 
             // Listener ini akan update UI jika lagu di service berubah (misal dari notifikasi)
@@ -295,79 +316,83 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun fetchFullSongDetails(songId: String, forceUpdate: Boolean = false) {
-        // 1. CEK ANTI-SPAM:
-        // Jika sedang loading lagu yang SAMA, hentikan request baru (Hemat Bandwidth!)
-        if (fetchLyricsJob?.isActive == true && !forceUpdate) {
-            // Kita cek apakah job yang jalan itu untuk ID yang sama? (Simplifikasi: Asumsikan iya di context ini)
-            Log.d("DEBUG_PLAYER", "✋ SKIP: Request untuk ID $songId sedang berjalan. Jangan spam.")
-            return
-        }
-
-        // 2. BATALKAN JOB LAMA:
-        // Jika ada request lirik lagu SEBELUMNYA yang belum kelar, matikan!
+        // 1. CLEANUP JOB LAMA
         fetchLyricsJob?.cancel()
+        searchDebounceJob?.cancel()
 
-        fetchLyricsJob = viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(isLoadingLyrics = true) }
+        // 2. DEBOUNCE
+        searchDebounceJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(1000)
 
-            try {
-                val currentSongState = _uiState.value.currentSong
-                Log.d("DEBUG_PLAYER", "🔍 FETCH REQ: Mencari ID '$songId'")
+            fetchLyricsJob = launch {
+                // Nyalakan Loading
+                _uiState.update { it.copy(isLoadingLyrics = true) }
 
-                // Cek apakah ID-nya valid?
-                if (songId.isBlank()) {
-                    Log.e("DEBUG_PLAYER", "❌ FETCH ERROR: ID Lagu kosong/invalid!")
-                    return@launch
-                }
+                try {
+                    // --- RETRY LOOP LOGIC ---
+                    var attempt = 1
+                    val maxAttempts = 2
+                    var isSuccess = false
 
-                // Cek Cache (Logic sama seperti sebelumnya)
-                if (!forceUpdate && currentSongState?.song?.id == songId && !currentSongState.song.lyrics.isNullOrBlank()) {
-                    Log.d("DEBUG_PLAYER", "🛑 SKIP FETCH: Lirik sudah ada.")
-                    return@launch
-                }
+                    while (attempt <= maxAttempts && !isSuccess) {
+                        if (!isActive) break
 
-                Log.d("DEBUG_PLAYER", "🔍 LYRICS: Meminta lirik ke Repository untuk ID: $songId")
+                        try {
+                            Log.d("DEBUG_PLAYER", "🔄 FETCH Attempt #$attempt untuk ID: $songId")
 
-                // Fungsi ini akan otomatis: Cek SQLite -> Kalau kosong -> Ambil Supabase -> Simpan SQLite
-                val fullSongData = repository.getFullSongDetails(songId)
+                            val timeoutMs = if (attempt == 1) 5000L else 10000L
+                            val fullSongData = withTimeout(timeoutMs) {
+                                repository.getFullSongDetails(songId)
+                            }
 
-                // Cek apakah job ini dibatalkan di tengah jalan?
-                ensureActive()
+                            ensureActive()
 
-                if (fullSongData == null) {
-                    Log.e("DEBUG_PLAYER", "❌ FETCH GAGAL: Lagu dengan ID '$songId' TIDAK DITEMUKAN di database 'songs'.")
-                    return@launch
-                }
-
-                Log.d("DEBUG_PLAYER", "📦 DATA DITERIMA: ID=${fullSongData.id}, Lyrics Length=${fullSongData.lyrics?.length ?: 0}")
-
-                _uiState.update { state ->
-                    if (state.currentSong?.song?.id == songId) {
-                        Log.d("DEBUG_PLAYER", "✅ UPDATE STATE: Memasukkan lirik ke UI.")
-                        state.copy(
-                            isLoadingLyrics = false,
-                            currentSong = state.currentSong.copy(
-                                song = state.currentSong.song.copy(
-                                    lyrics = fullSongData.lyrics,
-                                    uploaderUserId = fullSongData.uploaderUserId,
-                                )
-                            )
-                        )
-                    } else {
-                        Log.w("DEBUG_PLAYER", "⚠️ UPDATE SKIPPED: User sudah ganti lagu.")
-                        state.copy(isLoadingLyrics = false)
+                            if (fullSongData != null) {
+                                _uiState.update { state ->
+                                    if (state.currentSong?.song?.id == songId) {
+                                        state.copy(
+                                            // Loading dimatikan di finally, jadi disini update data aja
+                                            currentSong = state.currentSong.copy(
+                                                song = state.currentSong.song.copy(
+                                                    lyrics = fullSongData.lyrics,
+                                                    uploaderUserId = fullSongData.uploaderUserId,
+                                                )
+                                            )
+                                        )
+                                    } else {
+                                        state
+                                    }
+                                }
+                                isSuccess = true
+                            } else {
+                                Log.w("DEBUG_PLAYER", "⚠️ Data server null. Stop retry.")
+                                break
+                            }
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e // Lempar ke blok finally luar
+                            Log.w("DEBUG_PLAYER", "❌ Gagal Percobaan #$attempt: ${e.message}")
+                            if (attempt < maxAttempts) delay(2000)
+                        }
+                        attempt++
+                    }
+                } catch (e: Exception) {
+                    // Log error global jika ada (selain cancel)
+                    if (e !is kotlinx.coroutines.CancellationException) {
+                        Log.e("DEBUG_PLAYER", "❌ CRASH FETCH LIRIK: ${e.message}")
+                    }
+                } finally {
+                    _uiState.update { state ->
+                        // Cek Cerdas: Hanya matikan loading jika lagu yang aktif ADALAH lagu request ini.
+                        // Jangan sampai kita matikan loading punya lagu selanjutnya (Song B) karena Song A dicancel.
+                        if (state.currentSong?.song?.id == songId) {
+                            Log.d("DEBUG_PLAYER", "🏁 FETCH SELESAI/CANCEL: Matikan Loading untuk $songId")
+                            state.copy(isLoadingLyrics = false)
+                        } else {
+                            // Kalau lagunya udah beda, jangan sentuh state loadingnya.
+                            state
+                        }
                     }
                 }
-
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) {
-                    Log.d("DEBUG_PLAYER", "✋ FETCH CANCELLED: Request untuk ID '$songId' dibatalkan.")
-                    throw e
-                }
-                // Log exception lengkap biar tau jenis errornya (Network/Serialization/dll)
-                Log.e("DEBUG_PLAYER", "❌ FETCH EXCEPTION: ${e.javaClass.simpleName} - ${e.message}")
-                _uiState.update { it.copy(isLoadingLyrics = false) }
-                e.printStackTrace()
             }
         }
     }
@@ -620,6 +645,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 currentSongIndex = index,
                 // Reset loading state sementara
                 isLoadingLyrics = false,
+                isLoadingData = true, // Start loading data (Checking/Resolving)
                 // 🔄 RESET SLIDER KE 0 (Biar kelihatan mulai dari awal)
                 currentPosition = 0L
             )
@@ -634,6 +660,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 if (isUrlValid) {
                     // JIKA URL VALID: Play Langsung (Optimistic)
                     Log.d("DEBUG_PLAYER", "🚀 URL VALID: Play langsung tanpa menunggu.")
+                    _uiState.update { it.copy(debugStatus = "Playing from Cache", isLoadingData = false) } // Data ready
                     withContext(Dispatchers.Main) {
                         if (index < controller.mediaItemCount) {
                             if (controller.currentMediaItemIndex != index) {
@@ -646,7 +673,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     // JIKA URL KOSONG: Tampilkan Loading & Resolve Dulu
                     Log.d("DEBUG_PLAYER", "⏳ URL KOSONG: Resolving URL dulu... (Player dipause sementara)")
                     withContext(Dispatchers.Main) {
-                         _uiState.update { it.copy(isLoadingLyrics = true) } // Pakai loading indicator yang ada
+                         _uiState.update { it.copy(isLoadingLyrics = true, isLoadingData = true) } // Still loading
                     }
                 }
 
@@ -683,7 +710,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                              controller.play()
                         }
                     }
-                    _uiState.update { it.copy(isLoadingLyrics = false) }
+                    _uiState.update { it.copy(isLoadingLyrics = false, isLoadingData = false) }
                 }
 
                 // 4. UPDATE LIRIK & WARNA (Sekali saja!)
@@ -701,7 +728,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 e.printStackTrace()
 
                 withContext(Dispatchers.Main) {
-                     _uiState.update { it.copy(isLoadingLyrics = false) }
+                     _uiState.update { it.copy(isLoadingLyrics = false, isLoadingData = false) }
                 }
             }
         }

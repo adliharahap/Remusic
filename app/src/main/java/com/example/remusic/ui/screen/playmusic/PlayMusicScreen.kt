@@ -165,6 +165,10 @@ fun PlayMusicScreen(
                 1 -> NowPlaying(
                     songWithArtist = uiState.currentSong,
                     isPlaying = uiState.isPlaying,
+                    isBuffering = uiState.isBuffering,
+                    isLoadingData = uiState.isLoadingData,
+                    debugStatus = uiState.debugStatus,
+                    errorMsg = uiState.errorMessage,
                     currentPosition = uiState.currentPosition,
                     totalDuration = uiState.totalDuration,
                     isShuffleEnabled = uiState.isShuffleModeEnabled,
