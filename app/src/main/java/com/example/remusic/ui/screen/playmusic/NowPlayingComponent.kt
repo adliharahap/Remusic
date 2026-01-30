@@ -36,6 +36,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
@@ -104,6 +105,8 @@ fun NowPlaying(
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
     onTimerClick: () -> Unit,
+    isLiked: Boolean,
+    onLikeClick: () -> Unit,
     onSeek: (Float) -> Unit
 ) {
     val context = LocalContext.current
@@ -286,10 +289,10 @@ fun NowPlaying(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
                                         Icon(
-                                            Icons.Filled.FavoriteBorder,
+                                            if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                             "Fav",
-                                            Modifier.size(30.dp),
-                                            Color.White
+                                            Modifier.size(30.dp).clickable { onLikeClick() },
+                                            if (isLiked) Color.Red else Color.White
                                         )
                                         Icon(
                                             Icons.Outlined.Timer,
@@ -560,10 +563,10 @@ fun NowPlaying(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
                                     Icon(
-                                        Icons.Filled.FavoriteBorder,
+                                        if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                         "Fav",
-                                        Modifier.size(25.dp),
-                                        Color.White
+                                        Modifier.size(25.dp).clickable { onLikeClick() },
+                                        if (isLiked) Color.Red else Color.White
                                     )
                                     Icon(
                                         Icons.Filled.Share,

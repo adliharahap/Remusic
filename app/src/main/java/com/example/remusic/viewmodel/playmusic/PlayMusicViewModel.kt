@@ -24,6 +24,8 @@ import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.data.repository.MusicRepository
 import com.example.remusic.services.MusicService
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
+import io.github.jan.supabase.auth.auth
+import com.example.remusic.data.SupabaseManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable.isActive
@@ -60,8 +62,10 @@ data class PlayerUiState(
     val isSleepTimerActive: Boolean = false,
     val isBuffering: Boolean = false,
     val isLoadingData: Boolean = false,
+
     val debugStatus: String = "Ready",
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isLiked: Boolean = false
 )
 
 
@@ -231,6 +235,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             )
                             _uiState.update { it.copy(dominantColors = colors) }
                         }
+
+                        // 3. CEK STATUS LIKE (PENTING: Biar UI update saat ganti lagu otomatis)
+                        checkIfLiked(matchedSong.song.id)
 
                     } else {
                         Log.w("DEBUG_PLAYER", "   ⚠️ FALLBACK: Menggunakan metadata dari MediaItem (Lagu tidak ada di list local)")
@@ -645,7 +652,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 currentSongIndex = index,
                 // Reset loading state sementara
                 isLoadingLyrics = false,
+
                 isLoadingData = true, // Start loading data (Checking/Resolving)
+                isLiked = false, // Reset like status for new song
                 // 🔄 RESET SLIDER KE 0 (Biar kelihatan mulai dari awal)
                 currentPosition = 0L
             )
@@ -718,7 +727,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 fetchFullSongDetails(targetSong.song.id, forceUpdate = true)
 
                 val colors = extractGradientColorsFromImageUrl(getApplication(), targetSong.song.coverUrl ?: "")
+
                 _uiState.update { it.copy(dominantColors = colors) }
+                
+                // 5. CEK STATUS LIKE
+                checkIfLiked(targetSong.song.id)
 
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e // Biarkan cancel lewat
@@ -791,6 +804,58 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         
         _uiState.update { it.copy(isSleepTimerActive = false) }
         Log.d("PlayMusicViewModel", "🚀 Command STOP_SLEEP_TIMER sent")
+        Log.d("PlayMusicViewModel", "🚀 Command STOP_SLEEP_TIMER sent")
+    }
+
+    // --- FITUR LIKE / UNLIKE ---
+    fun toggleLike() {
+        val currentSong = _uiState.value.currentSong?.song ?: return
+        val currentIsLiked = _uiState.value.isLiked
+        val userId = SupabaseManager.client.auth.currentSessionOrNull()?.user?.id
+
+        if (userId == null) {
+            Log.e("PlayMusicViewModel", "❌ Toggle Like Failed: User not logged in")
+            return
+        }
+
+        // Optimistic Update (Langsung ubah UI biar cepat)
+        _uiState.update { it.copy(isLiked = !currentIsLiked) }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.toggleLike(currentSong.id, userId, currentIsLiked)
+            } catch (e: Exception) {
+                // Handle Duplicate Key (Data sudah ada, tapi UI telat tau)
+                if (e.message?.contains("duplicate key") == true || e.message?.contains("23505") == true) {
+                    Log.w("PlayMusicViewModel", "⚠️ Like Conflict: Data sudah ada. Force update UI ke Liked.")
+                    _uiState.update { it.copy(isLiked = true) }
+                } else {
+                    // Revert on real failure
+                     _uiState.update { it.copy(isLiked = currentIsLiked) }
+                     Log.e("PlayMusicViewModel", "❌ Toggle Like Failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun checkIfLiked(songId: String) {
+        val userId = SupabaseManager.client.auth.currentSessionOrNull()?.user?.id
+        if (userId == null) {
+            _uiState.update { it.copy(isLiked = false) }
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val isLiked = repository.isSongLiked(songId, userId)
+            _uiState.update {
+                // Cek apalah lagu yang aktif masih sama?
+                if (it.currentSong?.song?.id == songId) {
+                    it.copy(isLiked = isLiked)
+                } else {
+                    it
+                }
+            }
+        }
     }
 
     // --- [TAMBAHKAN 3 FUNGSI INI DI PALING BAWAH] ---
@@ -866,6 +931,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // 2. Cek Posisi: Pastikan seekbar jalan lagi
         mediaController?.let {
             if (it.isPlaying) startUpdatingPosition()
+        }
+
+        // 3. Cek Ulang Status Like (Penting kalau user like dari device lain/web)
+        if (currentSong != null) {
+            checkIfLiked(currentSong.song.id)
         }
     }
 

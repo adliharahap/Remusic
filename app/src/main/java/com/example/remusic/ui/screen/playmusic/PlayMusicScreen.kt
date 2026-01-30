@@ -181,6 +181,8 @@ fun PlayMusicScreen(
                     onShuffleClick = { playMusicViewModel.toggleShuffleMode() },
                     onRepeatClick = { playMusicViewModel.cycleRepeatMode() },
                     onTimerClick = { showSleepTimerSheet = true },
+                    isLiked = uiState.isLiked,
+                    onLikeClick = { playMusicViewModel.toggleLike() },
                     posterAnimation = uiState.currentSongIndex,
                     posterAnimationDirection = uiState.animationDirection,
                     onSeek = { positionFraction ->

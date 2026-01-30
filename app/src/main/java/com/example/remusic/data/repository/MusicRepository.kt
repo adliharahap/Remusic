@@ -9,6 +9,7 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import com.example.remusic.data.SupabaseManager
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonObject
 
 class MusicRepository(private val musicDao: MusicDao) {
 
@@ -233,5 +234,55 @@ class MusicRepository(private val musicDao: MusicDao) {
         }
 
         return cached // Return apa adanya (mungkin null atau data parsial)
+    }
+
+    // --- LOGIC 3: LIKE / UNLIKE SONG ---
+    suspend fun isSongLiked(songId: String, userId: String): Boolean {
+        return try {
+            val result = SupabaseManager.client
+                .from("user_song_likes")
+                .select(columns = Columns.list("user_id")) {
+                    filter {
+                        eq("user_id", userId)
+                        eq("song_id", songId)
+                    }
+                    limit(1) // Cukup ambil 1 saja untuk verifikasi
+                }
+
+            // Decode hasilnya menjadi List. Jika list tidak kosong, berarti sudah di-like.
+            val data = result.decodeList<JsonObject>()
+            data.isNotEmpty()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [LIKE CHECK ERROR] Gagal cek status like: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun toggleLike(songId: String, userId: String, isLiked: Boolean) {
+        try {
+            if (isLiked) {
+                // DELETE (Unlike)
+                SupabaseManager.client
+                    .from("user_song_likes")
+                    .delete {
+                        filter {
+                            eq("user_id", userId)
+                            eq("song_id", songId)
+                        }
+                    }
+                Log.d(TAG, "💔 [UNLIKE] Lagu dihapus dari Liked Songs.")
+            } else {
+                // INSERT (Like)
+                val data = mapOf("user_id" to userId, "song_id" to songId)
+                SupabaseManager.client
+                    .from("user_song_likes")
+                    .insert(data)
+                Log.d(TAG, "❤️ [LIKE] Lagu ditambahkan ke Liked Songs.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [LIKE ERROR] Gagal toggle like: ${e.message}")
+            throw e // Re-throw biar ViewModel tau kalau gagal
+        }
     }
 }
