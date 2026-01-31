@@ -78,6 +78,7 @@ import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.LyricLine
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
@@ -458,17 +459,16 @@ fun LyricsBottomPanel(
                             repeatDelayMillis = 5000,   // delay di ujung sebelum loop
                             iterations = Int.MAX_VALUE, // scroll terus-menerus
                         )
-                        .padding(start = 16.dp, bottom = 5.dp)
+                        .padding(bottom = 5.dp)
                 )
                 Text(
-                    text = songWithArtist?.artist?.name ?: "Unknown Artist",
+                    text = songWithArtist?.displayArtistName ?: "Unknown Artist",
                     color = Color(0xCCFFFFFF),
                     fontFamily = AppFont.RobotoRegular,
                     fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        .padding(start = 16.dp)
                         .fillMaxWidth()
                 )
             }

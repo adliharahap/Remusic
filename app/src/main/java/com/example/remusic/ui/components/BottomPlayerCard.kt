@@ -33,10 +33,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.playmusic.PlayerUiState
 
@@ -93,15 +95,15 @@ fun BottomPlayerCard(
                             color = Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            fontFamily = AppFont.RobotoMedium,
+                            fontFamily = AppFont.HelveticaRoundedBold,
                             fontSize = 16.sp
                         )
                         Text(
-                            text = uiState.currentSong?.artist?.name ?: "Unknown Artist",
+                            text = uiState.currentSong?.displayArtistName ?: "Unknown Artist",
                             color = Color.White.copy(0.8f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            fontFamily = AppFont.RobotoRegular,
+                            fontFamily = AppFont.Poppins,
                             fontSize = 14.sp
                         )
                     }

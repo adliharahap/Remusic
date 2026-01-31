@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -273,7 +274,8 @@ fun PlayMusicScreen(
                             Text(
                                 text = title,
                                 color = if (isSelected) Color.White else Color.White.copy(0.8f),
-                                fontFamily = if (isSelected) AppFont.RobotoBold else AppFont.RobotoMedium,
+                                fontFamily = AppFont.HelveticaRoundedBold,
+                                fontWeight = if(isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = if (isSelected) 17.sp else 15.sp,
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )

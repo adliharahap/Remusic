@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
 
@@ -120,7 +121,7 @@ fun QueueScreen(
             QueueSongCard(
                 index = index,
                 songTitle = songWithArtist.song.title,
-                artistName = songWithArtist.artist?.name ?: "Unknown Artist",
+                artistName = songWithArtist?.displayArtistName ?: "Unknown Artist",
                 posterUri = songWithArtist.song.coverUrl ?: "",
                 isCurrentlyPlaying = currentlyPlayingId != null && songWithArtist.song.id == currentlyPlayingId,
                 onClickListener = onClickListener,

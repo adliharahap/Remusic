@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +78,7 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.MusicSlider
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
@@ -258,7 +260,8 @@ fun NowPlaying(
                                         Text(
                                             text = songWithArtist?.song?.title ?: "Unknown Title",
                                             color = Color.White,
-                                            fontFamily = AppFont.MontserratBold,
+                                            fontFamily = AppFont.Poppins,
+                                            fontWeight = FontWeight.Bold,
                                             fontSize = 19.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -273,9 +276,10 @@ fun NowPlaying(
                                                 )
                                         )
                                         Text(
-                                            text = songWithArtist?.artist?.name ?: "Unknown Artist",
+                                            text = songWithArtist?.displayArtistName ?: "Unknown Artist",
                                             color = Color(0xCCFFFFFF),
-                                            fontFamily = AppFont.MontserratRegular,
+                                            fontFamily = AppFont.Helvetica,
+                                            fontWeight = FontWeight.Normal,
                                             fontSize = 15.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -291,13 +295,13 @@ fun NowPlaying(
                                         Icon(
                                             if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                             "Fav",
-                                            Modifier.size(30.dp).clickable { onLikeClick() },
+                                            Modifier.size(28.dp).clickable { onLikeClick() },
                                             if (isLiked) Color.Red else Color.White
                                         )
                                         Icon(
                                             Icons.Outlined.Timer,
                                             "Timer",
-                                            Modifier.size(30.dp).clickable { onTimerClick() },
+                                            Modifier.size(28.dp).clickable { onTimerClick() },
                                             Color.White
                                         )
                                     }
@@ -335,13 +339,15 @@ fun NowPlaying(
                                     Text(
                                         text = formatDuration(displayCurrentTime),
                                         color = Color.White,
-                                        fontFamily = AppFont.MontserratRegular,
+                                        fontFamily = AppFont.Coolvetica,
+                                        fontWeight = FontWeight.Normal,
                                         fontSize = 14.sp,
                                     )
                                     Text(
                                         text = formatDuration(totalDuration),
                                         color = Color.White,
-                                        fontFamily = AppFont.MontserratRegular,
+                                        fontFamily = AppFont.Coolvetica,
+                                        fontWeight = FontWeight.Normal,
                                         fontSize = 14.sp,
                                     )
                                 }
@@ -359,7 +365,8 @@ fun NowPlaying(
                                     Text(
                                         text = statusText,
                                         color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
-                                        fontFamily = AppFont.MontserratBold,
+                                        fontFamily = AppFont.Helvetica,
+                                        fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
                                     )
                                 }
@@ -531,7 +538,7 @@ fun NowPlaying(
                                     Text(
                                         text = songWithArtist?.song?.title ?: "Unknown Title",
                                         color = Color.White,
-                                        fontFamily = AppFont.RobotoBold,
+                                        fontFamily = AppFont.HelveticaRoundedBold,
                                         fontSize = 20.sp,
                                         maxLines = 1,
                                         modifier = Modifier
@@ -544,9 +551,9 @@ fun NowPlaying(
                                             .padding(start = 16.dp, bottom = 5.dp)
                                     )
                                     Text(
-                                        text = songWithArtist?.artist?.name ?: "Unknown Artist",
+                                        text = songWithArtist?.displayArtistName ?: "Unknown Artist",
                                         color = Color(0xCCFFFFFF),
-                                        fontFamily = AppFont.RobotoRegular,
+                                        fontFamily = AppFont.Helvetica,
                                         fontSize = 15.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -620,11 +627,13 @@ fun NowPlaying(
                                 Text(
                                     text = formatDuration(displayCurrentTime),
                                     color = Color.White,
+                                    fontFamily = AppFont.Helvetica,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     text = formatDuration(totalDuration),
                                     color = Color.White,
+                                    fontFamily = AppFont.Helvetica,
                                     fontSize = 14.sp
                                 )
                             }
@@ -642,7 +651,8 @@ fun NowPlaying(
                                 Text(
                                     text = statusText,
                                     color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
-                                    fontFamily = AppFont.MontserratBold,
+                                    fontFamily = AppFont.Helvetica,
+                                    fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                 )
                             }

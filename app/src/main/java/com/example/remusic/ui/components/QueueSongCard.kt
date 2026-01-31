@@ -79,9 +79,9 @@ fun QueueSongCard(
             } else {
                 Text(
                     text = (index + 1).toString(),
-                    color = Color.White.copy(0.7f),
-                    fontFamily = AppFont.RobotoRegular,
-                    fontSize = 14.sp,
+                    color = Color.White.copy(0.8f),
+                    fontFamily = AppFont.Coolvetica,
+                    fontSize = 15.sp,
                     modifier = Modifier.width(20.dp)
                 )
             }
@@ -106,7 +106,7 @@ fun QueueSongCard(
                 Text(
                     text = songTitle,
                     color = if (isCurrentlyPlaying) Color.White else Color.White.copy(0.9f),
-                    fontFamily = AppFont.RobotoMedium,
+                    fontFamily = AppFont.Coolvetica,
                     fontSize = 16.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -115,7 +115,8 @@ fun QueueSongCard(
                 Text(
                     text = artistName,
                     color = Color.White.copy(0.7f),
-                    fontFamily = AppFont.RobotoRegular,
+                    fontFamily = AppFont.Helvetica,
+                    fontWeight = FontWeight.Normal,
                     fontSize = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

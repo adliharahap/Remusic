@@ -194,7 +194,7 @@ fun SleepTimerBottomSheet(
                         ) {
                             Text(
                                 text = "HOURS",
-                                color = Color.White.copy(0.3f), // REQ: Lebih transparan/subtle
+                                color = Color.White.copy(0.6f), // REQ: Lebih transparan/subtle
                                 fontFamily = AppFont.MontserratRegular,
                                 fontSize = 10.sp, // REQ: Kecil
                                 modifier = Modifier.padding(end = 50.dp),
@@ -202,7 +202,7 @@ fun SleepTimerBottomSheet(
                             )
                             Text(
                                 text = "MINUTES",
-                                color = Color.White.copy(0.3f),
+                                color = Color.White.copy(0.6f),
                                 fontFamily = AppFont.MontserratRegular,
                                 fontSize = 10.sp,
                                 modifier = Modifier.padding(start = 50.dp),

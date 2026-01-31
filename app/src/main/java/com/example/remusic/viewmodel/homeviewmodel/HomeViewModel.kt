@@ -32,8 +32,7 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = HomeUiState.Loading
             try {
-                // 1. Ambil semua lagu dari tabel 'songs'
-                // decodeList<Song>() otomatis mengubah JSON Supabase jadi List<Song>
+                // 1. Ambil data lagu
                 val songs = SupabaseManager.client
                     .from("songs")
                     .select(
@@ -46,6 +45,7 @@ class HomeViewModel : ViewModel() {
                             "canvas_url",
                             "duration_ms",
                             "telegram_audio_file_id",
+                            "featured_artists"
                         )
                     ) {
                         order(column = "created_at", order = Order.DESCENDING)
@@ -57,30 +57,28 @@ class HomeViewModel : ViewModel() {
                     return@launch
                 }
 
-                // 2. Kumpulkan semua Artist ID yang unik
+                // 2. Kumpulkan ID Artis Utama
                 val artistIds = songs.mapNotNull { it.artistId }
                     .filter { it.isNotBlank() }
                     .distinct()
 
-                // 3. Ambil data Artis (Bulk Fetch)
-                // Di Supabase/Postgres, kita tidak perlu 'chunking' (pecah 30-30)
-                // Filter 'isIn' bisa menangani ribuan ID sekaligus dengan cepat.
+                // 3. Ambil data Artis Utama
                 val artistsMap = if (artistIds.isNotEmpty()) {
                     SupabaseManager.client
                         .from("artists")
                         .select {
                             filter {
-                                // Ambil artis yang ID-nya ada di dalam list artistIds
                                 isIn("id", artistIds)
                             }
                         }
                         .decodeList<Artist>()
-                        .associateBy { it.id } // Ubah jadi Map biar pencarian cepat: [id -> Artist]
+                        .associateBy { it.id }
                 } else {
                     emptyMap()
                 }
 
-                // 4. Gabungkan Lagu dengan Artisnya
+                // 4. Gabungkan
+                // (Kita tidak menggabungkan string di sini agar data mentah tetap terjaga)
                 val songsWithArtists = songs.map { song ->
                     val artist = song.artistId?.let { id -> artistsMap[id] }
                     SongWithArtist(
@@ -92,7 +90,6 @@ class HomeViewModel : ViewModel() {
                 _uiState.value = HomeUiState.Success(songsWithArtists)
 
             } catch (e: Exception) {
-                // Log error untuk debugging
                 e.printStackTrace()
                 _uiState.value = HomeUiState.Error(e.message ?: "Terjadi kesalahan saat memuat data.")
             }

@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
@@ -116,7 +117,7 @@ fun SongSection(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = item.artist?.name ?: "Unknown Artist",
+                        text = item.displayArtistName,
                         fontSize = 12.sp,
                         fontFamily = AppFont.Poppins,
                         fontWeight = FontWeight.Normal,
