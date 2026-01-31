@@ -60,6 +60,7 @@ data class PlayerUiState(
     val animationDirection: AnimationDirection = AnimationDirection.NONE,
     val isLoadingLyrics: Boolean = false,
     val isSleepTimerActive: Boolean = false,
+    val sleepTimerEndTime: Long? = null,
     val isBuffering: Boolean = false,
     val isLoadingData: Boolean = false,
 
@@ -107,7 +108,32 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     @OptIn(UnstableApi::class)
     private fun connectToService() {
         val sessionToken = SessionToken(getApplication(), ComponentName(getApplication(), MusicService::class.java))
-        val controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
+        
+        // Listener khusus untuk MediaController (Session Extras / Sleep Timer)
+        val controllerListener = object : MediaController.Listener {
+            override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) {
+                super.onExtrasChanged(controller, extras)
+                val isTimerActive = extras.getBoolean("IS_SLEEP_TIMER_ACTIVE", false)
+                val timerEndTime = extras.getLong("SLEEP_TIMER_END_TIME", 0L)
+
+                Log.d("PlayMusicViewModel", "🔔 EXTRAS CHANGED: Sleep Timer Active = $isTimerActive, End = $timerEndTime")
+                
+                // Update UI State (Hanya jika berbeda biar gak loop)
+                if (_uiState.value.isSleepTimerActive != isTimerActive || _uiState.value.sleepTimerEndTime != timerEndTime) {
+                    _uiState.update { 
+                        it.copy(
+                            isSleepTimerActive = isTimerActive,
+                            sleepTimerEndTime = if(isTimerActive) timerEndTime else null
+                         ) 
+                    }
+                }
+            }
+        }
+
+        val controllerFuture = MediaController.Builder(getApplication(), sessionToken)
+            .setListener(controllerListener)
+            .buildAsync()
+
         controllerFuture.addListener(
             {
                 mediaController = controllerFuture.get()
@@ -938,6 +964,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             checkIfLiked(currentSong.song.id)
         }
     }
+
+
 
 
     override fun onCleared() {

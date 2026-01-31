@@ -118,6 +118,7 @@ class MusicService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "ACTION_STOP_SLEEP_TIMER") {
             sleepTimerManager.cancelTimer()
+            broadcastSleepTimerState(false)
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -143,6 +144,7 @@ class MusicService : MediaSessionService() {
         val session = mediaSession ?: return
         val newExtras = session.sessionExtras.deepCopy().apply {
             putBoolean("IS_SLEEP_TIMER_ACTIVE", isActive)
+            putLong("SLEEP_TIMER_END_TIME", if(isActive) sleepTimerManager.endTimeMs else 0L)
         }
         session.sessionExtras = newExtras
     }

@@ -315,7 +315,8 @@ fun PlayMusicScreen(
             },
             onCancelTimer = {
                 playMusicViewModel.cancelSleepTimer()
-            }
+            },
+            timerEndTime = uiState.sleepTimerEndTime // Pass end time
         )
     }
 }

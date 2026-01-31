@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen.playmusic
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,22 +48,22 @@ fun SleepTimerBottomSheet(
     dominantColors: List<Color>,
     onDismiss: () -> Unit,
     onSetTimer: (Int) -> Unit,
-    onCancelTimer: () -> Unit
+    onCancelTimer: () -> Unit,
+    timerEndTime: Long? = null
 ) {
-    var showCustomInput by remember { mutableStateOf(false) }
-    
-    // State untuk Custom Picker
-    var selectedHour by remember { mutableIntStateOf(0) }
+
+    // State untuk Custom Picker (Default 1 Jam)
+    var selectedHour by remember { mutableIntStateOf(1) }
     var selectedMinute by remember { mutableIntStateOf(0) }
 
     // Warna Dinamis
     val primaryColor = dominantColors.getOrElse(0) { Color.Green }
-    val backgroundColor = dominantColors.getOrElse(1) { Color(0xFF1E1E1E) }
-    
-    // Gradient Background untuk Sheet
+    val secondaryColor = dominantColors.getOrElse(1) { Color(0xFF1E1E1E) }
+
+    // Gradient Background: Dominant Color (Top/Center) -> Black/Dark (Bottom)
     val sheetBrush = Brush.verticalGradient(
         colors = listOf(
-            backgroundColor.copy(alpha = 0.9f),
+            primaryColor.copy(alpha = 0.9f), // Lebih solid (90%)
             Color.Black
         )
     )
@@ -115,17 +116,37 @@ fun SleepTimerBottomSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.Black.copy(0.3f), RoundedCornerShape(12.dp))
-                            .border(1.dp, primaryColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .border(
+                                1.dp,
+                                primaryColor.copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
                             .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = "Timer is Active",
-                            color = primaryColor,
+                            color = Color.White, // REQ: White Text
                             fontFamily = AppFont.MontserratBold,
-                            fontSize = 22.sp
+                            fontSize = 20.sp
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // REQ: Countdown Timer
+                        if (timerEndTime != null && timerEndTime > System.currentTimeMillis()) {
+                            SleepTimerCountdown(endTime = timerEndTime)
+                        } else {
+                            // Fallback styling
+                            Text(
+                                "--:--:--",
+                                color = Color.White,
+                                fontSize = 32.sp,
+                                fontFamily = AppFont.MontserratBold
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
                             text = "Music will stop automatically.",
                             color = Color.White.copy(0.7f),
@@ -144,118 +165,102 @@ fun SleepTimerBottomSheet(
                                 .fillMaxWidth()
                                 .height(50.dp)
                         ) {
-                            Text("Stop Timer", color = Color.White, fontFamily = AppFont.MontserratBold)
+                            Text(
+                                "Stop Timer",
+                                color = Color.White,
+                                fontFamily = AppFont.MontserratBold
+                            )
                         }
                     }
                 } else {
                     // Selection State
-                    if (showCustomInput) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Set Duration",
-                                color = Color.White,
-                                fontFamily = AppFont.MontserratMedium,
-                                fontSize = 16.sp,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-
-                            // Labels for Hours and Minutes
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 8.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Hours",
-                                    color = Color.Gray,
-                                    fontFamily = AppFont.MontserratRegular,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(end = 32.dp)
-                                )
-                                Text(
-                                    text = "Minutes",
-                                    color = Color.Gray,
-                                    fontFamily = AppFont.MontserratRegular,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(start = 32.dp)
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                val initialTime = remember { java.time.LocalTime.of(selectedHour, selectedMinute) }
-                                com.commandiron.wheel_picker_compose.WheelTimePicker(
-                                    startTime = initialTime,
-                                    timeFormat = com.commandiron.wheel_picker_compose.core.TimeFormat.HOUR_24,
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.White,
-                                        fontSize = 32.sp,
-                                        fontFamily = AppFont.MontserratBold
-                                    ),
-                                    size = androidx.compose.ui.unit.DpSize(350.dp, 250.dp), // Lebih besar lagi
-                                    rowCount = 5,
-                                    selectorProperties = com.commandiron.wheel_picker_compose.core.WheelPickerDefaults.selectorProperties(
-                                        enabled = true,
-                                        color = Color.White.copy(alpha = 0.1f),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor)
-                                    ),
-                                    onSnappedTime = { time ->
-                                        selectedHour = time.hour
-                                        selectedMinute = time.minute
-                                    }
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(32.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Button(
-                                    onClick = { showCustomInput = false },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Cancel", color = Color.Gray, fontFamily = AppFont.MontserratMedium)
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Button(
-                                    onClick = {
-                                        val totalMinutes = (selectedHour * 60) + selectedMinute
-                                        if (totalMinutes > 0) {
-                                            onSetTimer(totalMinutes)
-                                            onDismiss()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f).height(50.dp)
-                                ) {
-                                    Text("Start", color = Color.Black, fontFamily = AppFont.MontserratBold)
-                                }
-                            }
-                        }
-                    } else {
-                        val options = listOf(
-                            20 to "20 Minutes",
-                            30 to "30 Minutes",
-                            60 to "1 Hour",
-                            120 to "2 Hours"
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Set Duration",
+                            color = Color.White,
+                            fontFamily = AppFont.MontserratMedium,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(bottom = 24.dp)
                         )
 
-                        options.forEach { (minutes, label) ->
-                            TimerOptionItem(label) {
-                                onSetTimer(minutes)
-                                onDismiss()
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
+                        // Labels for Hours and Minutes (Subtle)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 0.dp), // Rapatkan ke picker
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "HOURS",
+                                color = Color.White.copy(0.3f), // REQ: Lebih transparan/subtle
+                                fontFamily = AppFont.MontserratRegular,
+                                fontSize = 10.sp, // REQ: Kecil
+                                modifier = Modifier.padding(end = 50.dp),
+                                letterSpacing = 2.sp
+                            )
+                            Text(
+                                text = "MINUTES",
+                                color = Color.White.copy(0.3f),
+                                fontFamily = AppFont.MontserratRegular,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(start = 50.dp),
+                                letterSpacing = 2.sp
+                            )
                         }
 
-                        TimerOptionItem("Custom") {
-                            showCustomInput = true
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SleepTimerSelector(
+                                primaryColor = primaryColor,
+                                initialHour = selectedHour,
+                                initialMinute = selectedMinute,
+                                onTimeChanged = { h, m ->
+                                    selectedHour = h
+                                    selectedMinute = m
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Button(
+                                onClick = { onDismiss() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    "Cancel",
+                                    color = Color.White,
+                                    fontFamily = AppFont.MontserratBold
+                                ) // REQ: White text
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Button(
+                                onClick = {
+                                    val totalMinutes = (selectedHour * 60) + selectedMinute
+                                    if (totalMinutes > 0) {
+                                        onSetTimer(totalMinutes)
+                                        onDismiss()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(50.dp)
+                            ) {
+                                Text(
+                                    "Start",
+                                    color = Color.White,
+                                    fontFamily = AppFont.MontserratBold
+                                )
+                            }
                         }
                     }
                 }
@@ -266,28 +271,66 @@ fun SleepTimerBottomSheet(
 }
 
 @Composable
-fun TimerOptionItem(text: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(0.3f), RoundedCornerShape(12.dp))
-            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = text,
+fun SleepTimerCountdown(endTime: Long) {
+    var timeLeft by remember { androidx.compose.runtime.mutableLongStateOf(endTime - System.currentTimeMillis()) }
+
+    androidx.compose.runtime.LaunchedEffect(endTime) {
+        while (timeLeft > 0) {
+            timeLeft = endTime - System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+
+    val hours = java.util.concurrent.TimeUnit.MILLISECONDS.toHours(timeLeft)
+    val minutes = java.util.concurrent.TimeUnit.MILLISECONDS.toMinutes(timeLeft) % 60
+    val seconds = java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(timeLeft) % 60
+
+    Text(
+        text = String.format("%02dh %02dm %02ds", hours, minutes, seconds),
+        color = Color.White,
+        fontFamily = AppFont.MontserratBold,
+        fontSize = 32.sp
+    )
+}
+
+@Composable
+fun SleepTimerSelector(
+    primaryColor: Color,
+    initialHour: Int,
+    initialMinute: Int,
+    onTimeChanged: (Int, Int) -> Unit
+) {
+    // Optimization: Stabilize objects to prevent unnecessary recompositions inside the library
+    val textStyle = remember {
+        androidx.compose.ui.text.TextStyle(
             color = Color.White,
-            fontFamily = AppFont.MontserratMedium,
-            fontSize = 16.sp
-        )
-        Icon(
-            imageVector = Icons.Default.Timer,
-            contentDescription = null,
-            tint = Color.White, // Ubah icon jadi putih semua
-            modifier = Modifier.size(20.dp)
+            fontSize = 32.sp,
+            fontFamily = AppFont.MontserratBold
         )
     }
+
+    val selectorProperties = com.commandiron.wheel_picker_compose.core.WheelPickerDefaults.selectorProperties(
+        enabled = true,
+        color = Color.White.copy(alpha = 0.1f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor)
+    )
+    
+    val initialTime = remember { java.time.LocalTime.of(initialHour, initialMinute) }
+
+    com.commandiron.wheel_picker_compose.WheelTimePicker(
+        startTime = initialTime,
+        timeFormat = com.commandiron.wheel_picker_compose.core.TimeFormat.HOUR_24,
+        textStyle = textStyle,
+        size = androidx.compose.ui.unit.DpSize(350.dp, 250.dp),
+        rowCount = 5,
+        selectorProperties = selectorProperties,
+        onSnappedTime = { time ->
+             onTimeChanged(time.hour, time.minute)
+        }
+    )
 }
+
+
+
+
+

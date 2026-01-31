@@ -30,6 +30,9 @@ class SleepTimerManager(
     var timeRemainingMs: Long = 0
         private set
 
+    var endTimeMs: Long = 0
+        private set
+
     init {
         createNotificationChannel()
     }
@@ -39,6 +42,7 @@ class SleepTimerManager(
 
         isTimerActive = true
         timeRemainingMs = durationMs
+        endTimeMs = System.currentTimeMillis() + durationMs
         
         android.util.Log.d("SleepTimerManager", "⏰ START TIMER: $durationMs ms")
 
@@ -68,6 +72,7 @@ class SleepTimerManager(
         countDownTimer = null
         isTimerActive = false
         timeRemainingMs = 0
+        endTimeMs = 0
         cancelNotification()
     }
 
