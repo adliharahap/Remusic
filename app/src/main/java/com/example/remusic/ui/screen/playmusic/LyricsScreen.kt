@@ -10,6 +10,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -27,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -328,8 +336,12 @@ fun LyricLineItem(
     val colorAnimationSpec = tween<Color>(durationMillis = 200, delayMillis = 80)
 
     // 1. Animasikan Ukuran Font
+    // Jika terjemahan MATI (isTranslateLyrics = false), perbesar font original agar lebih mudah dibaca (22sp).
+    // Jika terjemahan HIDUP (isTranslateLyrics = true), gunakan font normal (20sp).
+    val targetFontSize = if (isTranslateLyrics) 20f else 22f
+
     val fontSize by animateFloatAsState(
-        targetValue = if (isActive) 20f else 20f,
+        targetValue = targetFontSize,
         animationSpec = animationSpec,
         label = "fontSizeAnimation"
     )
@@ -364,16 +376,37 @@ fun LyricLineItem(
             textAlign = TextAlign.Left
         )
 
-        if (line.translatedText != null && isTranslateLyrics) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = line.translatedText,
-                color = translatedColor, // Gunakan warna yang dianimasikan
-                fontSize = 17.sp, // Ukuran terjemahan bisa tetap
-                fontFamily = AppFont.Poppins,
-                fontWeight = FontWeight.Normal,
-                textAlign = TextAlign.Left
+        // Animasi Masuk/Keluar untuk Lirik Terjemahan
+        // Masuk: Fade In + Slide Down (dari atas ke posisi)
+        // Keluar: Fade Out + Slide Up (dari posisi ke atas)
+        AnimatedVisibility(
+            visible = line.translatedText != null && isTranslateLyrics,
+            enter = slideInVertically(
+                initialOffsetY = { -it }, // Mulai dari atas (negatif height)
+                animationSpec = tween(durationMillis = 300)
+            ) + fadeIn(animationSpec = tween(durationMillis = 300)) + expandVertically(
+                expandFrom = Alignment.Top,
+                animationSpec = tween(durationMillis = 300)
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { -it }, // Keluar ke atas (negatif height)
+                animationSpec = tween(durationMillis = 300)
+            ) + fadeOut(animationSpec = tween(durationMillis = 300)) + shrinkVertically(
+                shrinkTowards = Alignment.Top,
+                animationSpec = tween(durationMillis = 300)
             )
+        ) {
+            if (line.translatedText != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = line.translatedText,
+                    color = translatedColor, // Gunakan warna yang dianimasikan
+                    fontSize = 17.sp, // Ukuran terjemahan bisa tetap
+                    fontFamily = AppFont.Poppins,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.Left
+                )
+            }
         }
     }
 }
@@ -537,6 +570,7 @@ fun LyricsBottomPanel(
                 thumb = {
                     Box(
                         modifier = Modifier
+                            .offset(y = 1.dp)
                             .size(14.dp) // Atur ukuran bulatan di sini
                             .background(color = Color.White, shape = CircleShape) // CircleShape membuatnya bulat
                     )

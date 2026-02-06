@@ -20,6 +20,7 @@ import com.example.remusic.data.local.MusicDatabase
 import com.example.remusic.data.model.AudioOutputDevice
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.User
 import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.data.repository.MusicRepository
 import com.example.remusic.services.MusicService
@@ -66,7 +67,8 @@ data class PlayerUiState(
 
     val debugStatus: String = "Ready",
     val errorMessage: String? = null,
-    val isLiked: Boolean = false
+    val isLiked: Boolean = false,
+    val uploader: User? = null
 )
 
 
@@ -246,7 +248,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             it.copy(
                                 currentSong = matchedSong,
                                 currentSongIndex = newIndex,
-                                animationDirection = direction
+                                animationDirection = direction,
+                                uploader = null // Reset uploader for new song
                             )
                         }
                         Log.d("DEBUG_PLAYER", "🎵 Lagu Terdeteksi: ${matchedSong.song.title}")
@@ -425,8 +428,20 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             state
                         }
                     }
+
+                    // Setelah dapat detail lagu (termasuk uploaderUserId), ambil detail uploader
+                    _uiState.value.currentSong?.song?.uploaderUserId?.let { uploaderId ->
+                        fetchUploaderDetails(uploaderId)
+                    }
                 }
             }
+        }
+    }
+
+    private fun fetchUploaderDetails(uploaderId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val uploader = repository.fetchUserDetails(uploaderId)
+            _uiState.update { it.copy(uploader = uploader) }
         }
     }
 
@@ -681,6 +696,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
                 isLoadingData = true, // Start loading data (Checking/Resolving)
                 isLiked = false, // Reset like status for new song
+                uploader = null, // Reset uploader for new song
                 // 🔄 RESET SLIDER KE 0 (Biar kelihatan mulai dari awal)
                 currentPosition = 0L
             )

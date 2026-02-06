@@ -49,12 +49,14 @@ android {
         val supabaseKey = localProperties.getProperty("SUPABASE_ANON_KEY") ?: ""
         val googleClientId = localProperties.getProperty("GOOGLE_SERVER_CLIENT_ID") ?: ""
         val appSecret = localProperties.getProperty("APP_SECRET") ?: ""
+        val telegramTokenBot = localProperties.getProperty("TELEGRAM_TOKEN_BOT") ?: ""
 
         // Inject ke BuildConfig (Dibungkus kutip miring \")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "APP_SECRET", "\"$appSecret\"")
+        buildConfigField("String", "TELEGRAM_TOKEN_BOT", "\"$telegramTokenBot\"")
     }
 
     buildTypes {

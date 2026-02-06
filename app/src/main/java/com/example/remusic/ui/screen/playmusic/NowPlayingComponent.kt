@@ -17,6 +17,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,7 +43,6 @@ import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Timer
@@ -57,33 +57,36 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.media3.common.Player
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.User
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.MusicSlider
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.AnimationDirection
-import com.example.remusic.ui.components.shimmerEffect
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -109,12 +112,26 @@ fun NowPlaying(
     onTimerClick: () -> Unit,
     isLiked: Boolean,
     onLikeClick: () -> Unit,
-    onSeek: (Float) -> Unit
+    onSeek: (Float) -> Unit,
+    uploader: User? = null
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {}
     }
+
+    // Playback Button Animations
+    val playPauseInteractionSource = remember { MutableInteractionSource() }
+    val nextInteractionSource = remember { MutableInteractionSource() }
+    val prevInteractionSource = remember { MutableInteractionSource() }
+
+    val playPauseScale = remember { Animatable(1f) }
+    val nextScale = remember { Animatable(1f) }
+    val prevScale = remember { Animatable(1f) }
+
+    val playPauseScope = rememberCoroutineScope()
+    val nextScope = rememberCoroutineScope()
+    val prevScope = rememberCoroutineScope()
 
     // State lokal untuk slider
     var isUserSeeking by remember { mutableStateOf(false) }
@@ -404,7 +421,17 @@ fun NowPlaying(
                                             contentDescription = "Prev",
                                             modifier = Modifier
                                                 .size(40.dp)
-                                                .clickable { onPrevClick() },
+                                                .graphicsLayer(scaleX = prevScale.value, scaleY = prevScale.value)
+                                                .clickable(
+                                                    interactionSource = prevInteractionSource,
+                                                    indication = null
+                                                ) {
+                                                    prevScope.launch {
+                                                        prevScale.animateTo(1.1f, tween(200))
+                                                        prevScale.animateTo(1f, tween(200))
+                                                    }
+                                                    onPrevClick()
+                                                },
                                             tint = Color.White
                                         )
                                         Spacer(modifier = Modifier.width(30.dp))
@@ -420,7 +447,17 @@ fun NowPlaying(
                                                 contentDescription = "Play/Pause",
                                                 modifier = Modifier
                                                     .size(80.dp)
-                                                    .clickable { onPlayPauseClick() },
+                                                    .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
+                                                    .clickable(
+                                                        interactionSource = playPauseInteractionSource,
+                                                        indication = null
+                                                    ) {
+                                                        playPauseScope.launch {
+                                                            playPauseScale.animateTo(1.1f, tween(200))
+                                                            playPauseScale.animateTo(1f, tween(200))
+                                                        }
+                                                        onPlayPauseClick()
+                                                    },
                                                 tint = Color.White
                                             )
                                         }
@@ -430,7 +467,17 @@ fun NowPlaying(
                                             contentDescription = "Next",
                                             modifier = Modifier
                                                 .size(40.dp)
-                                                .clickable { onNextClick() },
+                                                .graphicsLayer(scaleX = nextScale.value, scaleY = nextScale.value)
+                                                .clickable(
+                                                    interactionSource = nextInteractionSource,
+                                                    indication = null
+                                                ) {
+                                                    nextScope.launch {
+                                                        nextScale.animateTo(1.1f, tween(200))
+                                                        nextScale.animateTo(1f, tween(200))
+                                                    }
+                                                    onNextClick()
+                                                },
                                             tint = Color.White
                                         )
                                     }
@@ -685,7 +732,17 @@ fun NowPlaying(
                                         contentDescription = "Prev",
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .clickable { onPrevClick() },
+                                            .graphicsLayer(scaleX = prevScale.value, scaleY = prevScale.value)
+                                            .clickable(
+                                                interactionSource = prevInteractionSource,
+                                                indication = null
+                                            ) {
+                                                prevScope.launch {
+                                                    prevScale.animateTo(1.15f, tween(100))
+                                                    prevScale.animateTo(1f, tween(100))
+                                                }
+                                                onPrevClick()
+                                            },
                                         tint = Color.White
                                     )
                                     Spacer(modifier = Modifier.width(30.dp))
@@ -701,7 +758,17 @@ fun NowPlaying(
                                             contentDescription = "Play/Pause",
                                             modifier = Modifier
                                                 .size(80.dp)
-                                                .clickable { onPlayPauseClick() },
+                                                .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
+                                                .clickable(
+                                                    interactionSource = playPauseInteractionSource,
+                                                    indication = null
+                                                ) {
+                                                    playPauseScope.launch {
+                                                        playPauseScale.animateTo(1.2f, tween(100))
+                                                        playPauseScale.animateTo(1f, tween(100))
+                                                    }
+                                                    onPlayPauseClick()
+                                                },
                                             tint = Color.White
                                         )
                                     }
@@ -711,7 +778,17 @@ fun NowPlaying(
                                         contentDescription = "Next",
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .clickable { onNextClick() },
+                                            .graphicsLayer(scaleX = nextScale.value, scaleY = nextScale.value)
+                                            .clickable(
+                                                interactionSource = nextInteractionSource,
+                                                indication = null
+                                            ) {
+                                                nextScope.launch {
+                                                    nextScale.animateTo(1.15f, tween(100))
+                                                    nextScale.animateTo(1f, tween(100))
+                                                }
+                                                onNextClick()
+                                            },
                                         tint = Color.White
                                     )
                                 }
@@ -770,136 +847,15 @@ fun NowPlaying(
                 // Spacer agar ada jarak sedikit saat user mulai scroll ke bawah
                 Spacer(modifier = Modifier.height(20.dp))
 
-                if (songWithArtist?.song?.uploaderUserId != null) {
-                    UploaderBox( // Pastikan nama composable ini benar sesuai kode kamu (UploaderBox?)
-                        uploaderId = songWithArtist.song.uploaderUserId
-                    )
-                    // Jika "UploaderUiState" di kode asli adalah "UploaderBox", ganti saja namanya
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                if (songWithArtist?.artist != null) {
-                    ArtistBox(
-                        name = songWithArtist.artist.name,
-                        description = songWithArtist.artist.description ?: "No description available",
-                        photoUrl = songWithArtist.artist.photoUrl ?: "",
-                        modifier = Modifier.fillMaxWidth()
+                if (songWithArtist != null) {
+                    UploaderBoxAndArtist(
+                        artist = songWithArtist.artist,
+                        uploader = uploader
                     )
                 }
 
                 // Spacer tambahan di paling bawah agar tidak mentok layar saat discroll habis
                 Spacer(modifier = Modifier.height(100.dp))
-            }
-        }
-    }
-}
-
-@Composable
-fun ArtistBox(
-    name: String,
-    description: String,
-    photoUrl: String,
-    modifier: Modifier = Modifier
-) {
-    var isExpanded by remember { mutableStateOf(false) }
-    val maxLinesForDescription = if (isExpanded) Int.MAX_VALUE else 4
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF282828))
-    ) {
-        // 1. Background gambar artist (tanpa gradient)
-        AsyncImage(
-            model = photoUrl,
-            contentDescription = "Artist Background",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(250.dp)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-        )
-
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // "Tentang artis" label di atas gambar dengan shadow
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(250.dp)
-                    .padding(16.dp),
-                contentAlignment = Alignment.TopStart
-            ) {
-                Text(
-                    text = "Tentang artis",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontFamily = AppFont.RobotoBold,
-                    // Menambahkan shadow pada teks
-                    style = TextStyle(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.5f),
-                            blurRadius = 8f
-                        )
-                    )
-                )
-            }
-
-            // Konten di bawah gambar
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF282828))
-                    .padding(16.dp)
-            ) {
-                // Baris nama artis & centang
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = name,
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontFamily = AppFont.RobotoBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Icon(
-                        imageVector = Icons.Filled.Verified,
-                        contentDescription = "Verified Artist",
-                        tint = Color(0xFF01EF56),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Deskripsi artist
-                Text(
-                    text = description,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 14.sp,
-                    fontFamily = AppFont.RobotoRegular,
-                    maxLines = maxLinesForDescription,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Tombol "lihat semua" / "tutup"
-                if (description.length > 200) {
-                    Text(
-                        text = if (isExpanded) "tutup" else "lihat semua",
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 14.sp,
-                        fontFamily = AppFont.RobotoBold,
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .clickable { isExpanded = !isExpanded }
-                    )
-                }
             }
         }
     }

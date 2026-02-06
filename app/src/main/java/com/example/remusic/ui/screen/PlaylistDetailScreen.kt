@@ -1,29 +1,27 @@
 package com.example.remusic.ui.screen
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -31,13 +29,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
@@ -48,17 +45,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,25 +59,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 // import com.example.remusic.ui.theme.AppFont // Saya nonaktifkan ini agar preview jalan
-import com.google.firebase.Timestamp // Diperlukan untuk mock data di preview
-import java.util.Date
 import java.util.concurrent.TimeUnit
 import com.example.remusic.R
 
@@ -97,6 +90,7 @@ import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.components.atoms.CustomOutlinedTextField
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.utils.extractGradientColorsFromImageUrl
 // --- Impor ViewModel ---
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
@@ -187,24 +181,94 @@ fun PlaylistDetailScreen(
     playlistCoverUrl: String, // Fallback jika songs empty
     playMusicViewModel: PlayMusicViewModel? = null
 ) {
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     val density = LocalDensity.current
 
-    LaunchedEffect(Unit) {
-        val initialOffset = with(density) { 60.dp.toPx().toInt() }
-        listState.scrollToItem(0, initialOffset)
-    }
+    // --- State Management ---
+    val uiState = playMusicViewModel?.uiState?.collectAsState()?.value
 
-    // --- State Management untuk UI ---
     var currentSort by remember { mutableStateOf(SortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
-    var currentPlayingIndex by remember { mutableIntStateOf(-1) }
 
-    var isSearching by remember { mutableStateOf(false)}
+    var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // --- Dynamic Gradient State ---
+    var headersColors by remember { mutableStateOf(listOf(Color(0xFF202020), Color(0xFF000000))) }
+    
+    // Update Gradient when songs change
+    LaunchedEffect(songs) {
+        if (songs.isNotEmpty()) {
+            // Use the first song's cover for the gradient
+            val coverUrl = songs[0].song.coverUrl
+            if (!coverUrl.isNullOrBlank()) {
+                headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
+                Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+            }
+        } else if (playlistCoverUrl.isNotBlank()) {
+             headersColors = extractGradientColorsFromImageUrl(context, playlistCoverUrl)
+             Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+        }
+    }
 
-    // --- REVISI: Kalkulasi Total Durasi ---
+    // --- Initial Scroll to Hide Search (Pull-to-Reveal Logic) ---
+    // We want to start at Index 1 (Header), hiding Index 0 (Search)
+    LaunchedEffect(Unit) {
+        // Scroll to the Header item (index 1) with 0 offset (top of header)
+        listState.scrollToItem(1, 0)
+    }
+
+    // --- Animation Logic ---
+    
+    // 1. Search Bar Scale Logic (Index 0)
+    // It should grow from small to 90% as we scroll UP (pull down content).
+    val searchScale by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val searchItem = layoutInfo.visibleItemsInfo.find { it.index == 0 }
+            
+            if (searchItem == null) {
+                0f // Item not visible -> Scale 0
+            } else {
+                // Calculate visibility fraction based on offset
+                // Search item is at the top.
+                // If offset is 0 (fully visible top), scale is max.
+                // If offset is negative (scrolled up/hidden), scale reduces.
+                // However, wait. "Initial scroll to index 1". So index 0 is ABOVE.
+                // When we scroll UP (pull down), offset of index 0 goes from negative (hidden) to 0 (visible).
+                // Or rather, we are looking at offset relative to viewport start.
+                val itemSize = searchItem.size
+                val itemOffset = searchItem.offset // Distance from top of viewport.
+                
+                // If offset is 0, it's fully visible at top. Scale 1.
+                // If offset is -itemSize, it's fully hidden above. Scale 0.
+                
+                val visibleFraction = 1f + (itemOffset.toFloat() / itemSize.toFloat())
+                visibleFraction.coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    // 2. Header Image Collapse Logic (Index 1)
+    // Request: "Only image changes". Shrink/Fade as we scroll down.
+    val imageCollapseProgress by remember {
+        derivedStateOf {
+            val headerIndex = 1 // Header is now Index 1
+            if (listState.firstVisibleItemIndex > headerIndex) {
+                1f // Fully collapsed/gone
+            } else if (listState.firstVisibleItemIndex < headerIndex) {
+                0f // Fully expanded (we are at search item)
+            } else {
+                // We are at Header.
+                val offset = listState.firstVisibleItemScrollOffset.toFloat()
+                val maxOffset = with(density) { 300.dp.toPx() } // Threshold
+                (offset / maxOffset).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    // --- Kalkulasi Total Durasi ---
     val totalDurationMs = remember(songs) {
         songs.sumOf { it.song.durationMs }
     }
@@ -240,324 +304,353 @@ fun PlaylistDetailScreen(
 
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black),
-    ){
-        val headerGradient = Brush.verticalGradient(
-            colors = listOf(Color.Blue.copy(0.3f), Color(0x000000)) // Gradient bebas
-        )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // --- Header ---
-            item {
-                Column(
-                    modifier = Modifier
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            
+            // 1. ACTIVE SEARCH BAR (Full Screen Mode)
+             AnimatedVisibility(
+                visible = isSearching,
+                enter = slideInVertically() + fadeIn(),
+                exit = slideOutVertically() + fadeOut()
+            ) {
+                 // Top Bar untuk Search Mode
+                 Box(
+                    modifier= Modifier
+                        .background(Color.Black) // Background hitam pekat saat search
                         .fillMaxWidth()
-                        .padding(top = 40.dp)
-                        .background(brush = headerGradient),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .padding(top = 45.dp, bottom = 10.dp)
+                        .zIndex(10f)
                 ) {
-                    Spacer(modifier = Modifier.height(80.dp).fillMaxWidth())
-                    // REVISI: Ambil gambar dari lagu pertama
-                    val imageUrl = if (songs.isNotEmpty()) {
-                        songs[0].song.coverUrl
-                    } else {
-                        playlistCoverUrl // Fallback
-                    }
-                    AsyncImage(
-                        model = imageUrl,
-                        contentDescription = "Playlist Poster",
-                        modifier = Modifier
-                            .fillMaxWidth(0.6f)
-                            .aspectRatio(1f)
-                            .shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp), clip = false)
-                            .clip(RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Crop,
-                        placeholder = painterResource(id = R.drawable.img_placeholder),
-                        error = painterResource(id = R.drawable.img_placeholder)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = playlistName,
-                        maxLines = 1,
-                        // fontFamily = AppFont.RobotoBold,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 26.sp,
-                        color = Color.White
-                    )
-                    // REVISI: Text jumlah lagu dihapus dari sini
-
-                    Spacer(modifier = Modifier.height(16.dp)) // Beri jarak lebih
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.Absolute.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // --- REVISI: Ganti Tombol Edit dengan Info Durasi ---
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text(
-                                    text = "${songs.size} lagu",
-                                    color = Color.White.copy(0.8f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                    // fontFamily = AppFont.RobotoBold,
+                        Icon(
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .clickable {
+                                    isSearching = false
+                                    searchQuery = "" 
+                                },
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
+                        CustomOutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .padding(end = 16.dp)
+                                .background(Color.White.copy(0.15f), shape = RoundedCornerShape(8.dp)),
+                            placeholder = { Text(
+                                text = "Cari lagu...",
+                                fontSize = 14.sp,
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Normal,
+                                color = Color.White.copy(0.6f)
+                            ) },
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Search,
+                                    contentDescription = "Search Icon",
+                                    tint = Color.White.copy(0.8f),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Text(
-                                    text = formattedTotalDuration,
-                                    color = Color.White.copy(0.8f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                    // fontFamily = AppFont.RobotoBold,
-                                )
-                            }
-                            // --- AKHIR REVISI ---
+                            },
+                            textStyle = TextStyle(
+                                fontSize = 16.sp,
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Normal,
+                                color = Color.White
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                cursorColor = Color.White,
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                    }
+                }
+            }
 
-                            Spacer(modifier = Modifier.width(16.dp)) // Beri jarak
 
-                            // --- Tombol Urutkan dengan Dropdown ---
-                            Box {
-                                Button(
-                                    onClick = { showSortMenu = true },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White.copy(0.2f),
-                                        contentColor = Color.White
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.FilterList,
-                                        contentDescription = "Sort by",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = currentSort.SdisplayName,
-                                        maxLines = 1,
-                                        // fontFamily = AppFont.RobotoBold,
-                                        fontSize = 14.sp,
-                                    )
-                                }
-
-                                // --- REVISI: Menu Dropdown dengan Ikon ---
-                                DropdownMenu(
-                                    expanded = showSortMenu,
-                                    onDismissRequest = { showSortMenu = false },
-                                    modifier = Modifier.background(Color(0xFF282828))
-                                ) {
-                                    SortOrder.entries.forEach { sortOption ->
-                                        DropdownMenuItem(
-                                            text = { Text(sortOption.SdisplayName, color = Color.White) },
-                                            leadingIcon = {
-                                                Icon(
-                                                    imageVector = sortOption.icon,
-                                                    contentDescription = sortOption.SdisplayName,
-                                                    tint = Color.White.copy(0.8f)
-                                                )
-                                            },
-                                            onClick = {
-                                                currentSort = sortOption
-                                                showSortMenu = false
-                                            }
-                                        )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // --- ITEM 0: SEARCH DUMMY (Pull-to-Reveal) ---
+                item {
+                    // Only show if NOT fully searching (to avoid duplication visually, though overlapping is fine)
+                    if (!isSearching) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp) // Height of the area
+                                .background(headersColors.firstOrNull() ?: Color.Black),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                             Row(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.9f)
+                                    .graphicsLayer {
+                                        // ANIMATION: Grow from small to 90%
+                                        // Our 'searchScale' goes 0 -> 1 based on reveal.
+                                        // Let's modify opacity and scale.
+                                        scaleX = 0.5f + (searchScale * 0.5f) // 50% -> 100% (of 0.9f)
+                                        scaleY = 0.5f + (searchScale * 0.5f)
+                                        alpha = searchScale
                                     }
-                                }
-                            }
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { /* TODO: Panggil onShuffleClick */ }) {
+                                    .clip(RoundedCornerShape(20)) // Pill shape
+                                    .background(Color.White.copy(alpha = 0.2f)) // Glassy
+                                    .clickable { isSearching = true }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Shuffle,
-                                    contentDescription = "shuffle",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
+                                    imageVector = Icons.Filled.Search,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(0.9f),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(onClick = { /* TODO: Panggil onPlayAllClick */ }) {
-                                Icon(
-                                    imageVector = Icons.Filled.PlayCircle,
-                                    contentDescription = "Play Music",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(36.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = "Find in playlist",
+                                    color = Color.White.copy(0.9f),
+                                    fontFamily = AppFont.Poppins,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 14.sp
                                 )
                             }
                         }
                     }
                 }
-            }
 
-            // --- Daftar Lagu (UI Baru) ---
-            itemsIndexed(
-                items = filteredAndSortedSongs,
-                key = { _, item -> item.song.id }
-            ) { index, songWithArtist ->
-                QueueSongCard(
-                    index = index + 1,
-                    songTitle = songWithArtist.song.title,
-                    artistName = songWithArtist.artist?.name ?: "Unknown Artist",
-                    posterUri = songWithArtist.song.coverUrl ?: "",
-                    isCurrentlyPlaying = (currentPlayingIndex == index),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    // --- REVISI: Hubungkan ke ViewModel ---
-                    onClickListener = {
-                        // 'it' adalah index (0-based) dari QueueSongCard
-                        currentPlayingIndex = it
-
-                        // Panggil ViewModel dengan daftar yang *sedang ditampilkan*
-                        playMusicViewModel?.setPlaylist(
-                            songs = filteredAndSortedSongs,
-                            startIndex = it
-                        )
-                        playMusicViewModel?.playingMusicFromPlaylist(playlistName)
-                    },
-                )
-            }
-
-            // Spacer di akhir list
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
-            }
-        }
-        val showSearch = listState.firstVisibleItemScrollOffset < 30
-        val alpha by animateFloatAsState(
-            targetValue = if (showSearch) 1f else 0f,
-            label = ""
-        )
-        val offsetY by animateDpAsState(
-            targetValue = if (showSearch) 0.dp else (-30).dp,
-            label = ""
-        )
-        Row(
-            modifier = Modifier
-                .padding(top = 50.dp)
-                .fillMaxWidth(0.9f)
-                .align(Alignment.TopCenter)
-                .offset(y = offsetY)
-                .graphicsLayer { this.alpha = alpha }
-                .zIndex(20f)
-                .clip(RoundedCornerShape(percent = 20))
-                .background(Color.White.copy(alpha = 0.25f))
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-                .clickable{
-                    isSearching = true
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = null,
-                tint = Color.White
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Cari Lagu di Playlist",
-                color = Color.White,
-                fontFamily = AppFont.Poppins,
-                fontWeight = FontWeight.Normal,
-                fontSize = 12.sp
-            )
-        }
-
-        if (isSearching) {
-            AnimatedVisibility(
-                visible = isSearching,
-                enter = fadeIn(animationSpec = tween(durationMillis = 300)),   // fade masuk
-                exit = fadeOut(animationSpec = tween(durationMillis = 300)),    // fade keluar
-            ) {
-                val topBarGradient = Brush.verticalGradient(
-                    colors = listOf(Color.Blue, Color.Black) // Gradient bebas
-                )
-                Box(
-                    modifier= Modifier
-                        .background(Color.DarkGray)
-                        .fillMaxWidth()
-                        .height(100.dp)
-                        .padding(top = 45.dp)
-                        .zIndex(10f)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Start,
-                        verticalAlignment = Alignment.CenterVertically,
+                // --- ITEM 1: HEADER ---
+                item {
+                    AnimatedVisibility(
+                        visible = !isSearching,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
                     ) {
-                        Icon(
-                            modifier = if (!isSearching) {
-                                Modifier.padding(horizontal = 20.dp)
-                            } else {
-                                Modifier.padding(start = 20.dp, end = 8.dp)
-                            },
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                        if (isSearching) {
-                            CustomOutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    brush = Brush.verticalGradient(
+                                        colors = headersColors + Color.Black // Flow into black
+                                    )
+                                )
+                        ) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(35.dp)
-                                    .padding(end = 10.dp,)
-                                    .background(Color.White.copy(0.15f), shape = RoundedCornerShape(8.dp)),
-                                placeholder = { Text(
-                                    text = "Cari lagu yang ada di playlist",
-                                    fontSize = 15.sp,
-                                    fontFamily = AppFont.RobotoRegular,
-                                    color = Color.White.copy(0.8f)
-                                ) },
-                                singleLine = true,
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Search,
-                                        contentDescription = "Search Icon",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(22.dp)
+                                    .padding(top = 50.dp, bottom = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // 1. Artwork (ANIMATED)
+                                val imageUrl = if (songs.isNotEmpty()) songs[0].song.coverUrl else playlistCoverUrl
+                                AsyncImage(
+                                    model = imageUrl,
+                                    contentDescription = "Playlist Poster",
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.75f)
+                                        .aspectRatio(1f)
+                                        .graphicsLayer {
+                                            // ANIMATION LOGIC: Shrink/Fade ONLY Image
+                                            alpha = 1f - imageCollapseProgress
+                                            val scale = 1f - (imageCollapseProgress * 0.5f) // Shrink to 50%
+                                            scaleX = scale
+                                            scaleY = scale
+                                            translationY = -imageCollapseProgress * 100f
+                                        }
+                                        .shadow(elevation = 12.dp, shape = RoundedCornerShape(12.dp), clip = false)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop,
+                                    placeholder = painterResource(id = R.drawable.img_placeholder),
+                                    error = painterResource(id = R.drawable.img_placeholder)
+                                )
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 2. Title & Meta (STATIC - No Animation)
+                                Text(
+                                    text = playlistName,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontFamily = AppFont.Poppins,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 28.sp,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 24.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Meta Data Row
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                     Text(
+                                        text = "${songs.size} Lagu",
+                                        fontFamily = AppFont.Poppins,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = Color.White.copy(0.7f)
                                     )
-                                },
-                                textStyle = TextStyle(
-                                    fontSize = 16.sp,
-                                    fontFamily = AppFont.RobotoRegular,
-                                    color = Color.White
-                                ),
-                                keyboardOptions = KeyboardOptions(
-                                    // 5. Mengubah tombol 'Enter' di keyboard menjadi ikon 'Search'
-                                    imeAction = ImeAction.Search
-                                ),
-                                // 4. Gunakan OutlinedTextFieldDefaults untuk OutlinedTextField
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    cursorColor = Color.White,
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedPlaceholderColor = Color.Gray,
-                                    unfocusedPlaceholderColor = Color.Gray,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                            )
-                        }else {
-                            Text(
-                                text = "Music Yang Disukai",
-                                color = Color.White,
-                                fontFamily = AppFont.Poppins,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                            )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(modifier = Modifier.size(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(0.5f)))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formattedTotalDuration,
+                                        fontFamily = AppFont.Poppins,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = Color.White.copy(0.7f)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(24.dp))
+
+                                // 3. Action Buttons Row (STATIC - No Animation)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    // Sort Button (Left)
+                                     Box {
+                                        IconButton(
+                                            onClick = { showSortMenu = true },
+                                            modifier = Modifier.background(Color.White.copy(0.1f), RoundedCornerShape(50)).size(42.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.FilterList, // Use Sort icon if available
+                                                contentDescription = "Sort",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                         DropdownMenu(
+                                            expanded = showSortMenu,
+                                            onDismissRequest = { showSortMenu = false },
+                                            modifier = Modifier.background(Color(0xFF282828))
+                                        ) {
+                                            SortOrder.entries.forEach { sortOption ->
+                                                DropdownMenuItem(
+                                                    text = { Text(sortOption.SdisplayName, color = Color.White, fontFamily = AppFont.Poppins) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            imageVector = sortOption.icon,
+                                                            contentDescription = sortOption.SdisplayName,
+                                                            tint = Color.White.copy(0.8f)
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        currentSort = sortOption
+                                                        showSortMenu = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                     }
+                                     
+                                     Spacer(Modifier.width(16.dp))
+
+                                     Button(
+                                         onClick = {
+                                            if (filteredAndSortedSongs.isNotEmpty()) {
+                                                playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
+                                                playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                                            }
+                                         },
+                                         modifier = Modifier
+                                             .weight(1f)
+                                             .height(52.dp),
+                                         colors = ButtonDefaults.buttonColors(
+                                             containerColor = Color.White,
+                                             contentColor = Color.Black
+                                         ),
+                                         shape = RoundedCornerShape(50)
+                                     ) {
+                                         Icon(
+                                             imageVector = Icons.Filled.PlayArrow,
+                                             contentDescription = null,
+                                             modifier = Modifier.size(28.dp)
+                                         )
+                                         Spacer(Modifier.width(8.dp))
+                                         Text(
+                                             "Play All",
+                                             fontFamily = AppFont.Poppins,
+                                             fontWeight = FontWeight.Bold,
+                                             fontSize = 16.sp
+                                         )
+                                     }
+
+                                     Spacer(Modifier.width(16.dp))
+
+                                     // Shuffle Button (Right)
+                                     IconButton(
+                                        onClick = {
+                                            playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
+                                            playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                                            if (uiState?.isShuffleModeEnabled == false) playMusicViewModel?.toggleShuffleMode()
+                                        },
+                                        modifier = Modifier.background(Color.White.copy(0.1f), RoundedCornerShape(50)).size(42.dp)
+                                     ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Shuffle,
+                                            contentDescription = "Shuffle",
+                                            tint = if (uiState?.isShuffleModeEnabled == true) Color.Green else Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                     }
+                                }
+                            }
                         }
                     }
+                }
+
+                // --- Daftar Lagu (Items 2+) ---
+                itemsIndexed(
+                    items = filteredAndSortedSongs,
+                    key = { _, item -> item.song.id }
+                ) { index, songWithArtist ->
+                    val isPlaying = uiState?.currentSong?.song?.id == songWithArtist.song.id
+
+                    QueueSongCard(
+                        index = index,
+                        songTitle = songWithArtist.song.title,
+                        artistName = songWithArtist.artist?.name ?: "Unknown Artist",
+                        posterUri = songWithArtist.song.coverUrl ?: "",
+                        isCurrentlyPlaying = isPlaying, // Use ViewModel state
+                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp),
+                        onClickListener = { clickedIndex ->
+                            playMusicViewModel?.setPlaylist(
+                                songs = filteredAndSortedSongs,
+                                startIndex = clickedIndex
+                            )
+                            playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                        },
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(130.dp)) // Padding bawah cukup besar
                 }
             }
         }
     }
 }
 
-
-// --- Fungsi Helper Baru untuk Durasi ---
+// remove unused imports if any
 private fun formatDuration(ms: Long): String {
     if (ms <= 0) return "0 dtk"
 

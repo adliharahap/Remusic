@@ -190,6 +190,7 @@ fun PlayMusicScreen(
                         val newPosition = (uiState.totalDuration * positionFraction).toLong()
                         playMusicViewModel.seekTo(newPosition)
                     },
+                    uploader = uiState.uploader
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,

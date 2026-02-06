@@ -97,7 +97,8 @@ fun HomeScreen(
             PlaylistDetailScreen(
                 songs = songs,
                 playlistName = playlistTitle,
-                playlistCoverUrl = coverUrl
+                playlistCoverUrl = coverUrl,
+                playMusicViewModel = playMusicViewModel
             )
         }
     }
