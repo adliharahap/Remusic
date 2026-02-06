@@ -70,5 +70,8 @@ data class Song(
     val createdAt: String? = null,
 
     @SerialName("updated_at")
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+
+    @SerialName("lyrics_updated_at")
+    val lyricsUpdatedAt: String? = null
 ): Parcelable

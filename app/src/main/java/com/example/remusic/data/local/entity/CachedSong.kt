@@ -11,6 +11,7 @@ data class CachedSong(
     val artistName: String,
     val coverUrl: String?,
     val lyrics: String?, // Lirik disimpan offline
+    val lyricsUpdatedAt: String? = null, // Versi lirik (Timestamp dari Supabase)
     val uploaderUserId: String?,
     // --- KHUSUS LOGIC TELEGRAM ---
     val telegramFileId: String?, // ID asli file Telegram (buat request ulang)

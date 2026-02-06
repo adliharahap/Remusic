@@ -11,7 +11,7 @@ import com.example.remusic.data.local.entity.SearchHistoryEntity
 
 @Database(
     entities = [CachedSong::class, CachedArtist::class, LikedSong::class, SearchHistoryEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {

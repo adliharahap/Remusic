@@ -23,8 +23,8 @@ interface MusicDao {
     suspend fun updateSongUrl(id: String, url: String, expiry: Long, lastPlayed: Long)
 
     // Partial Update: Details (Lyrics Fetch)
-    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, coverUrl = :cover, uploaderUserId = :uploaderId WHERE id = :id")
-    suspend fun updateSongDetails(id: String, title: String, lyrics: String?, cover: String?, uploaderId: String?)
+    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, uploaderUserId = :uploaderId WHERE id = :id")
+    suspend fun updateSongDetails(id: String, title: String, lyrics: String?, lyricsUpdatedAt: String?, cover: String?, uploaderId: String?)
 
     // Ambil 1 lagu untuk dicek expired-nya
     @Query("SELECT * FROM cached_songs WHERE id = :songId")

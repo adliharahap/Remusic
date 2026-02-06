@@ -338,7 +338,7 @@ fun LyricLineItem(
     // 1. Animasikan Ukuran Font
     // Jika terjemahan MATI (isTranslateLyrics = false), perbesar font original agar lebih mudah dibaca (22sp).
     // Jika terjemahan HIDUP (isTranslateLyrics = true), gunakan font normal (20sp).
-    val targetFontSize = if (isTranslateLyrics) 20f else 22f
+    val targetFontSize = if (isTranslateLyrics) 20f else 20f
 
     val fontSize by animateFloatAsState(
         targetValue = targetFontSize,

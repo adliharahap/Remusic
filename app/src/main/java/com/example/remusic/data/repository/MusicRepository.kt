@@ -141,49 +141,99 @@ class MusicRepository(private val musicDao: MusicDao) {
         // 1. Cek di SQLite dulu
         val cached = musicDao.getSongById(songId)
 
-        // Kalau sudah ada liriknya, return langsung (OFFLINE MODE)
-        if (cached != null && !cached.lyrics.isNullOrBlank()) {
-            Log.d(TAG, "📜 [LYRICS CACHE] Lirik ditemukan di SQLite (Mode Offline). Tidak perlu internet.")
-            Log.d(TAG, "📜 [LYRICS SOURCE] CACHE (Offline)")
+        // ----------------------------------------------------
+        // 🔥 LOGIC SINKRONISASI LIRIK (VERSIONING CHECK) 🔥
+        // ----------------------------------------------------
+        // Kita tidak langsung percaya cache. Kita cek dulu ke Supabase:
+        // "Apakah lirik di server lebih baru dari yang saya punya?"
+
+        var shouldFetchFullDetails = false
+
+        try {
+            // A. Ambil HANYA timestamp dari server (Hemat Kuota)
+            Log.d(TAG, "☁️ [VERSION CHECK] Mengecek versi lirik ke Supabase...")
+            val remoteVersion = SupabaseManager.client
+                .from("songs")
+                .select(columns = Columns.list("lyrics_updated_at")) {
+                    filter { eq("id", songId) }
+                }
+                .decodeSingleOrNull<Song>()
+
+            val remoteTimestamp = remoteVersion?.lyricsUpdatedAt
+            val localTimestamp = cached?.lyricsUpdatedAt
+
+            if (remoteTimestamp != null) {
+                if (localTimestamp == null || remoteTimestamp != localTimestamp) {
+                    // KASUS 1: Lokal belum ada timestamp ATAU Remote beda (lebih baru)
+                    Log.d(TAG, "♻️ [STALE DETECTED] Lirik lokal usang/kosong. Server: $remoteTimestamp vs Lokal: $localTimestamp")
+                    shouldFetchFullDetails = true
+                } else {
+                    // KASUS 2: Timestamp sama -> AMAN!
+                    Log.d(TAG, "✅ [FRESH] Lirik lokal sudah paling update. Tidak perlu download ulang.")
+                    shouldFetchFullDetails = false
+                }
+            } else {
+                // Remote ga punya timestamp, mungkin lagu lama.
+                // Jika lokal sudah ada lirik, anggap aman. Jika belum, fetch.
+                if (cached?.lyrics.isNullOrBlank()) {
+                    shouldFetchFullDetails = true
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [VERSION CHECK FAIL] Gagal cek versi: ${e.message}. Fallback ke logic lama.")
+            // Kalau gagal cek versi (internet putus?), gunakan logic lama:
+            // Fetch kalau lirik di cache kosong.
+            if (cached?.lyrics.isNullOrBlank()) shouldFetchFullDetails = true
+        }
+
+        // B. Keputusan Akhir
+        if (!shouldFetchFullDetails && cached != null && !cached.lyrics.isNullOrBlank()) {
             return cached
         }
 
-        // 2. Kalau lirik kosong, ambil dari Supabase
-        Log.d(TAG, "☁️ [SUPABASE] Lirik kosong/hilang. Mengambil dari Cloud Database...")
+        // ----------------------------------------------------
+        // END LOGIC SINKRONISASI
+        // ----------------------------------------------------
+
+        // 2. Fetch Full Data dari Supabase (Jika Perlu)
+        Log.d(TAG, "☁️ [SUPABASE] Mengambil Data Lengkap (Lirik & Metadata)...")
         try {
             val supabaseSong = SupabaseManager.client
                 .from("songs")
-                .select(columns = Columns.list("id", "title", "lyrics", "cover_url", "uploader_user_id")) {
+                .select(columns = Columns.list("id", "title", "lyrics", "lyrics_updated_at", "cover_url", "uploader_user_id")) {
                     filter { eq("id", songId) }
                 }
                 .decodeSingleOrNull<Song>()
 
             if (supabaseSong != null) {
                 // 3. Update SQLite dengan data lengkap
-                Log.d(TAG, "📥 [DATA RECEIVED] Data diterima dari Supabase. Merging ke SQLite...")
+                Log.d(TAG, "📥 [DATA RECEIVED] Data diterima. Merging ke SQLite...")
 
                 val oldData = musicDao.getSongById(songId)
 
                 if (oldData != null) {
-                    // PARTIAL UPDATE: Hanya update Detail (Judul, Lirik, Cover)
+                    // PARTIAL UPDATE
                     musicDao.updateSongDetails(
                         id = songId,
                         title = supabaseSong.title,
                         lyrics = supabaseSong.lyrics,
+                        lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt, // Simpan versi baru
                         cover = supabaseSong.coverUrl,
                         uploaderId = supabaseSong.uploaderUserId
                     )
-                    Log.d(TAG, "💾 [DETAILS SAVED] Detail lagu diperbarui (Partial Update).")
+                    Log.d(TAG, "💾 [DETAILS SAVED] Detail & Lirik diperbarui.")
 
-                    // Return object gabungan untuk UI
+                    // Return object gabungan
                     return oldData.copy(
                         title = supabaseSong.title,
                         lyrics = supabaseSong.lyrics,
+                        lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt,
                         coverUrl = supabaseSong.coverUrl,
                         uploaderUserId = supabaseSong.uploaderUserId
                     )
                 } else {
-                    // INSERT BARU (Jarang terjadi kalau flow benar)
+                    // INSERT BARU
                     val newData = CachedSong(
                         id = songId,
                         title = supabaseSong.title,
@@ -191,12 +241,12 @@ class MusicRepository(private val musicDao: MusicDao) {
                         artistName = "Unknown",
                         coverUrl = supabaseSong.coverUrl,
                         lyrics = supabaseSong.lyrics,
+                        lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt,
                         telegramFileId = supabaseSong.telegramFileId,
                         telegramDirectUrl = null
                     )
                     musicDao.insertSong(newData)
-                    Log.d(TAG, "💾 [DETAILS SAVED] Detail lagu baru disimpan.")
-                    Log.d(TAG, "☁️ [LYRICS SOURCE] VERCEL/SUPABASE")
+                    Log.d(TAG, "💾 [NEW DATA] Lagu baru disimpan ke cache.")
                     return newData
                 }
             } else {
