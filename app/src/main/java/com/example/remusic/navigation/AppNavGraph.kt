@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.remusic.ui.screen.BottomNavItem
 import com.example.remusic.ui.screen.LoginScreen
 import com.example.remusic.ui.screen.MainScreen
 import com.example.remusic.ui.screen.SplashScreen
@@ -35,6 +36,13 @@ fun AppNavGraph(
             route = "login",
         ) {
             LoginScreen(onGoogleSignInClick = onGoogleSignInClick)
+        }
+        composable(BottomNavItem.Search.route) {
+            com.example.remusic.ui.screen.SearchScreen(
+                onSongClick = { song, query ->
+                    playMusicViewModel.playFromSearch(song, query)
+                }
+            )
         }
         composable(
             route = "main",

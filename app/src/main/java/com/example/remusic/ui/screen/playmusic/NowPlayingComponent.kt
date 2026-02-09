@@ -95,7 +95,7 @@ fun NowPlaying(
     isPlaying: Boolean,
     isBuffering: Boolean,
     isLoadingData: Boolean,
-    debugStatus: String = "",
+    debugStatus: String = "Preparing...",
     errorMsg: String? = null,
     currentPosition: Long,
     totalDuration: Long,
@@ -113,7 +113,8 @@ fun NowPlaying(
     isLiked: Boolean,
     onLikeClick: () -> Unit,
     onSeek: (Float) -> Unit,
-    uploader: User? = null
+    uploader: User? = null,
+    isSearchContext: Boolean = false
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
@@ -404,13 +405,17 @@ fun NowPlaying(
                                         modifier = Modifier
                                             .size(30.dp)
                                             .clickable {
-                                                onShuffleClick()
-                                                val msg =
-                                                    if (isShuffleEnabled) "Shuffle Off" else "Shuffle On"
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT)
-                                                    .show()
+                                                if (isSearchContext) {
+                                                    Toast.makeText(context, "Smart Queue / Smart Shuffle Aktif", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    onShuffleClick()
+                                                    val msg =
+                                                        if (isShuffleEnabled) "Shuffle Off" else "Shuffle On"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT)
+                                                        .show()
+                                                }
                                             },
-                                        tint = if (isShuffleEnabled) Color.Green else Color.White
+                                        tint = if (isSearchContext) Color.Green else (if (isShuffleEnabled) Color.Green else Color.White)
                                     )
 
                                     Spacer(modifier = Modifier.weight(1f))
@@ -494,16 +499,21 @@ fun NowPlaying(
 
                                     IconButton(onClick = {
                                         onRepeatClick()
-                                        val nextMode = when (repeatMode) {
-                                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                                            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                                            else -> Player.REPEAT_MODE_OFF
-                                        }
-                                        val msg = when (nextMode) {
-                                            Player.REPEAT_MODE_OFF -> "Mengulang dimatikan"
-                                            Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
-                                            Player.REPEAT_MODE_ALL -> "Mengulang semua"
-                                            else -> ""
+                                        // Prediksi pesan berdasarkan context
+                                        val msg = if (isSearchContext) {
+                                            if (repeatMode == Player.REPEAT_MODE_OFF) "Mengulang lagu ini" else "Mengulang dimatikan"
+                                        } else {
+                                            val nextMode = when (repeatMode) {
+                                                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                                else -> Player.REPEAT_MODE_OFF
+                                            }
+                                            when (nextMode) {
+                                                Player.REPEAT_MODE_OFF -> "Mengulang dimatikan"
+                                                Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
+                                                Player.REPEAT_MODE_ALL -> "Mengulang semua"
+                                                else -> ""
+                                            }
                                         }
                                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }) {
@@ -716,12 +726,16 @@ fun NowPlaying(
                                     modifier = Modifier
                                         .size(30.dp)
                                         .clickable {
-                                            onShuffleClick()
-                                            val msg =
-                                                if (isShuffleEnabled) "Shuffle Off" else "Shuffle On"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            if (isSearchContext) {
+                                                Toast.makeText(context, "Smart Queue / Smart Shuffle Aktif", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                onShuffleClick()
+                                                val msg =
+                                                    if (isShuffleEnabled) "Shuffle Off" else "Shuffle On"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
                                         },
-                                    tint = if (isShuffleEnabled) Color.Green else Color.White
+                                    tint = if (isSearchContext) Color.Green else (if (isShuffleEnabled) Color.Green else Color.White)
                                 )
 
                                 Spacer(modifier = Modifier.weight(1f))
@@ -805,16 +819,20 @@ fun NowPlaying(
 
                                 IconButton(onClick = {
                                     onRepeatClick()
-                                    val nextMode = when (repeatMode) {
-                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                                        Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                                        else -> Player.REPEAT_MODE_OFF
-                                    }
-                                    val msg = when (nextMode) {
-                                        Player.REPEAT_MODE_OFF -> "Mengulang dimatikan"
-                                        Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
-                                        Player.REPEAT_MODE_ALL -> "Mengulang semua"
-                                        else -> ""
+                                    val msg = if (isSearchContext) {
+                                        if (repeatMode == Player.REPEAT_MODE_OFF) "Mengulang lagu ini" else "Mengulang dimatikan"
+                                    } else {
+                                        val nextMode = when (repeatMode) {
+                                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                                            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                                            else -> Player.REPEAT_MODE_OFF
+                                        }
+                                        when (nextMode) {
+                                            Player.REPEAT_MODE_OFF -> "Mengulang dimatikan"
+                                            Player.REPEAT_MODE_ONE -> "Mengulang lagu ini"
+                                            Player.REPEAT_MODE_ALL -> "Mengulang semua"
+                                            else -> ""
+                                        }
                                     }
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 }) {

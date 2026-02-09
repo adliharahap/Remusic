@@ -48,6 +48,7 @@ fun QueueScreen(
     songWithArtist: SongWithArtist?,
     playlistQueue: List<SongWithArtist> = emptyList(),
     playMusicFromPlaylist:  String = "Unknown Playlist",
+    playlistSubtitle: String = "Memainkan Dari Playlist", // Add parameter
     onClickListener: (index: Int) -> Unit = {},
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
@@ -71,7 +72,7 @@ fun QueueScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp, horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Memainkan Dari Playlist", color = Color.White.copy(0.8f), fontSize = 14.sp)
+                Text(playlistSubtitle, color = Color.White.copy(0.8f), fontSize = 14.sp)
                 Text(playMusicFromPlaylist, color = Color.White, fontFamily = AppFont.RobotoBold, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }

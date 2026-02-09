@@ -36,17 +36,7 @@ class HomeViewModel : ViewModel() {
                 val songs = SupabaseManager.client
                     .from("songs")
                     .select(
-                        columns = Columns.list(
-                            "id",
-                            "title",
-                            "audio_url",
-                            "cover_url",
-                            "artist_id",
-                            "canvas_url",
-                            "duration_ms",
-                            "telegram_audio_file_id",
-                            "featured_artists"
-                        )
+                        columns = Columns.list("id", "title", "audio_url", "cover_url", "artist_id", "canvas_url", "duration_ms", "telegram_audio_file_id", "featured_artists")
                     ) {
                         order(column = "created_at", order = Order.DESCENDING)
                     }

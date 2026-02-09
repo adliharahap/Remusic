@@ -127,7 +127,13 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 fun AppNavGraph(navController: NavHostController, rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
         composable(BottomNavItem.Home.route) { HomeScreen(rootNavController = rootNavController, playMusicViewModel = playMusicViewModel) }
-        composable(BottomNavItem.Search.route) { SearchScreen() }
+        composable(BottomNavItem.Search.route) { 
+            com.example.remusic.ui.screen.SearchScreen(
+                onSongClick = { song, query ->
+                    playMusicViewModel.playFromSearch(song, query)
+                }
+            )
+        }
         composable(BottomNavItem.Upload.route) { UploadSongScreen(onUploadMusicSuccess = {
             // ✅ AKSI NAVIGASI DIEKSEKUSI DI SINI
             navController.navigate("home") {

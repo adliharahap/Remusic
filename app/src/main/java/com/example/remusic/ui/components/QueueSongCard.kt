@@ -51,10 +51,10 @@ fun QueueSongCard(
     }
 
     Card(
+        onClick = { onClickListener(index) },
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable{ onClickListener(index) },
+            .clip(RoundedCornerShape(8.dp)),
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
         ),

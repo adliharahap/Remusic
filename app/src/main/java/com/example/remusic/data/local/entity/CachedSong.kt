@@ -10,9 +10,14 @@ data class CachedSong(
     val title: String,
     val artistName: String,
     val coverUrl: String?,
+    val canvasUrl: String? = null, // Video Canvas
     val lyrics: String?, // Lirik disimpan offline
     val lyricsUpdatedAt: String? = null, // Versi lirik (Timestamp dari Supabase)
     val uploaderUserId: String?,
+    // --- TAMBAHAN BARU UNTUK SMART QUEUE ---
+    val language: String? = null,
+    val moods: List<String> = emptyList(),
+    val artistId: String? = null,
     // --- KHUSUS LOGIC TELEGRAM ---
     val telegramFileId: String?, // ID asli file Telegram (buat request ulang)
     val telegramDirectUrl: String?, // URL direct (yang ada tokennya)

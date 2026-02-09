@@ -211,6 +211,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 title = song.title,
                 artistName = artist?.name ?: "Unknown Artist",
                 coverUrl = song.coverUrl,
+                canvasUrl = song.canvasUrl,
                 lyrics = song.lyrics,
                 uploaderUserId = song.uploaderUserId,
                 telegramFileId = song.telegramFileId,

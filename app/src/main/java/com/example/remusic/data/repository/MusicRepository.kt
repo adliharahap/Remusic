@@ -9,8 +9,13 @@ import com.example.remusic.data.network.TelegramRetrofit
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import com.example.remusic.data.SupabaseManager
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 
 class MusicRepository(private val musicDao: MusicDao) {
 
@@ -163,21 +168,23 @@ class MusicRepository(private val musicDao: MusicDao) {
             val localTimestamp = cached?.lyricsUpdatedAt
 
             if (remoteTimestamp != null) {
-                if (localTimestamp == null || remoteTimestamp != localTimestamp) {
-                    // KASUS 1: Lokal belum ada timestamp ATAU Remote beda (lebih baru)
-                    Log.d(TAG, "♻️ [STALE DETECTED] Lirik lokal usang/kosong. Server: $remoteTimestamp vs Lokal: $localTimestamp")
+                if (localTimestamp == null) {
+                    // KASUS 1: Lokal belum ada timestamp (lagu baru di-cache)
+                    Log.d(TAG, "🆕 [NEW LYRICS] Lirik lokal belum ada versinya. Download...")
+                    shouldFetchFullDetails = true
+                } else if (localTimestamp != remoteTimestamp) {
+                    // KASUS 2: Remote beda (lebih baru)
+                    Log.d(TAG, "♻️ [UPDATE DETECTED] Server: $remoteTimestamp vs Lokal: $localTimestamp")
                     shouldFetchFullDetails = true
                 } else {
-                    // KASUS 2: Timestamp sama -> AMAN!
-                    Log.d(TAG, "✅ [FRESH] Lirik lokal sudah paling update. Tidak perlu download ulang.")
+                    // KASUS 3: Timestamp sama -> AMAN!
+                    Log.d(TAG, "✅ [FRESH] Lirik lokal sudah paling update ($localTimestamp). Skip download.")
                     shouldFetchFullDetails = false
                 }
             } else {
-                // Remote ga punya timestamp, mungkin lagu lama.
-                // Jika lokal sudah ada lirik, anggap aman. Jika belum, fetch.
-                if (cached?.lyrics.isNullOrBlank()) {
-                    shouldFetchFullDetails = true
-                }
+                // Remote ga punya timestamp (karena null/query salah?), fallback logic lama
+                Log.w(TAG, "⚠️ [NO VERSION] Server tidak kirim timestamp. Cek manual.")
+                if (cached?.lyrics.isNullOrBlank()) shouldFetchFullDetails = true
             }
 
         } catch (e: Exception) {
@@ -201,7 +208,7 @@ class MusicRepository(private val musicDao: MusicDao) {
         try {
             val supabaseSong = SupabaseManager.client
                 .from("songs")
-                .select(columns = Columns.list("id", "title", "lyrics", "lyrics_updated_at", "cover_url", "uploader_user_id")) {
+                .select(columns = Columns.list("id", "title", "lyrics", "lyrics_updated_at", "cover_url", "canvas_url", "uploader_user_id", "language", "moods", "artist_id")) {
                     filter { eq("id", songId) }
                 }
                 .decodeSingleOrNull<Song>()
@@ -220,7 +227,11 @@ class MusicRepository(private val musicDao: MusicDao) {
                         lyrics = supabaseSong.lyrics,
                         lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt, // Simpan versi baru
                         cover = supabaseSong.coverUrl,
-                        uploaderId = supabaseSong.uploaderUserId
+                        canvas = supabaseSong.canvasUrl,
+                        uploaderId = supabaseSong.uploaderUserId,
+                        language = supabaseSong.language,
+                        moods = supabaseSong.moods,
+                        artistId = supabaseSong.artistId
                     )
                     Log.d(TAG, "💾 [DETAILS SAVED] Detail & Lirik diperbarui.")
 
@@ -230,7 +241,11 @@ class MusicRepository(private val musicDao: MusicDao) {
                         lyrics = supabaseSong.lyrics,
                         lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt,
                         coverUrl = supabaseSong.coverUrl,
-                        uploaderUserId = supabaseSong.uploaderUserId
+                        canvasUrl = supabaseSong.canvasUrl,
+                        uploaderUserId = supabaseSong.uploaderUserId,
+                        language = supabaseSong.language,
+                        moods = supabaseSong.moods,
+                        artistId = supabaseSong.artistId
                     )
                 } else {
                     // INSERT BARU
@@ -240,10 +255,14 @@ class MusicRepository(private val musicDao: MusicDao) {
                         uploaderUserId = supabaseSong.uploaderUserId,
                         artistName = "Unknown",
                         coverUrl = supabaseSong.coverUrl,
+                        canvasUrl = supabaseSong.canvasUrl,
                         lyrics = supabaseSong.lyrics,
                         lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt,
                         telegramFileId = supabaseSong.telegramFileId,
-                        telegramDirectUrl = null
+                        telegramDirectUrl = null,
+                        language = supabaseSong.language,
+                        moods = supabaseSong.moods,
+                        artistId = supabaseSong.artistId
                     )
                     musicDao.insertSong(newData)
                     Log.d(TAG, "💾 [NEW DATA] Lagu baru disimpan ke cache.")
@@ -322,6 +341,63 @@ class MusicRepository(private val musicDao: MusicDao) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ [USER ERROR] Gagal ambil detail user: ${e.message}")
             null
+        }
+    }
+
+    // --- LOGIC 5: SMART QUEUE V4 (Final Boss - Hardened) ---
+    suspend fun fetchSmartQueue(
+        playedSongIds: List<String>,
+        currentSong: Song // Seed Song
+    ): List<Song> {
+        Log.d("MusicRepository", "🔄 calling get_smart_queue RPC...")
+        
+        // ... di dalam fetchSmartQueue ...
+        val targetLang = currentSong.language ?: "en" // Ini tersangkanya
+        Log.e("DEBUG_SMART_QUEUE", "🚨 SEED CHECK: Judul=${currentSong.title}, Lang di DB=${currentSong.language}, Lang dikirim=$targetLang")
+        Log.e("DEBUG_SMART_QUEUE", "🚨 ARTIST CHECK: ID=${currentSong.artistId}")
+
+        return try {
+            // 🛡️ 1. SAFEGUARD MOODS
+            // Kalau mood null, kita kasih list kosong biar map gak crash
+            val safeMoods = currentSong.moods ?: emptyList()
+
+            // 🛡️ 2. SAFEGUARD ARTIST ID
+            // Kalau artistId null/kosong, jangan kirim string kosong "", nanti error UUID invalid.
+            // Kirim null saja (JsonPrimitive(null) atau abaikan).
+            // Tapi biar aman di logika SQL, kita pastikan kirim string valid atau null json.
+            val safeArtistId = if (currentSong.artistId.isNullOrBlank()) {
+                null // Kirim null beneran ke JSON
+            } else {
+                currentSong.artistId
+            }
+
+            val results = SupabaseManager.client.postgrest.rpc(
+                "get_smart_queue",
+                parameters = buildJsonObject {
+                    // Array ID yang sudah diputar
+                    put("p_played_ids", JsonArray(playedSongIds.map { JsonPrimitive(it) }))
+
+                    // Bahasa Target (Fallback ke 'en' jika null)
+                    put("p_target_lang", currentSong.language ?: "en")
+
+                    // Mood Target (Ambil dari safeMoods)
+                    put("p_target_moods", JsonArray(safeMoods.map { JsonPrimitive(it) }))
+
+                    // ID Artis (Bisa null)
+                    put("p_seed_artist_id", safeArtistId?.let { JsonPrimitive(it) } ?: JsonPrimitive(null))
+
+                    // Limit
+                    put("p_limit", 49)
+                }
+            ).decodeList<Song>()
+
+            Log.d("MusicRepository", "✅ get_smart_queue returned ${results.size} songs")
+            results
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [SMART QUEUE ERROR]: ${e.message}")
+            // Fallback: Kembalikan list kosong agar player tidak error, nanti ViewModel handle logic fallbacknya
+            emptyList()
         }
     }
 }

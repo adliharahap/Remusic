@@ -23,8 +23,20 @@ interface MusicDao {
     suspend fun updateSongUrl(id: String, url: String, expiry: Long, lastPlayed: Long)
 
     // Partial Update: Details (Lyrics Fetch)
-    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, uploaderUserId = :uploaderId WHERE id = :id")
-    suspend fun updateSongDetails(id: String, title: String, lyrics: String?, lyricsUpdatedAt: String?, cover: String?, uploaderId: String?)
+    // Partial Update: Details (Lyrics Fetch)
+    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, canvasUrl = :canvas, uploaderUserId = :uploaderId, language = :language, moods = :moods, artistId = :artistId WHERE id = :id")
+    suspend fun updateSongDetails(
+        id: String, 
+        title: String, 
+        lyrics: String?, 
+        lyricsUpdatedAt: String?, 
+        cover: String?,
+        canvas: String?, // Tambahan baru
+        uploaderId: String?,
+        language: String?,
+        moods: List<String>,
+        artistId: String?
+    )
 
     // Ambil 1 lagu untuk dicek expired-nya
     @Query("SELECT * FROM cached_songs WHERE id = :songId")
@@ -33,6 +45,10 @@ interface MusicDao {
     // Ambil History (Lagu yang pernah diplay, urut dari yang terbaru)
     @Query("SELECT * FROM cached_songs ORDER BY lastPlayedAt DESC LIMIT 50")
     fun getRecentSongs(): Flow<List<CachedSong>>
+
+    // Helper untuk Smart Queue (Ambil ID saja)
+    @Query("SELECT id FROM cached_songs ORDER BY lastPlayedAt DESC LIMIT :limit")
+    suspend fun getRecentlyPlayedIds(limit: Int): List<String>
 
     // --- LIKED SONGS ---
 

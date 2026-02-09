@@ -161,6 +161,7 @@ fun PlayMusicScreen(
                     songWithArtist = uiState.currentSong,
                     playlistQueue = uiState.playlist,
                     playMusicFromPlaylist = uiState.playingMusicFromPlaylist,
+                    playlistSubtitle = uiState.playlistSubtitle, // Pass subtitle
                     onClickListener = { playMusicViewModel.playSongAt(it) }
                 )
                 1 -> NowPlaying(
@@ -190,7 +191,8 @@ fun PlayMusicScreen(
                         val newPosition = (uiState.totalDuration * positionFraction).toLong()
                         playMusicViewModel.seekTo(newPosition)
                     },
-                    uploader = uiState.uploader
+                    uploader = uiState.uploader,
+                    isSearchContext = uiState.playlistSubtitle == "Memainkan Dari Pencarian"
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,

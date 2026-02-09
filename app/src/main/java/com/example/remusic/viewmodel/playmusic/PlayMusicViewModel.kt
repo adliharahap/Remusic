@@ -27,6 +27,8 @@ import com.example.remusic.services.MusicService
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import io.github.jan.supabase.auth.auth
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.model.Artist
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable.isActive
@@ -65,10 +67,11 @@ data class PlayerUiState(
     val isBuffering: Boolean = false,
     val isLoadingData: Boolean = false,
 
-    val debugStatus: String = "Ready",
+    val debugStatus: String = "Preparing...",
     val errorMessage: String? = null,
     val isLiked: Boolean = false,
-    val uploader: User? = null
+    val uploader: User? = null,
+    val playlistSubtitle: String = "Memainkan Dari Playlist" // Default
 )
 
 
@@ -326,20 +329,55 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     private var positionJob: Job? = null
 
+    @OptIn(UnstableApi::class)
     private fun startUpdatingPosition() {
         positionJob?.cancel()
-        positionJob = viewModelScope.launch {
+        positionJob = viewModelScope.launch { // Launch di Main Thread (Default)
+            val cache = com.example.remusic.utils.RemusicCache.getInstance(getApplication())
+            var loopCounter = 0
+            
             while (isActive) {
                 val controller = mediaController
                 if (controller != null && controller.isPlaying) {
+                    // 1. Ambil data Player di Main Thread (Safe)
                     val pos = controller.currentPosition
                     val dur = controller.duration
+                    val currentUri = controller.currentMediaItem?.localConfiguration?.uri?.toString()
+                    
+                    // 2. Cek Cache di IO Thread (Hanya setiap 2 detik = 4x loop)
+                    // Optimasi untuk "HP Kentang" agar tidak boros resource context switch
+                    val statusText = if (loopCounter % 4 == 0) {
+                        withContext(Dispatchers.IO) {
+                             if (_uiState.value.isBuffering) {
+                                "Buffering..."
+                            } else if (_uiState.value.isLoadingLyrics || _uiState.value.isLoadingData) {
+                                "Loading Data..."
+                            } else if (currentUri != null) {
+                                val isCached = try {
+                                     cache.isCached(currentUri, pos, 1024) 
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                if (isCached) "Playing from Cache" else "Playing from Network"
+                            } else {
+                                "Preparing..."
+                            }
+                        }
+                    } else {
+                        // Gunakan status terakhir (biar hemat CPU)
+                        _uiState.value.debugStatus
+                    }
+
+                    // 3. Update UI
                     _uiState.update { state ->
                         state.copy(
                             currentPosition = pos,
-                            totalDuration = if (dur > 0) dur else state.totalDuration
+                            totalDuration = if (dur > 0) dur else state.totalDuration,
+                            debugStatus = statusText
                         )
                     }
+                    
+                    loopCounter++
                 }
                 delay(500)
             }
@@ -397,7 +435,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                         )
                                     } else {
                                         state
-                                    }
+                                    } 
                                 }
                                 isSuccess = true
                             } else {
@@ -445,20 +483,20 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun setPlaylist(songs: List<SongWithArtist>, startIndex: Int = 0) {
+    fun setPlaylist(songs: List<SongWithArtist>, startIndex: Int = 0): Job? {
         Log.d("DEBUG_PLAYER", "📥 SET PLAYLIST: Menerima ${songs.size} lagu. Start Index: $startIndex")
 
         // 1. Validasi Awal
         if (songs.isEmpty()) {
             Log.w("PlayMusicViewModel", "setPlaylist: songs list kosong!")
-            return
+            return null
         }
 
         val controller = mediaController
         if (controller == null) {
             Log.w("PlayMusicViewModel", "Controller not ready, saving playlist for later.")
             _uiState.update { it.copy(playlist = songs, currentSong = songs[startIndex]) }
-            return
+            return null
         }
 
         Log.d("PlayMusicViewModel", "setPlaylist called with ${songs.size} songs, startIndex=$startIndex")
@@ -468,7 +506,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 3. MULAI PROSES ASYNC (Resolve URL & Warna)
         // Kita bungkus semua proses mapping & player setup di sini
-        viewModelScope.launch(Dispatchers.IO) {
+        // RETURN JOB agar bisa ditunggu (join)
+        return viewModelScope.launch(Dispatchers.IO) {
 
             // A. Ambil Lagu yang mau dimainkan
             val songToPlay = songs.getOrNull(startIndex) ?: return@launch
@@ -615,17 +654,36 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun toggleShuffleMode() {
+        // FIX: Jika dari Search, Shuffle dilarang (Smart Queue sudah terurut)
+        if (_uiState.value.playlistSubtitle == "Memainkan Dari Pencarian") {
+             Log.d("PlayMusicViewModel", "Shuffle disabled in Search Context (Smart Queue)")
+             return
+        }
+
         val currentShuffleState = _uiState.value.isShuffleModeEnabled
         Log.d("PlayMusicViewModel", "COMMAND: Toggling shuffle. Current state is $currentShuffleState. Setting to ${!currentShuffleState}")
         mediaController?.shuffleModeEnabled = !currentShuffleState
     }
 
     // Fungsi ini akan berputar: OFF -> ONE -> ALL -> OFF
+    // FIX: Jika dari Search, hanya OFF -> ONE -> OFF (Skip ALL)
     fun cycleRepeatMode() {
-        val nextRepeatMode = when (_uiState.value.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-            else -> Player.REPEAT_MODE_OFF
+        val isSearchContext = _uiState.value.playlistSubtitle == "Memainkan Dari Pencarian"
+        
+        val nextRepeatMode = if (isSearchContext) {
+             // Search Context: Toggle OFF <-> ONE only
+             if (_uiState.value.repeatMode == Player.REPEAT_MODE_ONE) {
+                 Player.REPEAT_MODE_OFF
+             } else {
+                 Player.REPEAT_MODE_ONE
+             }
+        } else {
+             // Normal Context: Cycle OFF -> ONE -> ALL -> OFF
+             when (_uiState.value.repeatMode) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                else -> Player.REPEAT_MODE_OFF
+            }
         }
         mediaController?.repeatMode = nextRepeatMode
     }
@@ -792,8 +850,125 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     fun playingMusicFromPlaylist(playlistName: String) {
         _uiState.update {
             it.copy(
-                playingMusicFromPlaylist = playlistName
+                playingMusicFromPlaylist = playlistName,
+                playlistSubtitle = "Memainkan Dari Playlist" // Reset subtitle
             )
+        }
+    }
+
+    // --- LOGIC BARU V4: PLAY FROM SEARCH ---
+    // --- LOGIC BARU V4: PLAY FROM SEARCH ---
+    fun playFromSearch(seedSong: SongWithArtist, query: String) {
+        Log.d("PlayMusicViewModel", "🚀 playFromSearch CALLED! Seed: ${seedSong.song.title}, Query: $query")
+        
+        // 1. SET PLAYLIST dengan LAGU INI
+        // FIX RACE CONDITION: Tunggu setPlaylist selesai dulu sebelum fetch queue!
+        val initJob = setPlaylist(listOf(seedSong), 0)
+
+        // 1.5 FORCE RESET MODES (Fix Bug: Looping di Index 0)
+        // Saat play dari search (Radio Mode), kita matikan Repeat One & Shuffle biar alurnya benar
+        viewModelScope.launch {
+             mediaController?.let {
+                 it.repeatMode = Player.REPEAT_MODE_OFF
+                 it.shuffleModeEnabled = false
+             }
+             _uiState.update { 
+                 it.copy(
+                     repeatMode = Player.REPEAT_MODE_OFF,
+                     isShuffleModeEnabled = false
+                 ) 
+             }
+             // Save to Prefs (Supaya sinkron saat restart app)
+             userPreferencesRepository.setRepeatMode(Player.REPEAT_MODE_OFF)
+             userPreferencesRepository.setShuffleEnabled(false)
+        }
+
+        // 2. Override UI State for Search Context
+        // setPlaylist resets subtitle, so we set it back to "Memainkan Dari Pencarian"
+        _uiState.update {
+            it.copy(
+                playingMusicFromPlaylist = query, // Tampilkan Query di teks besar
+                playlistSubtitle = "Memainkan Dari Pencarian" // Teks kecil khusus
+            )
+        }
+
+        // 2. FETCH SMART QUEUE (Background)
+        // PENTING: Gunakan IO Dispatcher & Join initJob
+        viewModelScope.launch { // Launch di Main scope dulu, nanti withContext IO
+            
+            // TUNGGU LAGU PERTAMA SIAP (Metadata & URL)
+            Log.d("PlayMusicViewModel", "🚦 Waiting for seed song to be ready...")
+            initJob?.join()
+            Log.d("PlayMusicViewModel", "🟢 Seed song ready. Fetching Smart Queue...")
+
+            // Lanjut fetch queue
+            val musicDao = database.musicDao() // Akses DAO dari database instance
+            val playedIds = musicDao.getRecentlyPlayedIds(limit = 20)
+            val fullSongDetails = repository.getFullSongDetails(seedSong.song.id) // Pastikan metadata lengkap (moods/language)
+            val seedSongWithMeta = fullSongDetails?.let { 
+                 seedSong.song.copy(
+                     lyrics = it.lyrics,
+                     language = it.language,
+                     moods = it.moods,
+                     artistId = it.artistId
+                 )
+            } ?: seedSong.song 
+
+            val smartQueue = repository.fetchSmartQueue(
+                playedSongIds = playedIds,
+                currentSong = seedSongWithMeta
+            )
+            Log.d("PlayMusicViewModel", "📦 Smart Queue Result Size: ${smartQueue.size}")
+
+            // 4. Update Playlist dengan hasil Smart Queue
+            if (smartQueue.isNotEmpty()) {
+                // Fetch Artist info logic (Existing)
+                val artistIds = smartQueue.mapNotNull { it.artistId }.distinct()
+                val artistsMap = try {
+                     SupabaseManager.client.from("artists").select {
+                        filter { isIn("id", artistIds) }
+                     }.decodeList<Artist>().associateBy { it.id }
+                } catch (e: Exception) {
+                    emptyMap()
+                }
+
+                val queueWithArtists = smartQueue.map { song ->
+                    SongWithArtist(song, song.artistId?.let { artistsMap[it] })
+                }
+                
+                // --- LOGGING UNTUK ANALISIS USER ---
+                Log.d("PlayMusicViewModel", "=== 📋 SMART QUEUE RESULT (${queueWithArtists.size} Songs) ===")
+                queueWithArtists.forEachIndexed { index, item ->
+                    // Log format: [No] Judul - Artist | Lang: .. | Moods: ..
+                    val moodsStr = item.song.moods.joinToString(", ")
+                    Log.d("PlayMusicViewModel", "Queue [#${index + 1}]: ${item.song.title} - ${item.artist?.name ?: "Unknown"} | Lang: ${item.song.language} | Moods: [$moodsStr]")
+                }
+                Log.d("PlayMusicViewModel", "===========================================================")
+
+                // Update ViewModel State
+                val fullPlaylist = mutableListOf(seedSong)
+                fullPlaylist.addAll(queueWithArtists)
+
+                _uiState.update { 
+                    it.copy(
+                        playlist = fullPlaylist
+                    )
+                }
+                Log.d("PlayMusicViewModel", "✅ Smart Queue loaded: ${smartQueue.size} songs added to UI State.")
+                
+                // 5. Update Player (APPEND NEW SONGS)
+                withContext(Dispatchers.Main) {
+                    val controller = mediaController
+                    if (controller != null) {
+                        // Create MediaItems for the queue (using raw audioUrl, will be resolved later)
+                        val newMediaItems = queueWithArtists.map { 
+                            createMediaItem(it, it.song.audioUrl ?: "") 
+                        }
+                        controller.addMediaItems(newMediaItems)
+                        Log.d("PlayMusicViewModel", "✅ Added ${newMediaItems.size} songs from Smart Queue to Player.")
+                    }
+                }
+            }
         }
     }
 

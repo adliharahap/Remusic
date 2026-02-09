@@ -40,6 +40,7 @@ import com.example.remusic.ui.components.searchcomponents.RecentlyPlayedSection
 import com.example.remusic.ui.theme.AppFont
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.itemsIndexed
 import com.example.remusic.data.local.entity.CachedSong
 
 // Data class lagu
@@ -55,7 +56,7 @@ data class Song2(
 fun SearchScreen(
     searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     // Tambahkan parameter navigasi atau callback play jika perlu
-    onSongClick: (com.example.remusic.data.model.SongWithArtist) -> Unit = {}
+    onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> }
 ) {
     var isFullSearch by remember { mutableStateOf(false) }
     
@@ -85,13 +86,14 @@ fun SearchScreen(
                     Spacer(modifier = Modifier.height(30.dp))
                 }
                 item {
-                    com.example.remusic.data.UserManager.currentUser?.photoUrl?.let {
-                        HeaderSearchSection(
-                            profileImageUrl = it,
-                            title = "Pencarian",
-                            onSearchClick = { isFullSearch = true }
-                        )
-                    }
+                    val photoUrl = com.example.remusic.data.UserManager.currentUser?.photoUrl
+                        ?: "https://i.pinimg.com/736x/0c/86/83/0c86831120a35560280ce0e235fd7e57.jpg"
+                    
+                    HeaderSearchSection(
+                        profileImageUrl = photoUrl,
+                        title = "Pencarian",
+                        onSearchClick = { isFullSearch = true }
+                    )
                 }
                 
                 // History Section (Real Data from Room)
@@ -108,60 +110,29 @@ fun SearchScreen(
                         )
                     }
                     
-                    items(searchHistory.size) { index ->
-                        val historyItem = searchHistory[index]
-                        // Custom Card for History
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .clickable {
-                                    val song = com.example.remusic.data.model.Song(
-                                        id = historyItem.id,
-                                        title = historyItem.title,
-                                        coverUrl = historyItem.coverUrl,
-                                        audioUrl = historyItem.telegramDirectUrl,
-                                        artistId = null,
-                                        telegramFileId = historyItem.telegramFileId
-                                    )
-                                    val artist = com.example.remusic.data.model.Artist(id = "", name = historyItem.artistName)
-                                    onSongClick(com.example.remusic.data.model.SongWithArtist(song, artist))
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Poster Kiri
-                            androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                            coil.compose.AsyncImage(
-                                model = historyItem.coverUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                            
-                            Spacer(modifier = Modifier.width(16.dp))
-                            
-                            // Judul Kanan
-                            Column {
-                                Text(
-                                    text = historyItem.title,
-                                    style = TextStyle(
-                                        fontSize = 16.sp,
-                                        fontFamily = AppFont.MontserratBold,
-                                        color = Color.White
-                                    )
-                                )
-                                Text(
-                                    text = historyItem.artistName,
-                                    style = TextStyle(
-                                        fontSize = 14.sp,
-                                        fontFamily = AppFont.RobotoRegular,
-                                        color = Color.Gray
-                                    )
-                                )
+                    itemsIndexed(searchHistory) { index, historyItem ->
+                        val song = com.example.remusic.data.model.Song(
+                            id = historyItem.id,
+                            title = historyItem.title,
+                            coverUrl = historyItem.coverUrl,
+                            audioUrl = historyItem.telegramDirectUrl,
+                            artistId = null, // CachedSong has artistId, maybe include it?
+                            telegramFileId = historyItem.telegramFileId,
+                            canvasUrl = historyItem.canvasUrl // Fix: Include Canvas URL
+                        )
+                        val artist = com.example.remusic.data.model.Artist(id = "", name = historyItem.artistName)
+
+                        com.example.remusic.ui.components.QueueSongCard(
+                            index = index,
+                            songTitle = historyItem.title,
+                            artistName = historyItem.artistName,
+                            posterUri = historyItem.coverUrl ?: "",
+                            isCurrentlyPlaying = false, // History item is not playing context
+                            onClickListener = {
+                                android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
+                                onSongClick(com.example.remusic.data.model.SongWithArtist(song, artist), historyItem.title)
                             }
-                        }
+                        )
                     }
                 }
 
@@ -184,7 +155,7 @@ fun SearchScreen(
                                 val original = recentSongs.find { it.song.title == song2.title }
                                 original?.let { 
                                     searchViewModel.onSongPlayed(it)
-                                    onSongClick(it) 
+                                    onSongClick(it, "Recent Added") 
                                 }
                             }
                         )
@@ -318,42 +289,19 @@ fun SearchScreen(
                     }
                 }
 
-                items(searchResults.size) { index ->
-                    val song = searchResults[index]
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                searchViewModel.onSongPlayed(song)
-                                onSongClick(song)
-                            }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        coil.compose.AsyncImage(
-                            model = song.song.coverUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = song.song.title,
-                                color = Color.White,
-                                fontFamily = AppFont.MontserratBold,
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                text = song.artist?.name ?: "Unknown Artist",
-                                color = Color.Gray,
-                                fontFamily = AppFont.RobotoRegular,
-                                fontSize = 14.sp
-                            )
+                itemsIndexed(searchResults) { index, song ->
+                    com.example.remusic.ui.components.QueueSongCard(
+                        index = index,
+                        songTitle = song.song.title,
+                        artistName = song.artist?.name ?: "Unknown Artist",
+                        posterUri = song.song.coverUrl ?: "",
+                        isCurrentlyPlaying = false,
+                        onClickListener = {
+                            android.util.Log.d("SearchScreen", "CLICKED RESULT: ${song.song.title}")
+                            searchViewModel.onSongPlayed(song)
+                            onSongClick(song, searchQuery)
                         }
-                    }
+                    )
                 }
             }
         }
