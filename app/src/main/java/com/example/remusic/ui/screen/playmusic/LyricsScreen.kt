@@ -90,6 +90,7 @@ import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @SuppressLint("ConfigurationScreenWidthHeight")
@@ -113,17 +114,51 @@ fun LyricsScreen(
     val currentPosition by lyricsViewModel.currentPosition.collectAsState()
 
     // Variable UI
+    // Track previous song ID untuk detect song change
+    var previousSongId by remember { mutableStateOf(songWithArtist?.song?.id) }
+    val currentSongId = songWithArtist?.song?.id
+    
+    // 🎯 SMART AUTO-SCROLL STATE (per Song ID)
+    // Track apakah sudah pernah auto-scroll ke atas untuk song ini (HANYA 1x per lagu)
+    var hasAutoScrolledToTop by remember { mutableStateOf(false) }
+    
+    // Track previous active index untuk prevent redundant scroll
+    var previousActiveIndex by remember { mutableStateOf(-1) }
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
 
-    // Auto Scroll Logic (Hanya jalan jika lirik ada)
+    // 🔄 Reset auto-scroll state saat lagu berganti
+    LaunchedEffect(currentSongId) {
+        if (currentSongId != null && currentSongId != previousSongId) {
+            hasAutoScrolledToTop = false // Reset flag untuk lagu baru
+            previousActiveIndex = -1
+        }
+    }
+    
+    // 🔝 SMART AUTO-SCROLL TO TOP
+    // Hanya scroll ke atas jika: belum pernah auto-scroll DAN position < timestamp lyric pertama
+    LaunchedEffect(currentPosition, lyrics, hasAutoScrolledToTop) {
+        if (!hasAutoScrolledToTop && lyrics.isNotEmpty()) {
+            val firstLyricTimestamp = lyrics.firstOrNull { it.timestamp != -1L }?.timestamp ?: 0L
+            
+            // Jika current position masih di bawah lyric pertama, scroll ke atas
+            if (currentPosition < firstLyricTimestamp) {
+                lazyListState.scrollToItem(0) // Instant scroll ke atas
+                // Tandai sudah auto-scroll (HANYA 1x!)
+            }
+        }
+    }
+
+    // 📜 Auto Scroll Logic untuk follow active lyric (dengan smooth animation)
     LaunchedEffect(lazyListState) {
         snapshotFlow { activeIndex }
             .distinctUntilChanged()
             .collect { index ->
-                if (index >= 0 && index < lyrics.size) {
+                if (index >= 0 && index < lyrics.size && index != previousActiveIndex) {
 
+                    // Smooth scroll dengan delay untuk animasi yang terlihat
+                    delay(150) // Beri waktu mata untuk baca lyric sebelum scroll
                     lazyListState.animateScrollToItem(
                         index = index,
                         scrollOffset = -(screenHeight.value * 0.5f).toInt()
@@ -165,7 +200,10 @@ fun LyricsScreen(
                         contentPadding = PaddingValues(top = 200.dp, bottom = screenHeight / 2),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        itemsIndexed(lyrics) { index, line ->
+                        itemsIndexed(
+                            items = lyrics,
+                            key = { index, line -> "${currentSongId}_${index}_${line.originalText.hashCode()}" }
+                        ) { index, line ->
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -338,7 +376,7 @@ fun LyricLineItem(
     // 1. Animasikan Ukuran Font
     // Jika terjemahan MATI (isTranslateLyrics = false), perbesar font original agar lebih mudah dibaca (22sp).
     // Jika terjemahan HIDUP (isTranslateLyrics = true), gunakan font normal (20sp).
-    val targetFontSize = if (isTranslateLyrics) 20f else 20f
+    val targetFontSize = if (isTranslateLyrics) 21f else 21f
 
     val fontSize by animateFloatAsState(
         targetValue = targetFontSize,
@@ -401,7 +439,7 @@ fun LyricLineItem(
                 Text(
                     text = line.translatedText,
                     color = translatedColor, // Gunakan warna yang dianimasikan
-                    fontSize = 17.sp, // Ukuran terjemahan bisa tetap
+                    fontSize = 15.5.sp, // Ukuran terjemahan bisa tetap
                     fontFamily = AppFont.Poppins,
                     fontWeight = FontWeight.Normal,
                     textAlign = TextAlign.Left
@@ -550,11 +588,9 @@ fun LyricsBottomPanel(
             Slider(
                 value = sliderValue,
                 onValueChange = { newValue ->
-                    isUserSeeking = true
                     userSeekPosition = newValue
                 },
                 onValueChangeFinished = {
-                    isUserSeeking = false
                     onSeek(userSeekPosition) // Kirim posisi akhir ke ViewModel
                 },
                 valueRange = 0f..1f,

@@ -107,6 +107,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     // --- TRACKING REAL LISTENING TIME (ANTI-CHEAT) ---
     private var actualListeningTimeMs: Long = 0L // Waktu dengar asli (akumulasi)
     private var lastSongIdForTracking: String? = null // ID lagu terakhir yang sedang dilacak
+    private var lastUpdateTime: Long = System.currentTimeMillis() // Untuk delta time tracking
 
     // Cache memory: Key = TelegramFileID, Value = Link Streaming Direct
     private val database = MusicDatabase.getDatabase(application)
@@ -482,7 +483,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         _uiState.value.debugStatus
                     }
 
-                    // --- LOGIC PLAY COUNT V2 (REAL LISTENING TIME) ---
+                    // --- LOGIC PLAY COUNT V2 (REAL LISTENING TIME with Delta Time) ---
                     val currentSongId = _uiState.value.currentSong?.song?.id
                     
                     // 1. Reset jika ganti lagu
@@ -490,17 +491,23 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         actualListeningTimeMs = 0L
                         lastIncrementedSongId = null
                         lastSongIdForTracking = currentSongId
+                        lastUpdateTime = System.currentTimeMillis() // Reset delta time tracker
                         Log.d("PlayMusicViewModel", "🔄 [TRACKING RESET] New Song Detected: $currentSongId")
                     }
 
                     if (currentSongId != null && dur > 0) {
-                        // 2. Akumulasi Waktu (Hanya nambah 1000ms setiap loop karena interval delay = 1000)
-                        actualListeningTimeMs += 1000L
+                        // 2. Calculate delta time (ACCURATE tracking instead of fixed 1000ms)
+                        val now = System.currentTimeMillis()
+                        val deltaTime = now - lastUpdateTime
+                        lastUpdateTime = now
                         
-                        // 3. Hitung Threshold (60% Durasi Total)
+                        // 3. Akumulasi waktu berdasarkan delta time REAL
+                        actualListeningTimeMs += deltaTime
+                        
+                        // 4. Hitung Threshold (60% Durasi Total)
                         val thresholdMs = (dur * 0.6).toLong()
 
-                        // 4. Cek Threshold Waktu Asli (Bukan Posisi Seekbar)
+                        // 5. Cek Threshold Waktu Asli (Bukan Posisi Seekbar)
                         if (actualListeningTimeMs >= thresholdMs && currentSongId != lastIncrementedSongId) {
                             Log.d("PlayMusicViewModel", "[VALID PLAY] User listening for ${actualListeningTimeMs/1000}s. Incrementing...")
                             viewModelScope.launch(Dispatchers.IO) {
@@ -521,7 +528,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     
                     loopCounter++
                 }
-                delay(1000)
+                // 🔥 CRITICAL FIX: Changed from delay(1000) to delay(50)
+                // This gives us 20 position updates per second instead of 1
+                // Result: Lyric sync accuracy improved from ±1000ms to ±50ms
+                delay(50)
             }
         }
     }
