@@ -107,6 +107,7 @@ class MusicService : MediaSessionService() {
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(this)
                     .setDataSourceFactory(cacheDataSourceFactory) // <--- POWER OF CACHE
+                    .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy()) // <--- PANTANG MENYERAH!
             )
             .build()
 

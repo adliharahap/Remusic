@@ -72,7 +72,11 @@ data class PlayerUiState(
     val errorMessage: String? = null,
     val isLiked: Boolean = false,
     val uploader: User? = null,
-    val playlistSubtitle: String = "Memainkan Dari Playlist" // Default
+    val playlistSubtitle: String = "Memainkan Dari Playlist", // Default
+    
+    // Error state tracking
+    val hasError: Boolean = false,
+    val errorType: String? = null
 )
 
 
@@ -213,8 +217,33 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 super.onPlayerError(error)
-                Log.e("PlayMusicViewModel", "Player Error: ${error.message}")
-                 // Opsional: Bisa update state error jika perlu, tapi user minta buffering text saja dulu
+                
+                val errorCode = error.errorCode
+                val errorMsg = error.message
+                Log.e("PlayMusicViewModel", "🔴 Player Error [$errorCode]: $errorMsg")
+                
+                // Update UI state dengan error info
+                _uiState.update { 
+                    it.copy(
+                        hasError = true,
+                        errorType = "Error Code: $errorCode",
+                        isBuffering = false,
+                        isPlaying = false
+                    )
+                }
+                
+                // Auto-recovery untuk SOURCE_ERROR (network/stream issues)
+                // Error codes untuk network/IO issues:
+                // - ERROR_CODE_IO_NETWORK_CONNECTION_FAILED (2001)
+                // - ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT (2002)
+                // - ERROR_CODE_BEHIND_LIVE_WINDOW (1002)
+                if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    
+                    Log.w("PlayMusicViewModel", "🔄 Network error detected, attempting auto-recovery...")
+                    handleAutoRecovery()
+                }
             }
 
             // Listener ini akan update UI jika lagu di service berubah (misal dari notifikasi)
@@ -255,6 +284,46 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     prefetchSongAtIndex(newIndex - 1)
 
                     if (matchedSong != null) {
+                        // 🔍 CRITICAL FIX: Cek URL sebelum play
+                        // Jika URL kosong/invalid, resolve dulu sebelum ExoPlayer coba load
+                        val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
+                        val isUrlValid = currentUrl.isNotBlank() && 
+                                        (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
+                        
+                        if (!isUrlValid) {
+                            Log.w("DEBUG_PLAYER", "⚠️ URL KOSONG/INVALID di index $newIndex. Resolving URL dulu...")
+                            
+                            // Pause player sementara
+                            player.pause()
+                            
+                            // Resolve URL di background
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    val newUrl = resolveSongUrl(matchedSong)
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        if (newUrl.isNotBlank()) {
+                                            Log.d("DEBUG_PLAYER", "✅ URL Resolved: $newUrl")
+                                            
+                                            // Update MediaItem dengan URL valid
+                                            val newItem = createMediaItem(matchedSong, newUrl)
+                                            player.replaceMediaItem(newIndex, newItem)
+                                            player.prepare()
+                                            player.play()
+                                        } else {
+                                            Log.e("DEBUG_PLAYER", "❌ Gagal resolve URL. Skip lagu ini.")
+                                            // Skip ke lagu berikutnya
+                                            if (player.hasNextMediaItem()) {
+                                                player.seekToNextMediaItem()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("DEBUG_PLAYER", "❌ Error resolving URL: ${e.message}")
+                                }
+                            }
+                        }
+                        
                         _uiState.update {
                             it.copy(
                                 currentSong = matchedSong,
@@ -323,6 +392,40 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         })
     }
 
+    /**
+     * Auto-recovery mechanism untuk handle playback errors
+     * Akan mencoba resume playback di posisi terakhir setelah 2 detik
+     */
+    private fun handleAutoRecovery() {
+        viewModelScope.launch {
+            val controller = mediaController ?: return@launch
+            val currentPosition = controller.currentPosition
+            val currentMediaItem = controller.currentMediaItem
+            
+            if (currentMediaItem != null && currentPosition >= 0) {
+                delay(2000) // Wait 2s sebelum retry (beri waktu network pulih)
+                
+                Log.d("PlayMusicViewModel", "↩️ Recovering playback at ${currentPosition}ms for: ${currentMediaItem.mediaMetadata.title}")
+                
+                // Re-prepare dengan media item yang sama
+                controller.setMediaItem(currentMediaItem)
+                controller.prepare()
+                controller.seekTo(currentPosition)
+                controller.playWhenReady = true
+                
+                // Clear error state
+                _uiState.update { 
+                    it.copy(
+                        hasError = false,
+                        errorType = null
+                    )
+                }
+            } else {
+                Log.w("PlayMusicViewModel", "⚠️ Cannot recover: MediaItem or position invalid")
+            }
+        }
+    }
+
     private fun updatePlayerState() {
         mediaController?.let { player ->
             _uiState.update {
@@ -356,7 +459,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     // Optimasi untuk "HP Kentang" agar tidak boros resource context switch
                     val statusText = if (loopCounter % 4 == 0) {
                         withContext(Dispatchers.IO) {
-                             if (_uiState.value.isBuffering) {
+                            // Priority: Error > Buffering > Loading > Cache Status
+                            if (_uiState.value.hasError) {
+                                "Error: ${_uiState.value.errorType ?: "Unknown"}"
+                            } else if (_uiState.value.isBuffering) {
                                 "Buffering..."
                             } else if (_uiState.value.isLoadingLyrics || _uiState.value.isLoadingData) {
                                 "Mendapatkan Data..."
