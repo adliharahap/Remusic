@@ -93,7 +93,7 @@ fun QueueScreen(
                     QueueSongCard(
                         index = 0,
                         songTitle = current.song.title.takeIf { it.isNotBlank() } ?: "Unknown Song",
-                        artistName = current.artist?.name ?: "Unknown Artist",
+                        artistName = current.displayArtistName,
                         posterUri = current.song.coverUrl ?: "",
                         isCurrentlyPlaying = true
                     )

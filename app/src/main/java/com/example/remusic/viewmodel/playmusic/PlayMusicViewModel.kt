@@ -31,13 +31,14 @@ import com.example.remusic.data.model.Artist
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -95,6 +96,13 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     private var isFading = false
 
     private val _uiState = MutableStateFlow(PlayerUiState())
+    
+    // Variabel untuk melacak lagu terakhir yang play count-nya sudah di-increment
+    private var lastIncrementedSongId: String? = null
+    
+    // --- TRACKING REAL LISTENING TIME (ANTI-CHEAT) ---
+    private var actualListeningTimeMs: Long = 0L // Waktu dengar asli (akumulasi)
+    private var lastSongIdForTracking: String? = null // ID lagu terakhir yang sedang dilacak
 
     // Cache memory: Key = TelegramFileID, Value = Link Streaming Direct
     private val database = MusicDatabase.getDatabase(application)
@@ -336,7 +344,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             val cache = com.example.remusic.utils.RemusicCache.getInstance(getApplication())
             var loopCounter = 0
             
-            while (isActive) {
+            while (currentCoroutineContext().isActive) {
                 val controller = mediaController
                 if (controller != null && controller.isPlaying) {
                     // 1. Ambil data Player di Main Thread (Safe)
@@ -351,21 +359,49 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                              if (_uiState.value.isBuffering) {
                                 "Buffering..."
                             } else if (_uiState.value.isLoadingLyrics || _uiState.value.isLoadingData) {
-                                "Loading Data..."
+                                "Mendapatkan Data..."
                             } else if (currentUri != null) {
                                 val isCached = try {
                                      cache.isCached(currentUri, pos, 1024) 
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                     false
                                 }
-                                if (isCached) "Playing from Cache" else "Playing from Network"
+                                if (isCached) "Playing music offline" else "Playing music online"
                             } else {
-                                "Preparing..."
+                                "Menyiapkan..."
                             }
                         }
                     } else {
                         // Gunakan status terakhir (biar hemat CPU)
                         _uiState.value.debugStatus
+                    }
+
+                    // --- LOGIC PLAY COUNT V2 (REAL LISTENING TIME) ---
+                    val currentSongId = _uiState.value.currentSong?.song?.id
+                    
+                    // 1. Reset jika ganti lagu
+                    if (currentSongId != lastSongIdForTracking) {
+                        actualListeningTimeMs = 0L
+                        lastIncrementedSongId = null
+                        lastSongIdForTracking = currentSongId
+                        Log.d("PlayMusicViewModel", "🔄 [TRACKING RESET] New Song Detected: $currentSongId")
+                    }
+
+                    if (currentSongId != null && dur > 0) {
+                        // 2. Akumulasi Waktu (Hanya nambah 1000ms setiap loop karena interval delay = 1000)
+                        actualListeningTimeMs += 1000L
+                        
+                        // 3. Hitung Threshold (60% Durasi Total)
+                        val thresholdMs = (dur * 0.6).toLong()
+
+                        // 4. Cek Threshold Waktu Asli (Bukan Posisi Seekbar)
+                        if (actualListeningTimeMs >= thresholdMs && currentSongId != lastIncrementedSongId) {
+                            Log.d("PlayMusicViewModel", "[VALID PLAY] User listening for ${actualListeningTimeMs/1000}s. Incrementing...")
+                            viewModelScope.launch(Dispatchers.IO) {
+                                repository.incrementPlayCount(currentSongId)
+                            }
+                            lastIncrementedSongId = currentSongId // Lock agar tidak double count
+                        }
                     }
 
                     // 3. Update UI
@@ -379,7 +415,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     
                     loopCounter++
                 }
-                delay(500)
+                delay(1000)
             }
         }
     }
@@ -430,6 +466,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                                 song = state.currentSong.song.copy(
                                                     lyrics = fullSongData.lyrics,
                                                     uploaderUserId = fullSongData.uploaderUserId,
+                                                    artistId = fullSongData.artistId
                                                 )
                                             )
                                         )
@@ -437,6 +474,24 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                         state
                                     } 
                                 }
+
+                                // --- BARU: Fetch Artist Details ---
+                                fullSongData.artistId?.let { artistId ->
+                                    val artistDetails = repository.fetchArtistDetails(artistId)
+                                    if (artistDetails != null) {
+                                        _uiState.update { state ->
+                                            if (state.currentSong?.song?.id == songId) {
+                                                state.copy(
+                                                    currentSong = state.currentSong.copy(artist = artistDetails)
+                                                )
+                                            } else {
+                                                state
+                                            }
+                                        }
+                                        Log.d("DEBUG_PLAYER", "✅ Artist Fetched: ${artistDetails.name}")
+                                    }
+                                }
+                                // ----------------------------------
                                 isSuccess = true
                             } else {
                                 Log.w("DEBUG_PLAYER", "⚠️ Data server null. Stop retry.")
@@ -857,7 +912,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // --- LOGIC BARU V4: PLAY FROM SEARCH ---
-    // --- LOGIC BARU V4: PLAY FROM SEARCH ---
     fun playFromSearch(seedSong: SongWithArtist, query: String) {
         Log.d("PlayMusicViewModel", "🚀 playFromSearch CALLED! Seed: ${seedSong.song.title}, Query: $query")
         
@@ -901,9 +955,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             initJob?.join()
             Log.d("PlayMusicViewModel", "🟢 Seed song ready. Fetching Smart Queue...")
 
-            // Lanjut fetch queue
-            val musicDao = database.musicDao() // Akses DAO dari database instance
-            val playedIds = musicDao.getRecentlyPlayedIds(limit = 20)
             val fullSongDetails = repository.getFullSongDetails(seedSong.song.id) // Pastikan metadata lengkap (moods/language)
             val seedSongWithMeta = fullSongDetails?.let { 
                  seedSong.song.copy(
@@ -915,7 +966,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             } ?: seedSong.song 
 
             val smartQueue = repository.fetchSmartQueue(
-                playedSongIds = playedIds,
                 currentSong = seedSongWithMeta
             )
             Log.d("PlayMusicViewModel", "📦 Smart Queue Result Size: ${smartQueue.size}")
@@ -928,7 +978,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                      SupabaseManager.client.from("artists").select {
                         filter { isIn("id", artistIds) }
                      }.decodeList<Artist>().associateBy { it.id }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     emptyMap()
                 }
 
@@ -975,15 +1025,16 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun resolveSongUrl(song: SongWithArtist): String {
         // Logika disederhanakan: Serahkan ke Repository
         // Repository akan otomatis cek SQLite -> Cek Expired -> Request API jika perlu
-        val finalUrl = repository.getPlayableUrl(
+        val result = repository.getPlayableUrl(
             songId = song.song.id,
             title = song.song.title,
             telegramFileId = song.song.telegramFileId,
-            fallbackUrl = song.song.audioUrl
+            fallbackUrl = song.song.audioUrl,
+            artistId = song.artist?.id
         )
 
-        Log.d("PlayMusicViewModel", "✅ RESOLVED URL: $finalUrl")
-        return finalUrl
+        Log.d("PlayMusicViewModel", "✅ RESOLVED URL [${result.source}]: ${result.url}")
+        return result.url
     }
 
     // --- SLEEP TIMER ---
@@ -1001,7 +1052,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         val args = android.os.Bundle().apply {
             putLong("DURATION", durationMs)
         }
-        
+
         val result = controller.sendCustomCommand(command, args)
         Log.d("PlayMusicViewModel", "🚀 Command START_SLEEP_TIMER sent with duration: $durationMs ms")
         
@@ -1155,9 +1206,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             checkIfLiked(currentSong.song.id)
         }
     }
-
-
-
 
     override fun onCleared() {
         super.onCleared()

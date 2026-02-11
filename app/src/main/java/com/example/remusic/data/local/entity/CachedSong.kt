@@ -9,6 +9,7 @@ data class CachedSong(
     val id: String, // Gunakan UUID dari Supabase
     val title: String,
     val artistName: String,
+    val featuredArtists: List<String> = emptyList(),
     val coverUrl: String?,
     val canvasUrl: String? = null, // Video Canvas
     val lyrics: String?, // Lirik disimpan offline

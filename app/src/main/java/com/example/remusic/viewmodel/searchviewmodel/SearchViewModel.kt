@@ -92,7 +92,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     .select(
                         columns = Columns.list(
                             "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at"
+                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists"
                         )
                     ) {
                         filter {
@@ -115,7 +115,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     .select(
                         columns = Columns.list(
                             "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at"
+                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists"
                         )
                     ) {
                         filter {
@@ -166,7 +166,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     .select(
                         columns = Columns.list(
                             "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at"
+                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists"
                         )
                     ) {
                         order("created_at", Order.DESCENDING)
@@ -205,22 +205,52 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             val song = songWithArtist.song
             val artist = songWithArtist.artist
             
-            // 1. Simpan ke CachedSong (biar bisa di-join)
+            // --- 🛑 DEBUG LOG START (DATA MASUK) 🛑 ---
+            android.util.Log.e("DEBUG_DATA", "========================================")
+            android.util.Log.e("DEBUG_DATA", "1. [SAVE] Mencoba menyimpan lagu: ${song.title}")
+            android.util.Log.d("DEBUG_DATA", "   -> ID Lagu: ${song.id}")
+            android.util.Log.d("DEBUG_DATA", "   -> Artist ID (Source Song): ${song.artistId}")
+            android.util.Log.d("DEBUG_DATA", "   -> Artist Name (Source Obj): ${artist?.name}")
+            
+            // Cek List Featured
+            val featList = song.featuredArtists
+            android.util.Log.d("DEBUG_DATA", "   -> Featured List (Raw): $featList")
+            android.util.Log.d("DEBUG_DATA", "   -> Featured Size: ${featList.size}")
+            
+            if (featList.isEmpty()) {
+                 android.util.Log.w("DEBUG_DATA", "   ⚠️ WARNING: Featured Artist KOSONG dari server/model!")
+            }
+            // --- 🛑 DEBUG LOG END 🛑 ---
+
+            // ... Logic existingSong ...
+            val existingSong = musicDao.getSongById(song.id)
+
             val cachedSong = CachedSong(
                 id = song.id,
                 title = song.title,
                 artistName = artist?.name ?: "Unknown Artist",
+                
+                // Pasang log di sini untuk memastikan assignment
+                featuredArtists = song.featuredArtists,
+                
                 coverUrl = song.coverUrl,
                 canvasUrl = song.canvasUrl,
                 lyrics = song.lyrics,
                 uploaderUserId = song.uploaderUserId,
                 telegramFileId = song.telegramFileId,
-                telegramDirectUrl = null, // Akan diupdate saat play
-                lastPlayedAt = System.currentTimeMillis()
+                telegramDirectUrl = existingSong?.telegramDirectUrl,
+                urlExpiryTime = existingSong?.urlExpiryTime ?: 0L,
+                lastPlayedAt = System.currentTimeMillis(),
+                artistId = song.artistId,
             )
-            musicDao.insertSong(cachedSong)
 
-            // 2. Simpan ke SearchHistory
+            // --- 🛑 DEBUG LOG START (DATA KELUAR KE DB) 🛑 ---
+            android.util.Log.d("DEBUG_DATA", "2. [ENTITY] Object CachedSong terbentuk:")
+            android.util.Log.d("DEBUG_DATA", "   -> DB Artist ID: ${cachedSong.artistId}")
+            android.util.Log.d("DEBUG_DATA", "   -> DB Featured: ${cachedSong.featuredArtists}")
+            // --- 🛑 DEBUG LOG END 🛑 ---
+
+            musicDao.insertSong(cachedSong)
             musicDao.insertSearchHistory(SearchHistoryEntity(songId = song.id))
         }
     }

@@ -14,7 +14,7 @@ import com.example.remusic.data.local.entity.SearchHistoryEntity
 
 @Database(
     entities = [CachedSong::class, CachedArtist::class, LikedSong::class, SearchHistoryEntity::class],
-    version = 5,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
@@ -57,15 +57,40 @@ abstract class MusicDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Pastikan kolom artistName ada (jika belum)
+                val cursor = db.query("PRAGMA table_info(cached_songs)")
+                var hasArtistName = false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "artistName") {
+                        hasArtistName = true
+                        break
+                    }
+                }
+                cursor.close()
+
+                if (!hasArtistName) {
+                    db.execSQL("ALTER TABLE cached_songs ADD COLUMN artistName TEXT NOT NULL DEFAULT 'Unknown'")
+                }
+            }
+        }
+        
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_songs ADD COLUMN featuredArtists TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    MusicDatabase::class.java,
-                    "music_database"
-                )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                    .fallbackToDestructiveMigration()
+                                context.applicationContext,
+                                MusicDatabase::class.java,
+                                "music_database"
+                            )
+                                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_6_7, MIGRATION_7_8)
+                    .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance

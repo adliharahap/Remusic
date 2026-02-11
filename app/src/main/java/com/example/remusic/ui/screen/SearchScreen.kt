@@ -41,7 +41,11 @@ import com.example.remusic.ui.theme.AppFont
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.runtime.LaunchedEffect
 import com.example.remusic.data.local.entity.CachedSong
+import com.example.remusic.data.model.displayArtistName
+import com.example.remusic.ui.components.QueueSongCard
 
 // Data class lagu
 data class Song2(
@@ -59,6 +63,7 @@ fun SearchScreen(
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> }
 ) {
     var isFullSearch by remember { mutableStateOf(false) }
+    var showEmptyState by remember { mutableStateOf(false) }
     
     // Collect State from ViewModel
     val searchQuery by searchViewModel.searchQuery.collectAsState()
@@ -66,6 +71,19 @@ fun SearchScreen(
     val recentSongs by searchViewModel.recentSongs.collectAsState()
     val topArtist by searchViewModel.topArtist.collectAsState()
     val searchHistory by searchViewModel.searchHistory.collectAsState(initial = emptyList<CachedSong>())
+
+    // Delay showing empty state to give search time to load
+    LaunchedEffect(searchQuery, searchResults, topArtist) {
+        if (searchQuery.isNotEmpty() && searchResults.isEmpty() && topArtist == null) {
+            showEmptyState = false
+            kotlinx.coroutines.delay(2500) // 2.5 second delay
+            if (searchQuery.isNotEmpty() && searchResults.isEmpty() && topArtist == null) {
+                showEmptyState = true
+            }
+        } else {
+            showEmptyState = false
+        }
+    }
 
     BackHandler(enabled = isFullSearch) {
         isFullSearch = false
@@ -96,46 +114,6 @@ fun SearchScreen(
                     )
                 }
                 
-                // History Section (Real Data from Room)
-                if (searchHistory.isNotEmpty()) {
-                    item { 
-                        Text(
-                            text = "Riwayat Pencarian",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontFamily = AppFont.RobotoBold,
-                                color = Color.White
-                            ),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-                    
-                    itemsIndexed(searchHistory) { index, historyItem ->
-                        val song = com.example.remusic.data.model.Song(
-                            id = historyItem.id,
-                            title = historyItem.title,
-                            coverUrl = historyItem.coverUrl,
-                            audioUrl = historyItem.telegramDirectUrl,
-                            artistId = null, // CachedSong has artistId, maybe include it?
-                            telegramFileId = historyItem.telegramFileId,
-                            canvasUrl = historyItem.canvasUrl // Fix: Include Canvas URL
-                        )
-                        val artist = com.example.remusic.data.model.Artist(id = "", name = historyItem.artistName)
-
-                        com.example.remusic.ui.components.QueueSongCard(
-                            index = index,
-                            songTitle = historyItem.title,
-                            artistName = historyItem.artistName,
-                            posterUri = historyItem.coverUrl ?: "",
-                            isCurrentlyPlaying = false, // History item is not playing context
-                            onClickListener = {
-                                android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
-                                onSongClick(com.example.remusic.data.model.SongWithArtist(song, artist), historyItem.title)
-                            }
-                        )
-                    }
-                }
-
                 // Recently Added Section
                 if (recentSongs.isNotEmpty()) {
                     item {
@@ -143,7 +121,7 @@ fun SearchScreen(
                             Song2(
                                 id = it.song.id.hashCode(),
                                 title = it.song.title,
-                                artist = it.artist?.name ?: "Unknown",
+                                artist = it.displayArtistName,
                                 imageUrl = it.song.coverUrl ?: ""
                             )
                         }
@@ -222,8 +200,135 @@ fun SearchScreen(
                 )
             }
             
-            // Hasil Pencarian
+            // Hasil Pencarian atau Riwayat
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                
+                // Show search history when query is empty
+                if (searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
+                    item { 
+                        Text(
+                            text = "Riwayat Pencarian",
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontFamily = AppFont.RobotoBold,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+                        )
+                    }
+                    
+                    itemsIndexed(searchHistory) { index, historyItem ->
+                        
+                        // --- 🛑 DEBUG LOG START (BACA DARI DB) 🛑 ---
+                        if (index == 0) { // Log item pertama saja biar ga spam
+                             android.util.Log.e("DEBUG_DATA", "3. [LOAD] Membaca History Item ke-0: ${historyItem.title}")
+                             android.util.Log.d("DEBUG_DATA", "   -> DB Artist ID: ${historyItem.artistId}")
+                             android.util.Log.d("DEBUG_DATA", "   -> DB Artist Name: ${historyItem.artistName}")
+                             android.util.Log.d("DEBUG_DATA", "   -> DB Featured List: ${historyItem.featuredArtists}")
+                             android.util.Log.d("DEBUG_DATA", "   -> DB Featured Size: ${historyItem.featuredArtists.size}")
+                        }
+                        // --- 🛑 DEBUG LOG END 🛑 ---
+
+                        val song = com.example.remusic.data.model.Song(
+                            id = historyItem.id,
+                            title = historyItem.title,
+                            coverUrl = historyItem.coverUrl,
+                            audioUrl = historyItem.telegramDirectUrl,
+                            artistId = historyItem.artistId,
+                            telegramFileId = historyItem.telegramFileId,
+                            canvasUrl = historyItem.canvasUrl,
+                            featuredArtists = historyItem.featuredArtists
+                        )
+
+                        // 2. Reconstruct Artist (Nama Primary)
+                        val artist = com.example.remusic.data.model.Artist(
+                            id = historyItem.artistId ?: "",
+                            name = historyItem.artistName
+                        )
+                        // 3. Gabungkan
+                        val songWithArtist = com.example.remusic.data.model.SongWithArtist(song, artist)
+                        
+                        // --- 🛑 DEBUG LOG HASIL AKHIR 🛑 ---
+                        if (index == 0) {
+                            android.util.Log.d("DEBUG_DATA", "4. [FINAL] Display Name UI: ${songWithArtist.displayArtistName}")
+                            android.util.Log.e("DEBUG_DATA", "========================================")
+                        }
+                        // ------------------------------------
+
+                        QueueSongCard(
+                            index = index,
+                            songTitle = historyItem.title,
+                            artistName = songWithArtist.displayArtistName,
+                            posterUri = historyItem.coverUrl ?: "",
+                            isCurrentlyPlaying = false,
+                            onClickListener = {
+                                android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
+                                searchViewModel.onSongPlayed(songWithArtist)
+                                onSongClick(songWithArtist, historyItem.title)
+                            }
+                        )
+                    }
+                }
+                
+                // Empty State - No Results Found (with delay)
+                if (showEmptyState) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 32.dp, vertical = 60.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Not Found",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(120.dp)
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                text = "Lagu Tidak Ditemukan",
+                                style = TextStyle(
+                                    fontSize = 24.sp,
+                                    fontFamily = AppFont.MontserratBold,
+                                    color = Color.White
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Lagu yang kamu cari tidak ada atau belum ditambahkan. Jika lagu yang kamu inginkan tidak ditemukan, kamu bisa meminta request lagu untuk ditambahkan. Klik tombol di bawah untuk request lagu.",
+                                style = TextStyle(
+                                    fontSize = 14.sp,
+                                    fontFamily = AppFont.RobotoRegular,
+                                    color = Color.Gray,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                ),
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            androidx.compose.material3.Button(
+                                onClick = { /* TODO: Navigate to request song */ },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF755D8D)
+                                ),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 32.dp)
+                            ) {
+                                Text(
+                                    text = "Request Lagu",
+                                    style = TextStyle(
+                                        fontSize = 16.sp,
+                                        fontFamily = AppFont.MontserratBold,
+                                        color = Color.White
+                                    ),
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
                 
                 // --- TOP RESULT (ARTIST) ---
                 if (topArtist != null) {
@@ -290,10 +395,10 @@ fun SearchScreen(
                 }
 
                 itemsIndexed(searchResults) { index, song ->
-                    com.example.remusic.ui.components.QueueSongCard(
+                    QueueSongCard(
                         index = index,
                         songTitle = song.song.title,
-                        artistName = song.artist?.name ?: "Unknown Artist",
+                        artistName = song.displayArtistName,
                         posterUri = song.song.coverUrl ?: "",
                         isCurrentlyPlaying = false,
                         onClickListener = {
@@ -307,7 +412,3 @@ fun SearchScreen(
         }
     }
 }
-
-
-
-

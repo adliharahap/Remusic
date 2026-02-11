@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import androidx.media3.common.Player
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
@@ -171,26 +172,7 @@ fun NowPlaying(
         ) {
 
             // 1. Tentukan State apakah Canvas Aktif atau Tidak
-            val hasCanvas = !songWithArtist?.song?.canvasUrl.isNullOrBlank()
-
-            AnimatedContent(
-                targetState = hasCanvas,
-                label = "PlayerLayoutTransition",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(screenHeight), // Menjaga tinggi tetap sesuai layar
-                transitionSpec = {
-                    if (targetState) {
-                        // TRANSISI KE MODE CANVAS (Video Ada)
-                        (slideInVertically { height -> height } + fadeIn()) togetherWith
-                                (slideOutVertically { height -> height / 2 } + fadeOut())
-                    } else {
-                        // TRANSISI KEMBALI KE MODE STANDARD (Video Tidak Ada)
-                        (slideInVertically { height -> height / 2 } + fadeIn()) togetherWith
-                                (slideOutVertically { height -> height } + fadeOut())
-                    }
-                }
-            ) { isCanvasMode ->
+            val isCanvasMode = !songWithArtist?.song?.canvasUrl.isNullOrBlank()
 
                 // ==========================================
                 // COLUMN 1: PLAYER CONTROL (FULL SCREEN 100%)
@@ -212,6 +194,7 @@ fun NowPlaying(
                             CanvasVideoPlayer(
                                 videoUrl = canvasUrl.toString(),
                                 coverUrl = songWithArtist?.song?.coverUrl.toString(),
+                                songId = songWithArtist?.song?.id.toString(),
                                 modifier = Modifier.fillMaxSize()
                             )
 
@@ -275,34 +258,50 @@ fun NowPlaying(
                                         modifier = Modifier.weight(0.7f).fillMaxHeight(),
                                         verticalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text(
-                                            text = songWithArtist?.song?.title ?: "Unknown Title",
-                                            color = Color.White,
-                                            fontFamily = AppFont.Poppins,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 19.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .basicMarquee(
-                                                    animationMode = MarqueeAnimationMode.Immediately,
-                                                    velocity = 70.dp,             // kecepatan scroll
-                                                    initialDelayMillis = 2000,  // delay sebelum scroll pertama
-                                                    repeatDelayMillis = 5000,   // delay di ujung sebelum loop
-                                                    iterations = Int.MAX_VALUE, // scroll terus-menerus
+                                        AnimatedContent(
+                                            targetState = songWithArtist?.song?.id,
+                                            label = "SongTitleTransition",
+                                            transitionSpec = {
+                                                (slideInHorizontally { fullWidth -> fullWidth } + fadeIn())
+                                                    .togetherWith(
+                                                        slideOutHorizontally { fullWidth -> -fullWidth } + fadeOut()
+                                                    )
+                                            }
+                                        ) { song ->
+                                            Column(
+                                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                verticalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = songWithArtist?.song?.title ?: "Unknown Title",
+                                                    color = Color.White,
+                                                    fontFamily = AppFont.Poppins,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 19.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .basicMarquee(
+                                                            animationMode = MarqueeAnimationMode.Immediately,
+                                                            velocity = 70.dp,             // kecepatan scroll
+                                                            initialDelayMillis = 2000,  // delay sebelum scroll pertama
+                                                            repeatDelayMillis = 5000,   // delay di ujung sebelum loop
+                                                            iterations = Int.MAX_VALUE, // scroll terus-menerus
+                                                        )
                                                 )
-                                        )
-                                        Text(
-                                            text = songWithArtist?.displayArtistName ?: "Unknown Artist",
-                                            color = Color(0xCCFFFFFF),
-                                            fontFamily = AppFont.Helvetica,
-                                            fontWeight = FontWeight.Normal,
-                                            fontSize = 15.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
+                                                Text(
+                                                    text = songWithArtist?.displayArtistName ?: "Unknown Artist",
+                                                    color = Color(0xCCFFFFFF),
+                                                    fontFamily = AppFont.Helvetica,
+                                                    fontWeight = FontWeight.Normal,
+                                                    fontSize = 15.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                        }
                                     }
                                     Row(
                                         modifier = Modifier
@@ -655,24 +654,24 @@ fun NowPlaying(
                         Column(
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                                Box(modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(10.dp)) {
-                                    MusicSlider(
-                                        value = sliderValue,
-                                        onValueChange = { newValue ->
-                                            isUserSeeking = true
-                                            userSeekPosition = newValue
-                                        },
-                                        onValueChangeFinished = {
-                                            onSeek(userSeekPosition)
-                                            isUserSeeking = false
-                                        },
-                                        modifier = Modifier.padding(horizontal = 8.dp),
-                                        activeColor = Color.White,
-                                        inactiveColor = Color.White.copy(0.4f)
-                                    )
-                                }
+                            Box(modifier = Modifier
+                                .fillMaxWidth()
+                                .height(10.dp)) {
+                                MusicSlider(
+                                    value = sliderValue,
+                                    onValueChange = { newValue ->
+                                        isUserSeeking = true
+                                        userSeekPosition = newValue
+                                    },
+                                    onValueChangeFinished = {
+                                        onSeek(userSeekPosition)
+                                        isUserSeeking = false
+                                    },
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                    activeColor = Color.White,
+                                    inactiveColor = Color.White.copy(0.4f)
+                                )
+                            }
 
                             // Waktu (Duration)
                             Row(
@@ -850,8 +849,6 @@ fun NowPlaying(
                         }
                     }
                 }
-            }
-
 
             // ==========================================
             // COLUMN 2: INFO (UPLOADER & ARTIST)
@@ -859,7 +856,7 @@ fun NowPlaying(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(if (hasCanvas) Color.Black else Color.Transparent)
+                    .background(if (isCanvasMode) Color.Black else Color.Transparent)
                     .padding(horizontal = 20.dp) // Beri padding kiri kanan
             ) {
                 // Spacer agar ada jarak sedikit saat user mulai scroll ke bawah

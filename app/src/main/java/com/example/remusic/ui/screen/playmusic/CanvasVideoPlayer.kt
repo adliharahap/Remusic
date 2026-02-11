@@ -30,19 +30,37 @@ import coil.request.ImageRequest
 @Composable
 fun CanvasVideoPlayer(
     videoUrl: String,
-    coverUrl: String?, // 1. Tambah parameter coverUrl
+    coverUrl: String?,
+    songId: String, // Tambah parameter songId untuk cache key
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
 
-    // 2. State untuk melacak apakah video sudah siap tampil
+    // State untuk melacak apakah video sudah siap tampil
     var isVideoReady by remember { mutableStateOf(false) }
 
+    // Inisialisasi ExoPlayer dengan CacheDataSourceFactory
     val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
-            volume = 0f
-        }
+        val simpleCache = com.example.remusic.utils.RemusicCache.getInstance(context)
+        
+        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            
+        val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(simpleCache)
+            .setUpstreamDataSourceFactory(httpDataSourceFactory)
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
+            .setDataSourceFactory(cacheDataSourceFactory)
+
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+            .apply {
+                repeatMode = Player.REPEAT_MODE_ONE
+                volume = 0f
+            }
     }
 
     // Listener untuk mendeteksi kapan frame video pertama muncul
@@ -50,7 +68,7 @@ fun CanvasVideoPlayer(
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 super.onRenderedFirstFrame()
-                // 3. Video sudah jalan -> Sembunyikan poster
+                // Video sudah jalan -> Sembunyikan poster
                 isVideoReady = true
             }
         }
@@ -68,7 +86,13 @@ fun CanvasVideoPlayer(
         isVideoReady = false
 
         if (videoUrl.isNotBlank()) {
-            val mediaItem = MediaItem.fromUri(videoUrl)
+            // Gunakan songId sebagai cache key agar stabil walau URL berubah (misal signed URL)
+            // Tambahkan prefix 'video_' untuk mencegah bentrok dengan cache lagu (jika lagu pakai ID juga)
+            val mediaItem = MediaItem.Builder()
+                .setUri(videoUrl)
+                .setCustomCacheKey("video_$songId")
+                .build()
+                
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
