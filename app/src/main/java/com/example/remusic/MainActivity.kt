@@ -125,11 +125,33 @@ class MainActivity : ComponentActivity() {
                             val user = SupabaseManager.client.auth.currentUserOrNull()
                             Log.d("AUTH_CHECK", "User Login: ${user?.email}")
 
-                            // Load data profil dari database
+                            // --- PERBAIKAN: WAJIB TUNGGU SAMPAI USER DATA TERLOAD ---
                             if (user != null) {
-                                UserManager.fetchCurrentUser(user.id)
+                                try {
+                                    Log.d("AUTH_CHECK", "🔄 Fetching user data dari database...")
+                                    // BLOCKING: tunggu sampai user data berhasil di-fetch
+                                    UserManager.fetchCurrentUser(user.id)
+                                    
+                                    // Cek apakah berhasil
+                                    if (UserManager.currentUser != null) {
+                                        Log.d("AUTH_CHECK", "✅ User data berhasil dimuat: ${UserManager.currentUser?.displayName}")
+                                        startDestination = "splash" // Langsung masuk splash/main
+                                    } else {
+                                        Log.e("AUTH_CHECK", "❌ User data null meskipun fetch selesai. Logout paksa.")
+                                        SupabaseManager.client.auth.signOut()
+                                        startDestination = "login"
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("AUTH_CHECK", "❌ Gagal fetch user data: ${e.message}")
+                                    // Jika gagal fetch user, logout dan ke login
+                                    SupabaseManager.client.auth.signOut()
+                                    startDestination = "login"
+                                }
+                            } else {
+                                Log.e("AUTH_CHECK", "❌ Session ada tapi user null. Logout.")
+                                SupabaseManager.client.auth.signOut()
+                                startDestination = "login"
                             }
-                            startDestination = "splash" // Langsung masuk splash/main
                         } else {
                             Log.d("AUTH_CHECK", "Tidak ada sesi tersimpan. Masuk Login.")
                             startDestination = "login"

@@ -60,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -123,7 +124,7 @@ fun LyricsScreen(
     var hasAutoScrolledToTop by remember { mutableStateOf(false) }
     
     // Track previous active index untuk prevent redundant scroll
-    var previousActiveIndex by remember { mutableStateOf(-1) }
+    var previousActiveIndex by remember { mutableIntStateOf(-1) }
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp

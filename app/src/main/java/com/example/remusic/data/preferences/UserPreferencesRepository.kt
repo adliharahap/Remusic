@@ -1,11 +1,14 @@
 package com.example.remusic.data.preferences
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.Player
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +23,7 @@ class UserPreferencesRepository(private val context: Context) {
     private val SHUFFLE_ENABLED_KEY = booleanPreferencesKey("shuffle_mode_enabled")
     private val REPEAT_MODE_KEY = intPreferencesKey("repeat_mode")
     private val TRANSLATE_LYRICS_KEY = booleanPreferencesKey("translate_lyrics_enabled")
+    private val LAST_SONG_COLOR_KEY = stringPreferencesKey("last_song_primary_color")
 
     // 2. Buat Flow untuk membaca state shuffle.
     // Jika data belum ada, akan mengembalikan `false` sebagai default.
@@ -38,6 +42,20 @@ class UserPreferencesRepository(private val context: Context) {
             preferences[TRANSLATE_LYRICS_KEY] ?: false
         }
 
+    val lastSongColorFlow: Flow<Color> = context.dataStore.data
+        .map { preferences ->
+            val colorString = preferences[LAST_SONG_COLOR_KEY]
+            if (colorString != null) {
+                try {
+                    Color(android.graphics.Color.parseColor(colorString))
+                } catch (e: Exception) {
+                    Color(0xFF755D8D) // Default purple on parse error
+                }
+            } else {
+                Color(0xFF755D8D) // Default purple
+            }
+        }
+
     // 3. Buat suspend function untuk menulis/menyimpan state shuffle.
     suspend fun setShuffleEnabled(isEnabled: Boolean) {
         context.dataStore.edit { settings ->
@@ -54,6 +72,14 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setTranslateLyrics(isEnabled: Boolean) {
         context.dataStore.edit { settings ->
             settings[TRANSLATE_LYRICS_KEY] = isEnabled
+        }
+    }
+
+    suspend fun saveLastSongColor(color: Color) {
+        val argb = color.toArgb()
+        val hexColor = "#${argb.toUInt().toString(16).padStart(8, '0')}"
+        context.dataStore.edit { settings ->
+            settings[LAST_SONG_COLOR_KEY] = hexColor
         }
     }
 }

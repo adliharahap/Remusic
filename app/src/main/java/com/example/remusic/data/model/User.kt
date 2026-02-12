@@ -1,8 +1,10 @@
 package com.example.remusic.data.model
 
+import androidx.annotation.Keep
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+@Keep // Prevent ProGuard from obfuscating this class in release builds
 @Serializable // Wajib agar bisa dibaca dari JSON Supabase
 data class User(
     // Petakan kolom 'id' di database ke variabel 'uid'

@@ -54,7 +54,12 @@ private fun isSkinOrYellowTone(color: Int): Boolean {
 suspend fun extractGradientColorsFromImageUrl(
     context: Context,
     imageUrl: String,
-    defaultColors: List<Color> = listOf(Color(0xFF202020), Color(0xFF121212))
+    defaultColors: List<Color> = listOf(
+        Color(0xFF202020),
+        Color(0xFF181818),
+        Color(0xFF141414),
+        Color(0xFF121212)
+    )
 ): List<Color> {
     if (imageUrl.isBlank()) return defaultColors
 
@@ -119,17 +124,20 @@ suspend fun extractGradientColorsFromImageUrl(
                 }
             }
 
-            // Jika ada pemenang, proses warnanya
+            // Jika ada pemenang, proses warnanya menjadi 4 warna gradient
             if (bestSwatch != null) {
                 val rawColor = bestSwatch.rgb
 
                 // Masukkan ke logika fix brightness/saturation kamu yang lama
                 val topColorInt = fixColorForBackground(rawColor)
 
-                // Blend dengan hitam untuk warna bawah
-                val bottomColorInt = ColorUtils.blendARGB(topColorInt, 0xFF000000.toInt(), 0.8f)
+                // Buat 4 warna gradient yang harmonis
+                val color1 = Color(topColorInt) // Warna utama (paling terang)
+                val color2 = Color(ColorUtils.blendARGB(topColorInt, 0xFF000000.toInt(), 0.3f)) // 30% ke hitam
+                val color3 = Color(ColorUtils.blendARGB(topColorInt, 0xFF000000.toInt(), 0.6f)) // 60% ke hitam
+                val color4 = Color(ColorUtils.blendARGB(topColorInt, 0xFF000000.toInt(), 0.85f)) // 85% ke hitam
 
-                return listOf(Color(topColorInt), Color(bottomColorInt))
+                return listOf(color1, color2, color3, color4)
             }
         }
         defaultColors

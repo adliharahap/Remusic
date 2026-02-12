@@ -344,6 +344,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                 imageUrl = matchedSong.song.coverUrl ?: ""
                             )
                             _uiState.update { it.copy(dominantColors = colors) }
+                            // Save to preferences for HomeScreen
+                            userPreferencesRepository.saveLastSongColor(colors.getOrElse(0) { Color(0xFF755D8D) })
                         }
 
                         // 3. CEK STATUS LIKE (PENTING: Biar UI update saat ganti lagu otomatis)
@@ -699,6 +701,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             )
             // Update warna ke UI
             _uiState.update { it.copy(dominantColors = colors) }
+            // Save to preferences for HomeScreen
+            userPreferencesRepository.saveLastSongColor(colors.getOrElse(0) { Color(0xFF755D8D) })
 
             Log.d("DEBUG_PLAYER", "🛠 MAPPING: Membuat MediaItems...")
 
@@ -1000,6 +1004,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 val colors = extractGradientColorsFromImageUrl(getApplication(), targetSong.song.coverUrl ?: "")
 
                 _uiState.update { it.copy(dominantColors = colors) }
+                // Save to preferences for HomeScreen  
+                userPreferencesRepository.saveLastSongColor(colors.getOrElse(0) { Color(0xFF755D8D) })
                 
                 // 5. CEK STATUS LIKE
                 checkIfLiked(targetSong.song.id)

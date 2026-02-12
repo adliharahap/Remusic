@@ -44,9 +44,9 @@ fun Modifier.shimmerEffect(
     background(
         brush = Brush.linearGradient(
             colors = listOf(
-                Color(0xFF2B2B2B), // Warna dasar gelap
-                Color(0xFF3F3F3F), // Warna kilau terang
-                Color(0xFF2B2B2B), // Warna dasar gelap
+                Color.White.copy(alpha = 0.1f), // Warna dasar (abu-abu muda transparan)
+                Color.White.copy(alpha = 0.25f), // Warna kilau (lebih terang)
+                Color.White.copy(alpha = 0.1f), // Warna dasar
             ),
             start = Offset(startOffsetX, 0f),
             end = Offset(startOffsetX + size.width.toFloat(), size.height.toFloat())
