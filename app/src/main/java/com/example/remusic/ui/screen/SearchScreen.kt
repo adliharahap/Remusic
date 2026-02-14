@@ -59,10 +59,11 @@ data class Song2(
 @Composable
 fun SearchScreen(
     searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
-    // Tambahkan parameter navigasi atau callback play jika perlu
+    isSearchActive: Boolean = false, // Hoisted State
+    onSearchActiveChange: (Boolean) -> Unit = {}, // State Change Callback
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> }
 ) {
-    var isFullSearch by remember { mutableStateOf(false) }
+    // Local state for emptiness check only
     var showEmptyState by remember { mutableStateOf(false) }
     
     // Collect State from ViewModel
@@ -85,12 +86,12 @@ fun SearchScreen(
         }
     }
 
-    BackHandler(enabled = isFullSearch) {
-        isFullSearch = false
+    BackHandler(enabled = isSearchActive) {
+        onSearchActiveChange(false)
         searchViewModel.onSearchQueryChanged("") // Clear query saat back
     }
 
-    if (!isFullSearch) {
+    if (!isSearchActive) {
         // ... (Existing code for initial search screen)
         Box(
             modifier = Modifier
@@ -105,12 +106,12 @@ fun SearchScreen(
                 }
                 item {
                     val photoUrl = com.example.remusic.data.UserManager.currentUser?.photoUrl
-                        ?: "https://i.pinimg.com/736x/0c/86/83/0c86831120a35560280ce0e235fd7e57.jpg"
+                        ?: "https://i.pinimg.com/736x/0c86831120a35560280ce0e235fd7e57.jpg"
                     
                     HeaderSearchSection(
                         profileImageUrl = photoUrl,
                         title = "Pencarian",
-                        onSearchClick = { isFullSearch = true }
+                        onSearchClick = { onSearchActiveChange(true) }
                     )
                 }
                 
@@ -156,7 +157,7 @@ fun SearchScreen(
             ) {
                 IconButton(
                     onClick = { 
-                        isFullSearch = false 
+                        onSearchActiveChange(false)
                         searchViewModel.onSearchQueryChanged("")
                     }
                 ) {

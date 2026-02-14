@@ -66,9 +66,10 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 @Composable
 fun HomeScreen(
-    rootNavController: NavController, // Ini NavController UTAMA (dari MainScreen)
+    // rootNavController removed, using callback instead for clarity
     homeViewModel: HomeViewModel = viewModel(),
     playMusicViewModel: PlayMusicViewModel,
+    onSearchClick: () -> Unit
 ) {
     // Buat NavController BARU untuk navigasi di dalam Home
     val homeNavController = rememberNavController()
@@ -85,7 +86,8 @@ fun HomeScreen(
             HomeMainScreen(
                 homeViewModel = homeViewModel,
                 playMusicViewModel = playMusicViewModel,
-                homeNavController = homeNavController // Berikan nested controller
+                homeNavController = homeNavController, // Berikan nested controller
+                onSearchClick = onSearchClick
             )
         }
 
@@ -131,7 +133,8 @@ fun HomeScreen(
 private fun HomeMainScreen(
     homeViewModel: HomeViewModel,
     playMusicViewModel: PlayMusicViewModel,
-    homeNavController: NavHostController // Controller nested
+    homeNavController: NavHostController, // Controller nested
+    onSearchClick: () -> Unit
 ) {
     val user = UserManager.currentUser
     val homeState by homeViewModel.uiState.collectAsState()
@@ -253,7 +256,8 @@ private fun HomeMainScreen(
                                 name = user?.displayName,
                                 greeting = greeting,
                                 profileImageUrl = user?.photoUrl,
-                                onSearchClick = { /* TODO: Navigate to search */ },
+                                // Use callback to navigate
+                                onSearchClick = onSearchClick,
                                 onNotificationClick = { /* TODO: Show notifications */ },
                                 dominantColor = lastSongColor
                             )
@@ -262,7 +266,11 @@ private fun HomeMainScreen(
                             QuickPickCarousel(
                                 songs = state.quickPickSongs,
                                 onSongClick = { index ->
-                                    // TODO: Play song
+                                    val song = state.quickPickSongs.getOrNull(index)
+                                    if (song != null) {
+                                        playMusicViewModel.playSongWithSmartQueue(song)
+                                        playMusicViewModel.playingMusicFromPlaylist("Pilihan Cepat")
+                                    }
                                 }
                             )
                         }

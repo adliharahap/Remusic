@@ -37,13 +37,7 @@ fun AppNavGraph(
         ) {
             LoginScreen(onGoogleSignInClick = onGoogleSignInClick)
         }
-        composable(BottomNavItem.Search.route) {
-            com.example.remusic.ui.screen.SearchScreen(
-                onSongClick = { song, query ->
-                    playMusicViewModel.playFromSearch(song, query)
-                }
-            )
-        }
+        // Removed Search routes from here as they are now handled in BottomNavGraph (MainScreen)
         composable(
             route = "main",
         ) {

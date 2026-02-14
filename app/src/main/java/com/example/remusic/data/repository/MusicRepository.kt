@@ -487,6 +487,48 @@ class MusicRepository(private val musicDao: MusicDao) {
         return null
     }
 
+    // --- LOGIC 4.6: BULK FETCH ARTISTS (FOR SMART QUEUE) ---
+    suspend fun fetchArtistsByIds(artistIds: List<String>): List<Artist> {
+        if (artistIds.isEmpty()) return emptyList()
+
+        // Filter valid IDs and remove duplicates
+        val uniqueIds = artistIds.filter { it.isNotBlank() }.distinct()
+        if (uniqueIds.isEmpty()) return emptyList()
+
+        Log.d(TAG, "[ARTIST BULK] Meminta ${uniqueIds.size} artists...")
+
+        // 1. Check Cache first
+        val cachedArtists = uniqueIds.mapNotNull { memoryArtistCache[it] }
+        val missingIds = uniqueIds.filter { !memoryArtistCache.containsKey(it) }
+
+        if (missingIds.isEmpty()) {
+            Log.d(TAG, "⚡ [ARTIST BULK CACHE HIT] Semua artist ditemukan di cache.")
+            return cachedArtists
+        }
+
+        try {
+            Log.d(TAG, "🌍 [ARTIST BULK FETCH] Mengambil ${missingIds.size} artist dari DB...")
+            val fetchedArtists = SupabaseManager.client
+                .from("artists")
+                .select {
+                    filter { isIn("id", missingIds) }
+                }
+                .decodeList<Artist>()
+
+            // Update Cache
+            fetchedArtists.forEach { artist ->
+                memoryArtistCache[artist.id] = artist
+            }
+
+            return cachedArtists + fetchedArtists
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [ARTIST BULK ERROR]: ${e.message}")
+            // Return whatever we have in cache
+            return cachedArtists
+        }
+    }
+
     // --- LOGIC 5: SMART QUEUE V4 (Final Boss - Hardened) ---
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     suspend fun fetchSmartQueue(

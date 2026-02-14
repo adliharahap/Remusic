@@ -114,14 +114,13 @@ fun LyricsScreen(
     val isTranslateLyrics by lyricsViewModel.isTranslateLyrics.collectAsState()
     val currentPosition by lyricsViewModel.currentPosition.collectAsState()
 
+    // Ambil State GLOBAL Auto Scroll dari ViewModel
+    val hasAutoScrolledToTop by lyricsViewModel.hasAutoScrolledToTop.collectAsState()
+
     // Variable UI
     // Track previous song ID untuk detect song change
     var previousSongId by remember { mutableStateOf(songWithArtist?.song?.id) }
     val currentSongId = songWithArtist?.song?.id
-    
-    // 🎯 SMART AUTO-SCROLL STATE (per Song ID)
-    // Track apakah sudah pernah auto-scroll ke atas untuk song ini (HANYA 1x per lagu)
-    var hasAutoScrolledToTop by remember { mutableStateOf(false) }
     
     // Track previous active index untuk prevent redundant scroll
     var previousActiveIndex by remember { mutableIntStateOf(-1) }
@@ -129,13 +128,7 @@ fun LyricsScreen(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
 
-    // 🔄 Reset auto-scroll state saat lagu berganti
-    LaunchedEffect(currentSongId) {
-        if (currentSongId != null && currentSongId != previousSongId) {
-            hasAutoScrolledToTop = false // Reset flag untuk lagu baru
-            previousActiveIndex = -1
-        }
-    }
+
     
     // 🔝 SMART AUTO-SCROLL TO TOP
     // Hanya scroll ke atas jika: belum pernah auto-scroll DAN position < timestamp lyric pertama
@@ -146,7 +139,8 @@ fun LyricsScreen(
             // Jika current position masih di bawah lyric pertama, scroll ke atas
             if (currentPosition < firstLyricTimestamp) {
                 lazyListState.scrollToItem(0) // Instant scroll ke atas
-                // Tandai sudah auto-scroll (HANYA 1x!)
+                // Tandai sudah auto-scroll (HANYA 1x!) via ViewModel
+                lyricsViewModel.setAutoScrolledToTop(true)
             }
         }
     }

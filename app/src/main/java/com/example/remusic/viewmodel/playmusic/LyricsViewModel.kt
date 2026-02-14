@@ -67,6 +67,19 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
             false
         )
 
+    // STATE LIRIK GLOBAL (Agar tidak reset saat swipe screen di Pager)
+    private val _hasAutoScrolledToTop = MutableStateFlow(false)
+    val hasAutoScrolledToTop = _hasAutoScrolledToTop.asStateFlow()
+
+    fun setAutoScrolledToTop(hasScrolled: Boolean) {
+        _hasAutoScrolledToTop.value = hasScrolled
+    }
+
+    // Reset state saat ganti lagu
+    fun resetScrollState() {
+        _hasAutoScrolledToTop.value = false
+    }
+
     fun toggleTranslateLyrics() {
         viewModelScope.launch {
             val current = isTranslateLyrics.value

@@ -15,6 +15,7 @@ import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async // IMPORT ASYNC
 
 sealed class HomeUiState {
     object Loading : HomeUiState()
@@ -45,89 +46,37 @@ class HomeViewModel : ViewModel() {
             _uiState.value = HomeUiState.Loading
             try {
                 Log.d(TAG, "🔄 [HOME] Fetching all home data...")
+                val startTime = System.currentTimeMillis()
 
-                // 1. Fetch Songs
-                val songs = SupabaseManager.client
-                    .from("songs")
-                    .select(
-                        columns = Columns.list(
-                            "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", 
-                            "featured_artists", "play_count", "like_count", "created_at"
-                        )
-                    ) {
-                        order(column = "created_at", order = Order.DESCENDING)
-                        limit(100) // Limit untuk performa
-                    }
-                    .decodeList<Song>()
+                // 1. Parallel Fetching using async
+                val quickPickDeferred = async { fetchQuickPickSongs() }
+                val recentlyPlayedDeferred = async { fetchRecentlyPlayedSongs() }
+                val mostLovedDeferred = async { fetchMostLovedSongs() }
+                val topTrendingDeferred = async { fetchTopTrendingSongs() }
+                val officialPlaylistsDeferred = async { fetchOfficialPlaylists() }
+                val followedArtistsDeferred = async { fetchFollowedArtists() }
 
-                Log.d(TAG, "✅ [SONGS] Fetched ${songs.size} songs")
+                // 2. Await all results
+                val quickPickRaw = quickPickDeferred.await()
+                val recentlyPlayedRaw = recentlyPlayedDeferred.await()
+                val mostLovedRaw = mostLovedDeferred.await()
+                val topTrendingRaw = topTrendingDeferred.await()
+                val officialPlaylists = officialPlaylistsDeferred.await()
+                val followedArtists = followedArtistsDeferred.await()
 
-                // 2. Fetch Official Playlists
-                val officialPlaylists = SupabaseManager.client
-                    .from("playlists")
-                    .select {
-                        filter {
-                            eq("is_official", true)
-                        }
-                        order(column = "created_at", order = Order.DESCENDING)
-                        limit(10)
-                    }
-                    .decodeList<Playlist>()
-
-                Log.d(TAG, "✅ [PLAYLISTS] Fetched ${officialPlaylists.size} official playlists")
-
-                // 3. Fetch Followed Artists (if user logged in)
-                val followedArtists = try {
-                    val currentUserId = UserManager.currentUser?.uid
-                    if (currentUserId != null) {
-                        // Get artist IDs from artist_followers
-                        val followerRecords = SupabaseManager.client
-                            .from("artist_followers")
-                            .select(columns = Columns.list("artist_id")) {
-                                filter {
-                                    eq("user_id", currentUserId)
-                                }
-                                limit(20)
-                            }
-                            .decodeList<Map<String, String>>()
-
-                        val artistIds = followerRecords.mapNotNull { it["artist_id"] }
-
-                        if (artistIds.isNotEmpty()) {
-                            SupabaseManager.client
-                                .from("artists")
-                                .select {
-                                    filter {
-                                        isIn("id", artistIds)
-                                    }
-                                }
-                                .decodeList<Artist>()
-                        } else {
-                            emptyList()
-                        }
-                    } else {
-                        emptyList()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "⚠️ [ARTISTS] Error fetching followed artists: ${e.message}")
-                    emptyList()
-                }
-
-                Log.d(TAG, "✅ [ARTISTS] Fetched ${followedArtists.size} followed artists")
-
-                // 4. Fetch Artist Details for Songs
-                val artistIds = songs.mapNotNull { it.artistId }
+                // 3. Collection all songs for Bulk Artist Fetch
+                // Combine all raw songs to get unique artist IDs
+                val allRawSongs = (quickPickRaw + recentlyPlayedRaw + mostLovedRaw + topTrendingRaw)
+                val artistIds = allRawSongs.mapNotNull { it.artistId }
                     .filter { it.isNotBlank() }
                     .distinct()
 
+                // 4. Bulk Fetch Artists
                 val artistsMap = if (artistIds.isNotEmpty()) {
                     SupabaseManager.client
                         .from("artists")
                         .select {
-                            filter {
-                                isIn("id", artistIds)
-                            }
+                            filter { isIn("id", artistIds) }
                         }
                         .decodeList<Artist>()
                         .associateBy { it.id }
@@ -135,72 +84,31 @@ class HomeViewModel : ViewModel() {
                     emptyMap()
                 }
 
-                // 5. Combine Songs with Artists
-                val songsWithArtists = songs.map { song ->
-                    val artist = song.artistId?.let { id -> artistsMap[id] }
-                    SongWithArtist(song = song, artist = artist)
-                }
-
-                // 6. Fetch Most Loved Songs (like_count > 0, limit 50)
-                val mostLovedSongs = SupabaseManager.client
-                    .from("songs")
-                    .select(
-                        columns = Columns.list(
-                            "id", "title", "artist_id", "cover_url", "audio_url", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", 
-                            "featured_artists", "play_count", "like_count", "created_at"
-                        )
-                    ) {
-                        filter {
-                            gt("like_count", 0) // Only songs with likes
-                        }
-                        order(column = "like_count", order = Order.DESCENDING)
-                        limit(50)
+                // 5. Helper to Map Songs
+                fun mapToSongWithArtist(songs: List<Song>): List<SongWithArtist> {
+                    return songs.map { song ->
+                        val artist = song.artistId?.let { id -> artistsMap[id] }
+                        SongWithArtist(song = song, artist = artist)
                     }
-                    .decodeList<Song>()
-
-                val mostLoved = mostLovedSongs.map { song ->
-                    val artist = artistsMap[song.artistId]
-                    SongWithArtist(song = song, artist = artist)
                 }
 
-                Log.d(TAG, "✅ [MOST LOVED] Fetched ${mostLoved.size} songs with likes")
+                // 6. Map all lists
+                val quickPickSongs = mapToSongWithArtist(quickPickRaw)
+                val recentlyPlayed = mapToSongWithArtist(recentlyPlayedRaw)
+                val mostLoved = mapToSongWithArtist(mostLovedRaw)
+                val topTrending = mapToSongWithArtist(topTrendingRaw)
 
-                // 7. Fetch Top Trending Songs (play_count > 0, limit 50)
-                val topTrendingSongs = SupabaseManager.client
-                    .from("songs")
-                    .select(
-                        columns = Columns.list(
-                            "id", "title", "artist_id", "cover_url", "audio_url", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", 
-                            "featured_artists", "play_count", "like_count", "created_at"
-                        )
-                    ) {
-                        filter {
-                            gt("play_count", 0) // Only songs that have been played
-                        }
-                        order(column = "play_count", order = Order.DESCENDING)
-                        limit(50)
-                    }
-                    .decodeList<Song>()
+                // Combine for "All Songs" (optional, for other usages)
+                val allSongsWithArtists =
+                    (quickPickSongs + recentlyPlayed + mostLoved + topTrending)
+                        .distinctBy { it.song.id }
+                        .shuffled()
 
-                val topTrending = topTrendingSongs.map { song ->
-                    val artist = artistsMap[song.artistId]
-                    SongWithArtist(song = song, artist = artist)
-                }
-
-                Log.d(TAG, "✅ [TOP TRENDING] Fetched ${topTrending.size} songs with plays")
-
-                // 8. Recently Played - just first 20 from recent songs
-                val recentlyPlayed = songsWithArtists.take(20)
-
-                // 9. Quick Pick - shuffle and take 20 (persisted in state)
-                val quickPickSongs = songsWithArtists.shuffled().take(20)
-
-                Log.d(TAG, "✅ [SUCCESS] All home data loaded successfully")
+                val endTime = System.currentTimeMillis()
+                Log.d(TAG, "✅ [SUCCESS] Home data loaded in ${endTime - startTime}ms")
 
                 _uiState.value = HomeUiState.Success(
-                    allSongsWithArtists = songsWithArtists,
+                    allSongsWithArtists = allSongsWithArtists,
                     officialPlaylists = officialPlaylists,
                     recentlyPlayed = recentlyPlayed,
                     followedArtists = followedArtists,
@@ -219,7 +127,146 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    fun refresh() {
-        fetchAllHomeData()
+    // --- Modular Fetch Functions ---
+
+    private suspend fun fetchQuickPickSongs(): List<Song> {
+        // Ambil 50 lagu terbaru, lalu acak dan ambil 20
+        return try {
+            val songs = SupabaseManager.client
+                .from("songs")
+                .select(
+                    columns = Columns.list(
+                        "id", "title", "audio_url", "cover_url", "artist_id",
+                        "canvas_url", "duration_ms", "telegram_audio_file_id",
+                        "featured_artists", "play_count", "like_count", "created_at",
+                        "language", "moods"
+                    )
+                ) {
+                    order(column = "created_at", order = Order.DESCENDING)
+                    limit(50)
+                }
+                .decodeList<Song>()
+
+            songs.shuffled().take(20)
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [QUICK PICK] Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchRecentlyPlayedSongs(): List<Song> {
+        // Placeholder: Ambil 20 lagu terbaru (karena tabel history belum ada/siap)
+        return try {
+            SupabaseManager.client
+                .from("songs")
+                .select(
+                    columns = Columns.list(
+                        "id", "title", "audio_url", "cover_url", "artist_id",
+                        "canvas_url", "duration_ms", "telegram_audio_file_id",
+                        "featured_artists", "play_count", "like_count", "created_at",
+                        "language", "moods"
+                    )
+                ) {
+                    order(column = "created_at", order = Order.DESCENDING)
+                    limit(20)
+                }
+                .decodeList<Song>()
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [RECENTLY PLAYED] Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchMostLovedSongs(): List<Song> {
+        return try {
+            SupabaseManager.client
+                .from("songs")
+                .select(
+                    columns = Columns.list(
+                        "id", "title", "artist_id", "cover_url", "audio_url",
+                        "canvas_url", "duration_ms", "telegram_audio_file_id",
+                        "featured_artists", "play_count", "like_count", "created_at",
+                        "language", "moods"
+                    )
+                ) {
+                    filter { gt("like_count", 0) }
+                    order(column = "like_count", order = Order.DESCENDING)
+                    limit(50)
+                }
+                .decodeList<Song>()
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [MOST LOVED] Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchTopTrendingSongs(): List<Song> {
+        return try {
+            SupabaseManager.client
+                .from("songs")
+                .select(
+                    columns = Columns.list(
+                        "id", "title", "artist_id", "cover_url", "audio_url",
+                        "canvas_url", "duration_ms", "telegram_audio_file_id",
+                        "featured_artists", "play_count", "like_count", "created_at",
+                        "language", "moods"
+                    )
+                ) {
+                    filter { gt("play_count", 0) }
+                    order(column = "play_count", order = Order.DESCENDING)
+                    limit(50)
+                }
+                .decodeList<Song>()
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [TOP TRENDING] Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchOfficialPlaylists(): List<Playlist> {
+        return try {
+            SupabaseManager.client
+                .from("playlists")
+                .select {
+                    filter { eq("is_official", true) }
+                    order(column = "created_at", order = Order.DESCENDING)
+                    limit(10)
+                }
+                .decodeList<Playlist>()
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [OFFICIAL PLAYLISTS] Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun fetchFollowedArtists(): List<Artist> {
+        return try {
+            val currentUserId = UserManager.currentUser?.uid ?: return emptyList()
+
+            // Get artist IDs from artist_followers
+            val followerRecords = SupabaseManager.client
+                .from("artist_followers")
+                .select(columns = Columns.list("artist_id")) {
+                    filter { eq("user_id", currentUserId) }
+                    limit(20)
+                }
+                .decodeList<Map<String, String>>()
+
+            val artistIds = followerRecords.mapNotNull { it["artist_id"] }
+
+            if (artistIds.isNotEmpty()) {
+                SupabaseManager.client
+                    .from("artists")
+                    .select {
+                        filter { isIn("id", artistIds) }
+                    }
+                    .decodeList<Artist>()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "⚠️ [FOLLOWED ARTISTS] Error: ${e.message}")
+            emptyList()
+        }
     }
 }

@@ -751,6 +751,71 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // --- FITUR BARU: PLAY WITH SMART QUEUE (UNTUK HOME SCREEN QUICK PICK) ---
+    fun playSongWithSmartQueue(seedSong: SongWithArtist) {
+        Log.d("PlayMusicViewModel", "🚀 START SMART QUEUE for: ${seedSong.song.title}")
+        
+        // 1. Play lagu yang diklik DULUAN (Single Item Playlist)
+        // Set startIndex = 0 karena cuma ada 1 lagu
+        val playJob = setPlaylist(listOf(seedSong), 0)
+
+        // 2. Fetch Smart Queue di background jangan ganggu UI/Playback
+        viewModelScope.launch(Dispatchers.IO) {
+            // Tunggu sebentar sampai lagu utama mulai disiapkan
+            playJob?.join()
+
+            // Fetch Smart Queue (List<Song>)
+            val relatedSongs = repository.fetchSmartQueue(seedSong.song)
+
+            if (relatedSongs.isNotEmpty()) {
+                Log.d("PlayMusicViewModel", "✅ Smart Queue returned ${relatedSongs.size} songs. Fetching artist details...")
+
+                // 3. Kita butuh detail Artist biar nama artis muncul di Queue
+                // Kumpulkan semua artistId dari hasil smart queue
+                val artistIds = relatedSongs.mapNotNull { it.artistId }
+                
+                // Fetch artists in bulk
+                val artistsMap = repository.fetchArtistsByIds(artistIds).associateBy { it.id }
+
+                // 4. Gabungkan Song + Artist jadi SongWithArtist
+                val queueWithArtists = relatedSongs.map { song ->
+                    SongWithArtist(
+                        song = song,
+                        artist = song.artistId?.let { artistsMap[it] } // Match artist or null
+                    )
+                }
+
+                // 5. Append ke Playlist saat ini
+                val currentPlaylist = _uiState.value.playlist.toMutableList()
+                currentPlaylist.addAll(queueWithArtists)
+                
+                // Simpan total playlist baru
+                val finalPlaylist = currentPlaylist.toList()
+
+                // Update UI State (Queue terlihat oleh user)
+                _uiState.update { it.copy(playlist = finalPlaylist) }
+
+                // 6. Update Player Queue (Diam-diam)
+                withContext(Dispatchers.Main) {
+                    val controller = mediaController ?: return@withContext
+                    // Kita tambahkan lagu-lagu baru ke posisi setelah seed song
+                    // Karena seed song ada di index 0 (atau current index),
+                    // kita addMediaItems ke akhir queue.
+                    
+                    val newMediaItems = queueWithArtists.map { createMediaItem(it, it.song.audioUrl ?: "") }
+                    controller.addMediaItems(newMediaItems)
+                    
+                    Log.d("PlayMusicViewModel", "✅ Added ${newMediaItems.size} songs to MediaController.")
+                }
+                
+                // 7. Prefetch lagu berikutnya (Index 1) agar siap dimainkan
+                prefetchSongAtIndex(1)
+            } else {
+                Log.w("PlayMusicViewModel", "⚠️ Smart Queue returned empty list.")
+            }
+        }
+    }
+
 
 
     fun togglePlayPause() {
@@ -1302,6 +1367,14 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         withContext(Dispatchers.Main) {
             val controller = mediaController ?: return@withContext
             if (index >= controller.mediaItemCount) return@withContext
+
+            // 🛑 CRITICAL FIX: Jangan replace item jika sedang dimainkan!
+            // Mengganti item yang sedang aktif akan menyebabkan ExoPlayer reset/pause sesaat.
+            // Lebih baik pakai URL lama (fallback) daripada musik putus.
+            if (index == controller.currentMediaItemIndex) {
+                 Log.w("PlayMusicViewModel", "⚠️ Skipping update for currently playing song (Index $index) to prevent playback reset.")
+                 return@withContext
+            }
 
             val newItem = createMediaItem(song, newUrl)
             controller.replaceMediaItem(index, newItem)

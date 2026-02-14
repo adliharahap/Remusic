@@ -40,6 +40,7 @@ fun SongSection(
     displayItems: List<SongWithArtist>,
     fullPlaylistForPlayback: List<SongWithArtist> = displayItems,
     playMusicViewModel: PlayMusicViewModel,
+    sectionColor: Color = Color(0xFF2CA5B2), // Default teal
     onSeeAllClick: () -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(vertical = 10.dp)) {
@@ -70,7 +71,7 @@ fun SongSection(
                     .clickable { onSeeAllClick() }
                     .padding(end = 16.dp),
                 overflow = TextOverflow.Ellipsis,
-                color = Color(color = 0xFF2CA5B2),
+                color = sectionColor,
             )
         }
 

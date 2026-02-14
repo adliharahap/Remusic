@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.setValue // Add this import
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -48,7 +49,10 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 
     // ------ BottomBar diperbarui ke Material 3 ------
     @Composable
-    fun BottomBar(navController: NavHostController) {
+    fun BottomBar(
+        navController: NavHostController,
+        onSearchReset: () -> Unit = {} // Add callback to reset search state
+    ) {
         val items = listOf(
             BottomNavItem.Home,
             BottomNavItem.Search,
@@ -95,9 +99,14 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
                         }
                     },
                     label = { Text(item.label) },
+                    // Simple selection logic again
                     selected = currentRoute == item.route,
                     onClick = {
-                        // Logika navigasi tetap sama, sudah efisien
+                        // Reset search state if clicking Search tab
+                        if (item == BottomNavItem.Search) {
+                            onSearchReset()
+                        }
+                        
                         if (currentRoute != item.route) {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -124,16 +133,42 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
 
 // ------ Navigasi antar screen (Tidak ada perubahan) ------
 @Composable
-fun AppNavGraph(navController: NavHostController, rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
+fun BottomNavGraph(
+    navController: NavHostController, 
+    rootNavController: NavController, 
+    playMusicViewModel: PlayMusicViewModel,
+    isSearchActive: Boolean, // Receive state
+    onSearchActiveChange: (Boolean) -> Unit // Receive transition callback
+) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
-        composable(BottomNavItem.Home.route) { HomeScreen(rootNavController = rootNavController, playMusicViewModel = playMusicViewModel) }
-        composable(BottomNavItem.Search.route) { 
+        composable(BottomNavItem.Home.route) { 
+            HomeScreen(
+                onSearchClick = {
+                    // Set active = true before navigating
+                    onSearchActiveChange(true)
+                    navController.navigate(BottomNavItem.Search.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                playMusicViewModel = playMusicViewModel
+            ) 
+        }
+        
+        // Simplified Search Route (no arguments needed)
+        composable(BottomNavItem.Search.route) {
             com.example.remusic.ui.screen.SearchScreen(
+                isSearchActive = isSearchActive, // Pass hoisted state
+                onSearchActiveChange = onSearchActiveChange, // Pass callback
                 onSongClick = { song, query ->
                     playMusicViewModel.playFromSearch(song, query)
                 }
             )
         }
+        
         composable(BottomNavItem.Upload.route) { UploadSongScreen(onUploadMusicSuccess = {
             // ✅ AKSI NAVIGASI DIEKSEKUSI DI SINI
             navController.navigate("home") {
@@ -151,6 +186,9 @@ fun AppNavGraph(navController: NavHostController, rootNavController: NavControll
 fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
     val navController = rememberNavController()
     val playerUiState by playMusicViewModel.uiState.collectAsState()
+    
+    // Hoist Search State here
+    var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     // Tentukan tinggi dari komponen bawah untuk padding
     val bottomBarHeight = 65.dp // Sesuaikan dengan tinggi BottomBar Anda
@@ -167,10 +205,12 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
         // Sediakan nilai padding ke semua "anak" composable di bawahnya
         CompositionLocalProvider(LocalBottomPadding provides bottomPadding) {
             // Konten utama Anda (tidak akan tertimpa)
-            AppNavGraph(
+            BottomNavGraph(
                 navController = navController,
                 rootNavController = rootNavController,
                 playMusicViewModel = playMusicViewModel,
+                isSearchActive = isSearchActive,
+                onSearchActiveChange = { isSearchActive = it }
             )
         }
 
@@ -186,7 +226,10 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                 }
             )
             // 2. BottomBar Navigasi (selalu terlihat)
-            BottomBar(navController = navController)
+            BottomBar(
+                navController = navController,
+                onSearchReset = { isSearchActive = false } // Reset to inactive when tab clicked
+            )
         }
     }
 }
