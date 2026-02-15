@@ -29,9 +29,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -97,6 +99,7 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 // --- REVISI: Enum dengan Ikon ---
 enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
+    DEFAULT("Urutan Playlist", Icons.AutoMirrored.Filled.List), // Default option
     NEWEST_FIRST("Paling Baru", Icons.Default.NewReleases),
     OLDEST_FIRST("Paling Lama", Icons.Default.History),
     TITLE_ASC("Judul (A-Z)", Icons.Default.SortByAlpha),
@@ -188,7 +191,7 @@ fun PlaylistDetailScreen(
     // --- State Management ---
     val uiState = playMusicViewModel?.uiState?.collectAsState()?.value
 
-    var currentSort by remember { mutableStateOf(SortOrder.NEWEST_FIRST) }
+    var currentSort by remember { mutableStateOf(SortOrder.DEFAULT) }
     var showSortMenu by remember { mutableStateOf(false) }
 
     var isSearching by remember { mutableStateOf(false) }
@@ -279,6 +282,7 @@ fun PlaylistDetailScreen(
     // --- Logika Sorting ---
     val sortedSongs = remember(songs, currentSort) {
         when (currentSort) {
+            SortOrder.DEFAULT -> songs // Return original order
             SortOrder.NEWEST_FIRST -> songs.sortedByDescending { it.song.createdAt }
             SortOrder.OLDEST_FIRST -> songs.sortedBy { it.song.createdAt }
             SortOrder.TITLE_ASC -> songs.sortedBy { it.song.title }
@@ -632,12 +636,16 @@ fun PlaylistDetailScreen(
                         posterUri = songWithArtist.song.coverUrl ?: "",
                         isCurrentlyPlaying = isPlaying, // Use ViewModel state
                         modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp),
-                        onClickListener = { clickedIndex ->
-                            playMusicViewModel?.setPlaylist(
-                                songs = filteredAndSortedSongs,
-                                startIndex = clickedIndex
-                            )
-                            playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                        onClickListener = { _ ->
+                            // Use sortedSongs (full list) instead of filteredAndSortedSongs
+                            val originalIndex = sortedSongs.indexOfFirst { it.song.id == songWithArtist.song.id }
+                            if (originalIndex != -1) {
+                                playMusicViewModel?.setPlaylist(
+                                    songs = sortedSongs,
+                                    startIndex = originalIndex
+                                )
+                                playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                            }
                         },
                     )
                 }

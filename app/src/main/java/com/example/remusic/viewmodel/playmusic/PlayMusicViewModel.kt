@@ -76,7 +76,10 @@ data class PlayerUiState(
     
     // Error state tracking
     val hasError: Boolean = false,
-    val errorType: String? = null
+    val errorType: String? = null,
+    
+    // Lyrics Config
+    val lyricsConfig: com.example.remusic.ui.screen.playmusic.LyricsConfig = com.example.remusic.ui.screen.playmusic.LyricsConfig()
 )
 
 
@@ -121,6 +124,13 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         connectToService()
+        
+        // Collect lyrics config from DataStore
+        viewModelScope.launch {
+            userPreferencesRepository.lyricsConfigFlow.collect { config ->
+                _uiState.update { it.copy(lyricsConfig = config) }
+            }
+        }
     }
 
     @OptIn(UnstableApi::class)
@@ -910,21 +920,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     fun cycleRepeatMode() {
         val isSearchContext = _uiState.value.playlistSubtitle == "Memainkan Dari Pencarian"
         
-        val nextRepeatMode = if (isSearchContext) {
-             // Search Context: Toggle OFF <-> ONE only
-             if (_uiState.value.repeatMode == Player.REPEAT_MODE_ONE) {
-                 Player.REPEAT_MODE_OFF
-             } else {
-                 Player.REPEAT_MODE_ONE
-             }
-        } else {
-             // Normal Context: Cycle OFF -> ONE -> ALL -> OFF
-             when (_uiState.value.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
-                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
-                else -> Player.REPEAT_MODE_OFF
-            }
+        val nextRepeatMode = when (_uiState.value.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
         }
+
         mediaController?.repeatMode = nextRepeatMode
     }
 
@@ -1055,7 +1056,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                              if (controller.currentMediaItemIndex != index) {
                                  controller.seekTo(index, C.TIME_UNSET)
                              }
-                             controller.prepare()
                              controller.play()
                         }
                     }
@@ -1105,24 +1105,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // 1. SET PLAYLIST dengan LAGU INI
         // FIX RACE CONDITION: Tunggu setPlaylist selesai dulu sebelum fetch queue!
         val initJob = setPlaylist(listOf(seedSong), 0)
-
-        // 1.5 FORCE RESET MODES (Fix Bug: Looping di Index 0)
-        // Saat play dari search (Radio Mode), kita matikan Repeat One & Shuffle biar alurnya benar
-        viewModelScope.launch {
-             mediaController?.let {
-                 it.repeatMode = Player.REPEAT_MODE_OFF
-                 it.shuffleModeEnabled = false
-             }
-             _uiState.update { 
-                 it.copy(
-                     repeatMode = Player.REPEAT_MODE_OFF,
-                     isShuffleModeEnabled = false
-                 ) 
-             }
-             // Save to Prefs (Supaya sinkron saat restart app)
-             userPreferencesRepository.setRepeatMode(Player.REPEAT_MODE_OFF)
-             userPreferencesRepository.setShuffleEnabled(false)
-        }
 
         // 2. Override UI State for Search Context
         // setPlaylist resets subtitle, so we set it back to "Memainkan Dari Pencarian"
@@ -1405,5 +1387,120 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         super.onCleared()
         mediaController?.release()
+    }
+
+    fun updateLyricsConfig(config: com.example.remusic.ui.screen.playmusic.LyricsConfig) {
+        viewModelScope.launch(Dispatchers.IO) {
+            userPreferencesRepository.saveLyricsConfig(config)
+        }
+    }
+
+    // --- QUEUE MANAGEMENT ---
+
+    fun addToQueue(song: SongWithArtist): String {
+        val currentPlaylist = _uiState.value.playlist
+        val existingIndex = currentPlaylist.indexOfFirst { it.song.id == song.song.id }
+
+        if (existingIndex != -1) {
+            return "Lagu ini sudah ada di dalam queue urutan ${existingIndex + 1}"
+        }
+
+        val mutableList = currentPlaylist.toMutableList()
+        mutableList.add(song)
+        _uiState.update { it.copy(playlist = mutableList) }
+
+        // Update Player (Silent)
+        mediaController?.addMediaItem(createMediaItem(song.song, song.song.audioUrl ?: ""))
+        Log.d("PlayMusicViewModel", "Added to queue: ${song.song.title}")
+        return "${song.song.title} ditambahkan ke antrean"
+    }
+
+    fun playNext(song: SongWithArtist) {
+        val controller = mediaController ?: return
+        val currentPlaylist = _uiState.value.playlist.toMutableList()
+        
+        // Cek apakah lagu sudah ada di playlist
+        val existingIndex = currentPlaylist.indexOfFirst { it.song.id == song.song.id }
+        val currentIndex = controller.currentMediaItemIndex
+        
+        if (existingIndex != -1) {
+            // 🛑 Jika Index sama dengan yang sedang diputar, jangan lakukan apa-apa (handled di UI "Lagu sedang diputar")
+            if (existingIndex == currentIndex) return
+
+            // 1. Hapus dari posisi lama
+            currentPlaylist.removeAt(existingIndex)
+            controller.removeMediaItem(existingIndex)
+            
+            // 2. Hitung Index Baru
+            // Jika kita menghapus item SEBELUM current index, maka current index akan bergeser mundur -1.
+            var actualCurrentIndex = currentIndex
+            if (existingIndex < currentIndex) {
+                actualCurrentIndex--
+            }
+            
+            // 3. Masukkan tepat setelah lagu yang sedang diputar
+            val targetIndex = actualCurrentIndex + 1
+            
+            // Insert di ViewModel list
+            currentPlaylist.add(targetIndex, song)
+            _uiState.update { it.copy(playlist = currentPlaylist) }
+            
+            // Insert di Player
+            controller.addMediaItem(targetIndex, createMediaItem(song.song, song.song.audioUrl ?: ""))
+            Log.d("PlayMusicViewModel", "Moved to next: ${song.song.title} to index $targetIndex")
+            
+        } else {
+            // Logic Lama: Insert Baru
+            val nextIndex = currentIndex + 1
+            currentPlaylist.add(nextIndex, song)
+            _uiState.update { it.copy(playlist = currentPlaylist) }
+
+            // Update Player
+            controller.addMediaItem(nextIndex, createMediaItem(song.song, song.song.audioUrl ?: ""))
+            Log.d("PlayMusicViewModel", "Inserted next: ${song.song.title} at index $nextIndex")
+        }
+    }
+
+    private fun createMediaItem(song: com.example.remusic.data.model.Song, url: String): MediaItem {
+        val meta = MediaMetadata.Builder()
+            .setTitle(song.title)
+            .setArtworkUri(song.coverUrl?.takeIf { it.isNotBlank() }?.toUri())
+            .build()
+        
+        return MediaItem.Builder()
+            .setMediaId(song.id)
+            .setUri(url)
+            .setMediaMetadata(meta)
+            .build()
+    }
+
+    // Overload for specific song (e.g. from Queue)
+    fun toggleLike(songId: String) {
+        viewModelScope.launch {
+            val user = SupabaseManager.client.auth.currentUserOrNull()
+            val userId = user?.id
+
+            if (userId == null) {
+                Log.e("PlayMusicViewModel", "Cannot toggle like: User not logged in")
+                return@launch
+            }
+
+            if (repository.isSongLiked(songId, userId)) {
+                repository.toggleLike(songId, userId, true) // Pass true to 'isLiked' means 'currently liked, so unlike it'? 
+                // Wait, let's check repo logic:
+                // if (isLiked) { DELETE } else { INSERT }
+                // So if isSongLiked returns true, we pass true to toggleLike to delete it.
+                
+                // If current song is the one being unliked, update UI state
+                if (_uiState.value.currentSong?.song?.id == songId) {
+                    _uiState.update { it.copy(isLiked = false) }
+                }
+            } else {
+                repository.toggleLike(songId, userId, false) // Fail to delete? No, false means Insert.
+                if (_uiState.value.currentSong?.song?.id == songId) {
+                    _uiState.update { it.copy(isLiked = true) }
+                }
+            }
+        }
     }
 }

@@ -42,6 +42,7 @@ fun QueueSongCard(
     isCurrentlyPlaying: Boolean,
     modifier: Modifier = Modifier,
     onClickListener: (index: Int) -> Unit = {},
+    onMoreClick: () -> Unit = {}
 ) {
     val activeColor = Color.Black
     val cardBackgroundColor = if (isCurrentlyPlaying) {
@@ -129,7 +130,9 @@ fun QueueSongCard(
                 imageVector = Icons.Outlined.MoreVert,
                 contentDescription = "more",
                 tint = Color.White.copy(0.8f),
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable { onMoreClick() }
             )
         }
     }

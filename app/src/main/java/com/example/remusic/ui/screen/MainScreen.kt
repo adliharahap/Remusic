@@ -17,10 +17,15 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.example.remusic.ui.components.CreatePlaylistBottomSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,7 +56,8 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
     @Composable
     fun BottomBar(
         navController: NavHostController,
-        onSearchReset: () -> Unit = {} // Add callback to reset search state
+        onSearchReset: () -> Unit = {}, // Add callback to reset search state
+        onCreatePlaylistClick: () -> Unit // New callback for bottom sheet
     ) {
         val items = listOf(
             BottomNavItem.Home,
@@ -107,7 +113,9 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
                             onSearchReset()
                         }
                         
-                        if (currentRoute != item.route) {
+                        if (item is BottomNavItem.Upload) {
+                             onCreatePlaylistClick()
+                        } else if (currentRoute != item.route) {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
@@ -138,7 +146,8 @@ fun BottomNavGraph(
     rootNavController: NavController, 
     playMusicViewModel: PlayMusicViewModel,
     isSearchActive: Boolean, // Receive state
-    onSearchActiveChange: (Boolean) -> Unit // Receive transition callback
+    onSearchActiveChange: (Boolean) -> Unit, // Receive transition callback
+    onCreatePlaylistClick: () -> Unit // New callback
 ) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
         composable(BottomNavItem.Home.route) { 
@@ -169,19 +178,16 @@ fun BottomNavGraph(
             )
         }
         
-        composable(BottomNavItem.Upload.route) { UploadSongScreen(onUploadMusicSuccess = {
-            // ✅ AKSI NAVIGASI DIEKSEKUSI DI SINI
-            navController.navigate("home") {
-                // Hapus halaman upload dari back stack
-                popUpTo("upload") { inclusive = true }
-            }
-        }) }
-        composable(BottomNavItem.Playlist.route) { PlaylistScreen() }
+
+        composable(BottomNavItem.Playlist.route) { 
+            PlaylistScreen(onCreatePlaylistClick = onCreatePlaylistClick) 
+        }
         composable(BottomNavItem.Profile.route) { ProfileScreen(navController = rootNavController) }
     }
 }
 
 // ------ Main Screen diperbarui ke Material 3 ------
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
     val navController = rememberNavController()
@@ -189,6 +195,11 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
     
     // Hoist Search State here
     var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    // BottomSheet State
+    var showCreatePlaylistSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
 
     // Tentukan tinggi dari komponen bawah untuk padding
     val bottomBarHeight = 65.dp // Sesuaikan dengan tinggi BottomBar Anda
@@ -210,7 +221,8 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                 rootNavController = rootNavController,
                 playMusicViewModel = playMusicViewModel,
                 isSearchActive = isSearchActive,
-                onSearchActiveChange = { isSearchActive = it }
+                onSearchActiveChange = { isSearchActive = it },
+                onCreatePlaylistClick = { showCreatePlaylistSheet = true }
             )
         }
 
@@ -228,7 +240,38 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
             // 2. BottomBar Navigasi (selalu terlihat)
             BottomBar(
                 navController = navController,
-                onSearchReset = { isSearchActive = false } // Reset to inactive when tab clicked
+                onSearchReset = { isSearchActive = false }, // Reset to inactive when tab clicked
+                onCreatePlaylistClick = { showCreatePlaylistSheet = true }
+            )
+        }
+
+        if (showCreatePlaylistSheet) {
+            CreatePlaylistBottomSheet(
+                sheetState = sheetState,
+                onDismissRequest = { showCreatePlaylistSheet = false },
+                onCreatePlaylistClick = {
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) {
+                            showCreatePlaylistSheet = false
+                            // Navigate to actual create playlist screen if needed
+                            // navController.navigate("create_playlist") 
+                        }
+                    }
+                },
+                onCreatePlaylistWithFriendClick = {
+                     scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) {
+                            showCreatePlaylistSheet = false
+                        }
+                    }
+                },
+                onCreatePublicPlaylistClick = {
+                     scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) {
+                            showCreatePlaylistSheet = false
+                        }
+                    }
+                }
             )
         }
     }

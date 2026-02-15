@@ -73,12 +73,17 @@ fun SearchScreen(
     val topArtist by searchViewModel.topArtist.collectAsState()
     val searchHistory by searchViewModel.searchHistory.collectAsState(initial = emptyList<CachedSong>())
 
+    // New Advanced Search States
+    val foundArtists by searchViewModel.foundArtists.collectAsState()
+    val foundPlaylists by searchViewModel.foundPlaylists.collectAsState()
+    val foundUsers by searchViewModel.foundUsers.collectAsState()
+
     // Delay showing empty state to give search time to load
-    LaunchedEffect(searchQuery, searchResults, topArtist) {
-        if (searchQuery.isNotEmpty() && searchResults.isEmpty() && topArtist == null) {
+    LaunchedEffect(searchQuery, searchResults, foundArtists, foundPlaylists, foundUsers) {
+        if (searchQuery.isNotEmpty() && searchResults.isEmpty() && foundArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
             showEmptyState = false
             kotlinx.coroutines.delay(2500) // 2.5 second delay
-            if (searchQuery.isNotEmpty() && searchResults.isEmpty() && topArtist == null) {
+            if (searchQuery.isNotEmpty() && searchResults.isEmpty() && foundArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
                 showEmptyState = true
             }
         } else {
@@ -331,26 +336,36 @@ fun SearchScreen(
                     }
                 }
                 
-                // --- TOP RESULT (ARTIST) ---
-                if (topArtist != null) {
-                    item {
+                // --- SEARCH RESULT HEADER ---
+                if (searchQuery.isNotEmpty() && (searchResults.isNotEmpty() || foundArtists.isNotEmpty() || foundPlaylists.isNotEmpty() || foundUsers.isNotEmpty())) {
+                     item {
                         Text(
-                            text = "Top Result",
+                            text = "Hasil pencarian",
                             style = TextStyle(
-                                fontSize = 18.sp,
-                                fontFamily = AppFont.MontserratBold,
+                                fontSize = 20.sp,
+                                fontFamily = AppFont.RobotoBold,
                                 color = Color.White
                             ),
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
                         )
-                        
-                        // Artist Card
+                    }
+                }
+
+                // --- MIXED RESULT CHECK ---
+                val hasMixedResults = foundPlaylists.isNotEmpty() || foundUsers.isNotEmpty()
+
+                // --- TOP RESULT (ARTIST) - Large Card ---
+                if (topArtist != null) {
+                    item {
+                        // Artist Card - Large/Top Result Style
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                                .clickable { /* Handle Artist Click - Maybe show all songs */ }
+                                .clickable { 
+                                    // Handle Artist Click (e.g. go to artist page)
+                                }
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -382,7 +397,128 @@ fun SearchScreen(
                                 )
                             }
                         }
-                        
+                    }
+                }
+
+                // --- ARTISTS LIST SECTION (Only if Mixed Results) ---
+                if (hasMixedResults && foundArtists.isNotEmpty()) {
+                     item {
+                        Text(
+                            text = "Artists",
+                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+                        )
+                    }
+                    itemsIndexed(foundArtists) { _, artist ->
+                        if (artist.id != topArtist?.id) { // Don't duplicate top artist
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { /* TODO: Go to Artist Profile */ }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                 coil.compose.AsyncImage(
+                                    model = artist.photoUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = artist.name,
+                                    style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // --- USERS / UPLOADERS SECTION ---
+                if (foundUsers.isNotEmpty()) {
+                    item {
+                         Text(
+                            text = "Profiles",
+                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    itemsIndexed(foundUsers) { _, user ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { /* TODO: Go to User Profile */ }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                             coil.compose.AsyncImage(
+                                model = user.photoUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                             Column {
+                                Text(
+                                    text = user.displayName ?: "Unknown",
+                                    style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                )
+                                Text(
+                                    text = "Profile",
+                                    style = TextStyle(fontSize = 12.sp, fontFamily = AppFont.RobotoRegular, color = Color.Gray)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // --- PLAYLISTS SECTION ---
+                if (foundPlaylists.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Playlists",
+                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    itemsIndexed(foundPlaylists) { _, playlist ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { /* TODO: Go to Playlist */ }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                             coil.compose.AsyncImage(
+                                model = playlist.coverUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)), // Playlist square
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                             Column {
+                                Text(
+                                    text = playlist.title,
+                                    style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                )
+                                Text(
+                                    text = "Playlist",
+                                    style = TextStyle(fontSize = 12.sp, fontFamily = AppFont.RobotoRegular, color = Color.Gray)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // --- SONGS SECTION ---
+                if (searchResults.isNotEmpty() && (hasMixedResults || topArtist != null)) {
+                     item {
                         Text(
                             text = "Songs",
                             style = TextStyle(
@@ -395,6 +531,7 @@ fun SearchScreen(
                     }
                 }
 
+                // --- SONGS LIST ---
                 itemsIndexed(searchResults) { index, song ->
                     QueueSongCard(
                         index = index,
@@ -403,7 +540,6 @@ fun SearchScreen(
                         posterUri = song.song.coverUrl ?: "",
                         isCurrentlyPlaying = false,
                         onClickListener = {
-                            android.util.Log.d("SearchScreen", "CLICKED RESULT: ${song.song.title}")
                             searchViewModel.onSongPlayed(song)
                             onSongClick(song, searchQuery)
                         }

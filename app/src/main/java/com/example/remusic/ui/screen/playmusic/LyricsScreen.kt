@@ -107,6 +107,8 @@ fun LyricsScreen(
     headerHeight: Dp,
     onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
+    // Add Lyrics Config
+    lyricsConfig: LyricsConfig = LyricsConfig()
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -208,7 +210,8 @@ fun LyricsScreen(
                                 LyricLineItem(
                                     line = line,
                                     isActive = index == activeIndex,
-                                    isTranslateLyrics = isTranslateLyrics
+                                    isTranslateLyrics = isTranslateLyrics,
+                                    lyricsConfig = lyricsConfig
                                 )
                             }
                         }
@@ -362,31 +365,65 @@ fun EmptyLyricsView() {
 fun LyricLineItem(
     line: LyricLine,
     isActive: Boolean,
-    isTranslateLyrics: Boolean
+    isTranslateLyrics: Boolean,
+    lyricsConfig: LyricsConfig
 ) {
     // Spesifikasi animasi (durasi 200ms) untuk semua transisi
     val animationSpec = tween<Float>(durationMillis = 200, delayMillis = 80)
     val colorAnimationSpec = tween<Color>(durationMillis = 200, delayMillis = 80)
 
-    // 1. Animasikan Ukuran Font
-    // Jika terjemahan MATI (isTranslateLyrics = false), perbesar font original agar lebih mudah dibaca (22sp).
-    // Jika terjemahan HIDUP (isTranslateLyrics = true), gunakan font normal (20sp).
-    val targetFontSize = if (isTranslateLyrics) 21f else 21f
+    // 1. Tentukan Font Family berdasarkan Config
+    val fontFamily = when (lyricsConfig.fontFamily) {
+        LyricsFontFamily.MONTSERRAT -> AppFont.MontserratRegular
+        LyricsFontFamily.MONTSERRAT_BOLD -> AppFont.MontserratBold
+        LyricsFontFamily.MONTSERRAT_BLACK -> AppFont.MontserratBlack
+        LyricsFontFamily.POPPINS -> AppFont.Poppins
+        LyricsFontFamily.ROBOTO -> AppFont.RobotoRegular
+        LyricsFontFamily.COOLVETICA -> AppFont.Coolvetica
+        LyricsFontFamily.COOLVETICA_CONDENSED -> AppFont.CoolveticaCondensed
+        LyricsFontFamily.COOLVETICA_COMPRESSED -> AppFont.CoolveticaCompressed
+        LyricsFontFamily.HELVETICA -> AppFont.Helvetica
+        LyricsFontFamily.HELVETICA_ROUNDED -> AppFont.HelveticaRoundedBold
+        LyricsFontFamily.HELVETICA_COMPRESSED -> AppFont.HelveticaCompressed
+        LyricsFontFamily.HELVETICA_LIGHT -> AppFont.HelveticaLight
+    }
+
+    // 2. Tentukan Alignment berdasarkan Config
+    val textAlign = when (lyricsConfig.align) {
+        LyricsAlign.LEFT -> TextAlign.Left
+        LyricsAlign.CENTER -> TextAlign.Center
+        LyricsAlign.RIGHT -> TextAlign.Right
+    }
+    
+    val horizontalAlignment = when (lyricsConfig.align) {
+        LyricsAlign.LEFT -> Alignment.Start
+        LyricsAlign.CENTER -> Alignment.CenterHorizontally
+        LyricsAlign.RIGHT -> Alignment.End
+    }
+
+    // 3. Logika Ukuran Font (Scaling)
+    // Base size dari config (default 21.dp -> konversi ke sp)
+    // Old logic: base * scale. New logic: base + (scale * 2)
+    val baseFontSize = lyricsConfig.fontSize
+    val shouldScale = lyricsConfig.autoScaleIfNoTranslation && (!isTranslateLyrics || line.translatedText == null)
+    val addedSize = if (shouldScale) (lyricsConfig.scaleFactor * 2) else 0 // +2, +4, +6
+    
+    val finalFontSize = (baseFontSize + addedSize).sp
 
     val fontSize by animateFloatAsState(
-        targetValue = targetFontSize,
+        targetValue = finalFontSize.value,
         animationSpec = animationSpec,
         label = "fontSizeAnimation"
     )
 
-    // 2. Animasikan Warna Font Utama
+    // 4. Animasikan Warna Font Utama
     val fontColor by animateColorAsState(
         targetValue = if (isActive) Color.White else Color.White.copy(alpha = 0.5f),
         animationSpec = colorAnimationSpec,
         label = "fontColorAnimation"
     )
 
-    // 3. Animasikan Warna Font Terjemahan
+    // 5. Animasikan Warna Font Terjemahan
     val translatedColor by animateColorAsState(
         targetValue = if (isActive) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.5f),
         animationSpec = colorAnimationSpec,
@@ -397,21 +434,19 @@ fun LyricLineItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        horizontalAlignment = Alignment.Start
+        horizontalAlignment = horizontalAlignment // Align column content
     ) {
         Text(
             text = line.originalText,
             color = fontColor, // Gunakan warna yang dianimasikan
             fontSize = fontSize.sp, // Gunakan ukuran yang dianimasikan
-            fontFamily = AppFont.Poppins,
-//            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+            fontFamily = fontFamily,
             fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Left
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth() // Ensure text takes width for alignment
         )
 
         // Animasi Masuk/Keluar untuk Lirik Terjemahan
-        // Masuk: Fade In + Slide Down (dari atas ke posisi)
-        // Keluar: Fade Out + Slide Up (dari posisi ke atas)
         AnimatedVisibility(
             visible = line.translatedText != null && isTranslateLyrics,
             enter = slideInVertically(
@@ -434,10 +469,11 @@ fun LyricLineItem(
                 Text(
                     text = line.translatedText,
                     color = translatedColor, // Gunakan warna yang dianimasikan
-                    fontSize = 15.5.sp, // Ukuran terjemahan bisa tetap
-                    fontFamily = AppFont.Poppins,
+                    fontSize = 15.5.sp, // Ukuran terjemahan bisa tetap atau scaled proporsional? User ga bilang. Keep static.
+                    fontFamily = fontFamily, // Pakai font yang sama? Biasanya ya.
                     fontWeight = FontWeight.Normal,
-                    textAlign = TextAlign.Left
+                    textAlign = textAlign,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -473,6 +509,13 @@ fun LyricsBottomPanel(
         userSeekPosition
     } else {
         if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()) else 0f
+    }
+
+    // Hitung waktu yang ditampilkan (Realtime saat digeser)
+    val displayCurrentTime = if (isUserSeeking) {
+        (userSeekPosition * totalDuration).toLong()
+    } else {
+        currentPosition
     }
 
     Column(
@@ -583,10 +626,12 @@ fun LyricsBottomPanel(
             Slider(
                 value = sliderValue,
                 onValueChange = { newValue ->
+                    isUserSeeking = true
                     userSeekPosition = newValue
                 },
                 onValueChangeFinished = {
                     onSeek(userSeekPosition) // Kirim posisi akhir ke ViewModel
+                    isUserSeeking = false
                 },
                 valueRange = 0f..1f,
                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -638,15 +683,17 @@ fun LyricsBottomPanel(
             verticalAlignment = Alignment.CenterVertically
         ){
             Text(
-                text = formatDuration(currentPosition),
+                text = formatDuration(displayCurrentTime),
                 color = Color.White,
-                fontFamily = AppFont.RobotoRegular,
+                fontFamily = AppFont.Coolvetica,
+                fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
             )
             Text(
                 text = formatDuration(totalDuration),
                 color = Color.White,
-                fontFamily = AppFont.RobotoRegular,
+                fontFamily = AppFont.Coolvetica,
+                fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
             )
         }

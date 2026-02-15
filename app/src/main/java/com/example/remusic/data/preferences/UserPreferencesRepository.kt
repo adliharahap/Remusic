@@ -82,4 +82,50 @@ class UserPreferencesRepository(private val context: Context) {
             settings[LAST_SONG_COLOR_KEY] = hexColor
         }
     }
+
+    // --- LYRICS CONFIG PERSISTENCE ---
+    private val LYRICS_FONT_FAMILY_KEY = stringPreferencesKey("lyrics_font_family")
+    private val LYRICS_FONT_SIZE_KEY = intPreferencesKey("lyrics_font_size")
+    private val LYRICS_ALIGN_KEY = stringPreferencesKey("lyrics_align")
+    private val LYRICS_AUTO_SCALE_KEY = booleanPreferencesKey("lyrics_auto_scale")
+    private val LYRICS_SCALE_FACTOR_KEY = intPreferencesKey("lyrics_scale_factor")
+
+    val lyricsConfigFlow: Flow<com.example.remusic.ui.screen.playmusic.LyricsConfig> = context.dataStore.data
+        .map { preferences ->
+            val fontFamilyName = preferences[LYRICS_FONT_FAMILY_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontFamily.POPPINS.name
+            val fontSize = preferences[LYRICS_FONT_SIZE_KEY] ?: 21
+            val alignName = preferences[LYRICS_ALIGN_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsAlign.LEFT.name
+            val autoScale = preferences[LYRICS_AUTO_SCALE_KEY] ?: false
+            val scaleFactor = preferences[LYRICS_SCALE_FACTOR_KEY] ?: 1
+
+            val fontFamily = try {
+                com.example.remusic.ui.screen.playmusic.LyricsFontFamily.valueOf(fontFamilyName)
+            } catch (e: IllegalArgumentException) {
+                com.example.remusic.ui.screen.playmusic.LyricsFontFamily.POPPINS
+            }
+
+            val align = try {
+                com.example.remusic.ui.screen.playmusic.LyricsAlign.valueOf(alignName)
+            } catch (e: IllegalArgumentException) {
+                com.example.remusic.ui.screen.playmusic.LyricsAlign.LEFT
+            }
+
+            com.example.remusic.ui.screen.playmusic.LyricsConfig(
+                fontFamily = fontFamily,
+                fontSize = fontSize,
+                align = align,
+                autoScaleIfNoTranslation = autoScale,
+                scaleFactor = scaleFactor
+            )
+        }
+
+    suspend fun saveLyricsConfig(config: com.example.remusic.ui.screen.playmusic.LyricsConfig) {
+        context.dataStore.edit { settings ->
+            settings[LYRICS_FONT_FAMILY_KEY] = config.fontFamily.name
+            settings[LYRICS_FONT_SIZE_KEY] = config.fontSize
+            settings[LYRICS_ALIGN_KEY] = config.align.name
+            settings[LYRICS_AUTO_SCALE_KEY] = config.autoScaleIfNoTranslation
+            settings[LYRICS_SCALE_FACTOR_KEY] = config.scaleFactor
+        }
+    }
 }

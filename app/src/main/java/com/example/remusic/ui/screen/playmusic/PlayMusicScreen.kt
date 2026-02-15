@@ -3,6 +3,10 @@ package com.example.remusic.ui.screen.playmusic
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -144,6 +149,10 @@ fun PlayMusicScreen(
     var showSleepTimerSheet by remember { mutableStateOf(false) }
     val sleepTimerSheetState = androidx.compose.material3.rememberModalBottomSheetState()
 
+    // --- MORE OPTIONS SHEET STATE ---
+    var showMoreOptionsSheet by remember { mutableStateOf(false) }
+    val moreOptionsSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+
     // Gunakan BoxWithConstraints di root untuk mendapatkan tinggi layar (maxHeight)
     BoxWithConstraints (
         modifier = Modifier
@@ -160,13 +169,50 @@ fun PlayMusicScreen(
             modifier = Modifier.fillMaxSize() // Full layar sampai mentok atas
         ) { page ->
             when (page) {
-                0 -> QueueScreen(
-                    songWithArtist = uiState.currentSong,
-                    playlistQueue = uiState.playlist,
-                    playMusicFromPlaylist = uiState.playingMusicFromPlaylist,
-                    playlistSubtitle = uiState.playlistSubtitle, // Pass subtitle
-                    onClickListener = { playMusicViewModel.playSongAt(it) }
-                )
+                0 -> {
+                    val context = LocalContext.current
+                    QueueScreen(
+                        songWithArtist = uiState.currentSong,
+                        playlistQueue = uiState.playlist,
+                        playMusicFromPlaylist = uiState.playingMusicFromPlaylist,
+                        playlistSubtitle = uiState.playlistSubtitle, // Pass subtitle
+                        onClickListener = { playMusicViewModel.playSongAt(it) },
+                        onAddToQueue = { song ->
+                            val message = playMusicViewModel.addToQueue(song)
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        },
+                        onPlayNext = { song ->
+                            if (uiState.currentSong?.song?.id == song.song.id) {
+                                Toast.makeText(context, "Lagu ini sedang diputar", Toast.LENGTH_SHORT).show()
+                            } else {
+                                playMusicViewModel.playNext(song)
+                                Toast.makeText(context, "${song.song.title} akan diputar setelah ini", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onAddToLiked = { song ->
+                            // TODO: Implement toggleLike specific for song argument in VM context if needed.
+                            // Currently toggleLike uses currentSong. We might need a specific one or just act on current if it matches?
+                            // For now, let's assume we want to like the Selected song.
+                            // Limit: playMusicViewModel.toggleLike() likely acts on CURRENT song.
+                            // We need toggleLike(songId).
+                            // Wait, the requirement was just "tambahkan ke lagu yang disukai".
+                            // If viewModel doesn't have toggleLike(id), we should add it or use repository directly?
+                            // Let's check VM... it has toggleLike() without args.
+                            // I will add a TODO or implemented check.
+                            // Actually, let's just use the VM's toggleLike if it supports ID or add it.
+                            // Checking VM content...
+                            // VM has `toggleLike()` which uses `currentSong`.
+                            // I need to add `toggleLike(song: SongWithArtist)` to VM or use repository.
+                            // For safety, I'll temporarily disable or just show Toast if not current.
+                            // BUT user asked for it. I should update VM to support liking specific song.
+                            // I will do that in next step. For now, I'll put a placeholder or call a new function I WILL add.
+                            playMusicViewModel.toggleLike(song.song.id) // I need to add this overload
+                        },
+                        onAddToPlaylist = {
+                            // TODO
+                        }
+                    )
+                }
                 1 -> NowPlaying(
                     songWithArtist = uiState.currentSong,
                     isPlaying = uiState.isPlaying,
@@ -211,6 +257,7 @@ fun PlayMusicScreen(
                         playMusicViewModel.seekTo(newPosition)
                     },
                     onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+                    lyricsConfig = uiState.lyricsConfig
                 )
             }
         }
@@ -300,7 +347,7 @@ fun PlayMusicScreen(
                 }
 
                 // Menu Icon
-                IconButton(onClick = { /* TODO */ }) {
+                IconButton(onClick = { showMoreOptionsSheet = true }) {
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
                         contentDescription = "More",
@@ -325,6 +372,26 @@ fun PlayMusicScreen(
                 playMusicViewModel.cancelSleepTimer()
             },
             timerEndTime = uiState.sleepTimerEndTime // Pass end time
+        )
+    }
+
+    if (showMoreOptionsSheet) {
+        MoreOptionsBottomSheet(
+            sheetState = moreOptionsSheetState,
+            songWithArtist = uiState.currentSong,
+            onDismiss = { showMoreOptionsSheet = false },
+            onShare = { /* TODO: Implement Share */ },
+            onAddToPlaylist = { /* TODO: Implement Add to Playlist */ },
+            onAddToLiked = {
+                playMusicViewModel.toggleLike()
+                showMoreOptionsSheet = false
+            },
+            onSetSleepTimer = {
+                showMoreOptionsSheet = false
+                showSleepTimerSheet = true
+            },
+            lyricsConfig = uiState.lyricsConfig,
+            onLyricsConfigChange = { playMusicViewModel.updateLyricsConfig(it) }
         )
     }
 }

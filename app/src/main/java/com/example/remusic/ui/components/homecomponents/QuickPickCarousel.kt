@@ -61,7 +61,7 @@ fun QuickPickCarousel(
         // Carousel
         HorizontalPager(
             state = pagerState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp),
             pageSpacing = 12.dp,
             modifier = Modifier.fillMaxWidth()
         ) { page ->
@@ -99,7 +99,7 @@ fun QuickPickCarousel(
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 4.dp)
-                        .size(if (pagerState.currentPage == index) 8.dp else 6.dp)
+                        .size(if (pagerState.currentPage == index) 6.dp else 5.dp)
                         .background(
                             color = if (pagerState.currentPage == index)
                                 Color.White
