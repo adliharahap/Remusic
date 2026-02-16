@@ -15,7 +15,7 @@ interface ConnectivityObserver {
     fun observe(): Flow<Status>
 
     enum class Status {
-        Available, Unavailable, Losing, Lost
+        Available, Unavailable, Losing, Lost, Limited
     }
 }
 
@@ -32,7 +32,7 @@ class NetworkConnectivityObserver(
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     super.onAvailable(network)
-                    launch { send(ConnectivityObserver.Status.Available) }
+                    launch { send(ConnectivityObserver.Status.Limited) } // Default to Limited until Validated
                 }
 
                 override fun onLosing(network: Network, maxMsToLive: Int) {
@@ -49,17 +49,28 @@ class NetworkConnectivityObserver(
                     super.onUnavailable()
                     launch { send(ConnectivityObserver.Status.Unavailable) }
                 }
+
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: NetworkCapabilities
+                ) {
+                    super.onCapabilitiesChanged(network, networkCapabilities)
+                    val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    val isValidated = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+                    if (hasInternet && isValidated) {
+                        launch { send(ConnectivityObserver.Status.Available) }
+                    } else if (hasInternet) {
+                         launch { send(ConnectivityObserver.Status.Limited) }
+                    }
+                }
             }
 
             // Daftarkan callback
             connectivityManager.registerDefaultNetworkCallback(callback)
 
             // Cek status awal saat pertama kali dipanggil
-            if (getCurrentStatus() == ConnectivityObserver.Status.Available) {
-                trySend(ConnectivityObserver.Status.Available)
-            } else {
-                trySend(ConnectivityObserver.Status.Lost)
-            }
+            trySend(getCurrentStatus())
 
             // Bersihkan saat flow dicancel
             awaitClose {
@@ -72,7 +83,14 @@ class NetworkConnectivityObserver(
     private fun getCurrentStatus(): ConnectivityObserver.Status {
         val activeNetwork = connectivityManager.activeNetwork
         val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-        val isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        return if (isConnected) ConnectivityObserver.Status.Available else ConnectivityObserver.Status.Lost
+        
+        val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val isValidated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+
+        return when {
+            hasInternet && isValidated -> ConnectivityObserver.Status.Available
+            hasInternet -> ConnectivityObserver.Status.Limited
+            else -> ConnectivityObserver.Status.Lost
+        }
     }
 }

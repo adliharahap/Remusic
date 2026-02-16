@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -66,7 +67,13 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     // Hapus variable auth: FirebaseAuth
@@ -114,55 +121,75 @@ class MainActivity : ComponentActivity() {
 
                 // LOGIKA BARU: Cek Login secara Asynchronous
                 LaunchedEffect (Unit) {
+                    val TAG = "RemusicAuth" // Tag khusus debug auth
                     try {
                         // KITA PAKSA LOAD DARI STORAGE
-                        Log.d("AUTH_CHECK", "Mencoba membaca sesi dari penyimpanan HP...")
+                        Log.d(TAG, "🚀 [MainActivity] LaunchedEffect triggered. Mencoba membaca sesi dari penyimpanan HP...")
                         val isSessionRestored = SupabaseManager.client.auth.loadFromStorage()
-                        Log.d("AUTH_CHECK", "Apakah sesi ditemukan? $isSessionRestored")
+                        Log.d(TAG, "📦 [MainActivity] Apakah sesi berhasil di-restore dari storage? $isSessionRestored")
 
                         if (isSessionRestored) {
-                            // Jika sesi ketemu, ambil data user
-                            val user = SupabaseManager.client.auth.currentUserOrNull()
-                            Log.d("AUTH_CHECK", "User Login: ${user?.email}")
+                            // --- FIX: WAIT FOR SESSION STATUS ---
+                            Log.d(TAG, "⏳ [MainActivity] Menunggu status sesi stabil (bukan Initializing)...")
+                            
+                            // Tunggu status berubah dari Initializing (Maks 10 detik)
+                            val finalStatus = withTimeoutOrNull(10000) {
+                                SupabaseManager.client.auth.sessionStatus.first { status ->
+                                    Log.d(TAG, "👀 [MainActivity] Observing Status: $status")
+                                    status !is SessionStatus.Initializing
+                                }
+                            }
 
-                            // --- PERBAIKAN: WAJIB TUNGGU SAMPAI USER DATA TERLOAD ---
-                            if (user != null) {
-                                try {
-                                    Log.d("AUTH_CHECK", "🔄 Fetching user data dari database...")
-                                    // BLOCKING: tunggu sampai user data berhasil di-fetch
+                            Log.d(TAG, "🔔 [MainActivity] Status Akhir (setelah wait): $finalStatus")
+
+                            if (finalStatus is SessionStatus.Authenticated) {
+                                // Jika sesi ketemu dan Authenticated, ambil data user
+                                val user = SupabaseManager.client.auth.currentUserOrNull()
+                                Log.d(TAG, "👤 [MainActivity] User Login Session: ${user?.email} (ID: ${user?.id})")
+                                
+                                // --- PERBAIKAN: WAJIB TUNGGU SAMPAI USER DATA TERLOAD ---
+                                if (user != null) {
                                     try {
-                                        UserManager.fetchCurrentUser(user.id)
+                                        Log.d(TAG, "🔄 [MainActivity] Fetching user data lengkap dari database...")
+                                        // BLOCKING: tunggu sampai user data berhasil di-fetch
+                                        try {
+                                            UserManager.fetchCurrentUser(user.id)
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "⚠️ [MainActivity] Gagal fetch user detail: ${e.message}. Tetap lanjut karena sesi valid.")
+                                        }
+                                        
+                                        // Cek apakah berhasil
+                                        if (UserManager.currentUser != null) {
+                                            Log.d(TAG, "✅ [MainActivity] User data berhasil dimuat: ${UserManager.currentUser?.displayName}")
+                                            startDestination = "splash" // Langsung masuk splash/main
+                                        } else {
+                                            Log.w(TAG, "⚠️ [MainActivity] User data null setelah fetch. Masuk sebagai User tanpa profil lengkap.")
+                                            // JANGAN LOGOUT! Tetap masuk.
+                                            startDestination = "splash"
+                                        }
                                     } catch (e: Exception) {
-                                        Log.w("AUTH_CHECK", "⚠️ Gagal fetch user detail: ${e.message}. Tetap lanjut karena sesi valid.")
-                                    }
-                                    
-                                    // Cek apakah berhasil
-                                    if (UserManager.currentUser != null) {
-                                        Log.d("AUTH_CHECK", "✅ User data berhasil dimuat: ${UserManager.currentUser?.displayName}")
-                                        startDestination = "splash" // Langsung masuk splash/main
-                                    } else {
-                                        Log.w("AUTH_CHECK", "⚠️ User data null. Masuk sebagai User tanpa profil lengkap.")
-                                        // JANGAN LOGOUT! Tetap masuk.
+                                        Log.e(TAG, "❌ [MainActivity] Error tidak terduga saat fetch user: ${e.message}")
+                                        // Tetap lanjut, jangan logout sembarangan
                                         startDestination = "splash"
                                     }
-                                } catch (e: Exception) {
-                                    Log.e("AUTH_CHECK", "❌ Error tidak terduga: ${e.message}")
-                                    // Tetap lanjut, jangan logout sembarangan
-                                    startDestination = "splash"
+                                } else {
+                                    Log.e(TAG, "❌ [MainActivity] Session Authenticated tapi user null. Logout paksa.")
+                                    SupabaseManager.client.auth.signOut()
+                                    startDestination = "login"
                                 }
                             } else {
-                                Log.e("AUTH_CHECK", "❌ Session ada tapi user null. Logout.")
-                                SupabaseManager.client.auth.signOut()
+                                Log.w(TAG, "⛔ [MainActivity] Status sesi tidak valid ($finalStatus). Masuk Login.")
                                 startDestination = "login"
                             }
                         } else {
-                            Log.d("AUTH_CHECK", "Tidak ada sesi tersimpan. Masuk Login.")
+                            Log.d(TAG, "🔓 [MainActivity] Tidak ada sesi tersimpan (loadFromStorage false). Masuk ke Login.")
                             startDestination = "login"
                         }
                     } catch (e: Exception) {
-                        Log.e("AUTH_CHECK", "Error saat load sesi", e)
+                        Log.e(TAG, "💥 [MainActivity] Error CRITICAL saat load sesi", e)
                         startDestination = "login"
                     } finally {
+                        Log.d(TAG, "🏁 [MainActivity] Selesai cek sesi. Destination: $startDestination")
                         isLoadingSession = false
                     }
                 }
@@ -179,34 +206,32 @@ class MainActivity : ComponentActivity() {
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     ) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding)) {
-                            AppNavGraph(
-                                navController = navController,
-                                startDestination = startDestination!!,
-                                onGoogleSignInClick = { signInWithGoogle {
-                                    navController.navigate("main") {
-                                        popUpTo("login") { inclusive = true }
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    AppNavGraph(
+                                        navController = navController,
+                                        startDestination = startDestination!!,
+                                        onGoogleSignInClick = { signInWithGoogle {
+                                            navController.navigate("main") {
+                                                popUpTo("login") { inclusive = true }
+                                            }
+                                        } },
+                                        notificationRoute = notificationRoute,
+                                        playMusicViewModel = playMusicViewModel
+                                    )
+
+                                    // 3. Layer Paling Atas: Dialog Error (Tetap Overlay)
+                                    if (showDialog) {
+                                        LoginErrorDialog(
+                                            show = showDialog,
+                                            errorMessage = errorMessage,
+                                            onDismiss = { showDialog = false }
+                                        )
                                     }
-                                } },
-                                notificationRoute = notificationRoute,
-                                playMusicViewModel = playMusicViewModel
-                            )
+                                }
 
-                            // 2. Layer Tengah: Notifikasi Offline (Overlay)
-                            if (status != ConnectivityObserver.Status.Available) {
-                                OfflineBanner(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .padding(bottom = 80.dp)
-                                )
-                            }
-
-                            // 3. Layer Paling Atas: Dialog Error
-                            if (showDialog) {
-                                LoginErrorDialog(
-                                    show = showDialog,
-                                    errorMessage = errorMessage,
-                                    onDismiss = { showDialog = false }
-                                )
+                                // 2. Layer Bawah: Notifikasi Offline (Termakan Sedikit Layar)
+                                OfflineBanner(status = status)
                             }
                         }
                     }
@@ -303,20 +328,53 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun OfflineBanner(modifier: Modifier = Modifier) {
+fun OfflineBanner(
+    modifier: Modifier = Modifier,
+    status: ConnectivityObserver.Status
+) {
+    // State untuk status yang akan ditampilkan setelah delay (jika perlu)
+    var activeStatus by remember { mutableStateOf(ConnectivityObserver.Status.Available) }
+
+    // Gunakan snapshotFlow + debounce logic manual (Versi Lebih Stabil)
+    LaunchedEffect(Unit) {
+        snapshotFlow { status }
+            .collectLatest { newStatus ->
+                when (newStatus) {
+                    ConnectivityObserver.Status.Limited,
+                    ConnectivityObserver.Status.Losing -> {
+                        // Tunda 5 detik untuk status "buruk" agar tidak flickering
+                        delay(5000)
+                        activeStatus = newStatus
+                    }
+                    else -> {
+                        // Langsung update untuk status Available, Lost, Unavailable
+                        activeStatus = newStatus
+                    }
+                }
+            }
+    }
+
+    val isVisible = activeStatus != ConnectivityObserver.Status.Available
+    
+    val message = when (activeStatus) {
+        ConnectivityObserver.Status.Limited -> "Koneksi Terbatas"
+        ConnectivityObserver.Status.Losing -> "Koneksi Tidak Stabil"
+        ConnectivityObserver.Status.Unavailable, ConnectivityObserver.Status.Lost -> "Tidak ada koneksi internet"
+        else -> ""
+    }
+
     // Animasi biar munculnya halus (Slide dari bawah + Fade In)
     AnimatedVisibility(
-        visible = true,
-        enter = slideInVertically { it } + fadeIn(),
-        exit = slideOutVertically { it } + fadeOut(),
+        visible = isVisible,
+        enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+        exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
         modifier = modifier
     ) {
         Surface(
-            color = Color.Red.copy(alpha = 0.9f), // Warna Merah Transparan
-            shape = RoundedCornerShape(8.dp),
+            color = Color.Black,
+            shape = androidx.compose.ui.graphics.RectangleShape,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
                 .height(40.dp)
         ) {
             Row(
@@ -325,17 +383,17 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxSize()
             ) {
                 Icon(
-                    imageVector = Icons.Default.WifiOff, // Ikon Wifi Mati
+                    imageVector = Icons.Default.WifiOff,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Anda sedang Offline",
+                    text = message,
                     color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

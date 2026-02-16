@@ -43,6 +43,9 @@ import com.example.remusic.ui.LocalBottomPadding
 import com.example.remusic.ui.components.BottomPlayerCard
 import com.example.remusic.ui.screen.BottomNavItem.Home.BottomBar
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import com.example.remusic.ui.screen.playmusic.QueueOptionsBottomSheet
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 
 // ------ Sealed class untuk item navigasi ------
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -170,6 +173,7 @@ fun BottomNavGraph(
         // Simplified Search Route (no arguments needed)
         composable(BottomNavItem.Search.route) {
             com.example.remusic.ui.screen.SearchScreen(
+                playMusicViewModel = playMusicViewModel, // Pass ViewModel
                 isSearchActive = isSearchActive, // Pass hoisted state
                 onSearchActiveChange = onSearchActiveChange, // Pass callback
                 onSongClick = { song, query ->
@@ -271,6 +275,42 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                             showCreatePlaylistSheet = false
                         }
                     }
+                }
+            )
+        }
+
+        // --- Global Queue Options Bottom Sheet ---
+        val selectedSong = playerUiState.selectedSongForQueueOptions
+        if (selectedSong != null) {
+            val queueSheetState = rememberModalBottomSheetState()
+            val context = LocalContext.current
+            
+            QueueOptionsBottomSheet(
+                sheetState = queueSheetState,
+                songWithArtist = selectedSong,
+                onDismiss = { playMusicViewModel.dismissQueueOptions() },
+                onAddToQueue = {
+                    val message = playMusicViewModel.addToQueue(selectedSong)
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    playMusicViewModel.dismissQueueOptions()
+                },
+                onPlayNext = {
+                    if (playerUiState.currentSong == null) {
+                        // Jika tidak ada lagu yang diputar, tampilkan pesan
+                        Toast.makeText(context, "Putar lagu lain terlebih dahulu", Toast.LENGTH_SHORT).show()
+                    } else if (playerUiState.currentSong?.song?.id == selectedSong.song.id) {
+                         Toast.makeText(context, "Lagu ini sedang diputar", Toast.LENGTH_SHORT).show()
+                    } else {
+                        playMusicViewModel.playNext(selectedSong)
+                        Toast.makeText(context, "${selectedSong.song.title} akan diputar setelah ini", Toast.LENGTH_SHORT).show()
+                    }
+                    playMusicViewModel.dismissQueueOptions()
+                },
+                onAddToPlaylist = {
+                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
+                },
+                onAddToLiked = {
+                    playMusicViewModel.toggleLike(selectedSong.song.id)
                 }
             )
         }

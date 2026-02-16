@@ -79,7 +79,14 @@ data class PlayerUiState(
     val errorType: String? = null,
     
     // Lyrics Config
-    val lyricsConfig: com.example.remusic.ui.screen.playmusic.LyricsConfig = com.example.remusic.ui.screen.playmusic.LyricsConfig()
+    // Lyrics Config
+    val lyricsConfig: com.example.remusic.ui.screen.playmusic.LyricsConfig = com.example.remusic.ui.screen.playmusic.LyricsConfig(),
+
+    // Global Queue Options State
+    val selectedSongForQueueOptions: SongWithArtist? = null,
+    
+    // Snackbar State for Queue Info
+    val showQueueInfoSnackbar: Boolean = false
 )
 
 
@@ -1399,8 +1406,27 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun addToQueue(song: SongWithArtist): String {
         val currentPlaylist = _uiState.value.playlist
-        val existingIndex = currentPlaylist.indexOfFirst { it.song.id == song.song.id }
+        
+        // CASE 1: Queue is empty or nothing playing -> Treat as "Start New Queue"
+        if (currentPlaylist.isEmpty() || _uiState.value.currentSong == null) {
+            Log.d("PlayMusicViewModel", "Queue empty, starting single song queue: ${song.song.title}")
+            
+            // 1. Set Playlist with selected song (Just one)
+             setPlaylist(listOf(song), 0)
 
+            // 2. Set Playlist Name & Subtitle & Trigger Snackbar
+             _uiState.update {
+                it.copy(
+                    playingMusicFromPlaylist = "Tambahkan Lagu ke Antrean", 
+                    playlistSubtitle = "Memainkan dari Playlist",
+                    showQueueInfoSnackbar = true // Trigger Snackbar!
+                )
+            }
+            return "Memulai antrean dengan ${song.song.title}"
+        }
+
+        // CASE 2: Normal Add to Queue (Existing logic)
+        val existingIndex = currentPlaylist.indexOfFirst { it.song.id == song.song.id }
         if (existingIndex != -1) {
             return "Lagu ini sudah ada di dalam queue urutan ${existingIndex + 1}"
         }
@@ -1502,5 +1528,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+    
+    // --- Global Queue Options Helpers ---
+    fun showQueueOptions(song: SongWithArtist) {
+        _uiState.update { it.copy(selectedSongForQueueOptions = song) }
+    }
+
+    fun dismissQueueOptions() {
+        _uiState.update { it.copy(selectedSongForQueueOptions = null) }
+    }
+
+    fun dismissQueueInfoSnackbar() {
+        _uiState.update { it.copy(showQueueInfoSnackbar = false) }
     }
 }

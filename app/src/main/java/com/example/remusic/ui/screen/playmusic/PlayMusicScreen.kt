@@ -4,9 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import android.widget.Toast
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +27,12 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -152,6 +149,40 @@ fun PlayMusicScreen(
     // --- MORE OPTIONS SHEET STATE ---
     var showMoreOptionsSheet by remember { mutableStateOf(false) }
     val moreOptionsSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+
+    // --- SNACKBAR LOGIC (Moved here for scope) ---
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    
+    // 1. Show Snackbar Logic
+    LaunchedEffect(uiState.showQueueInfoSnackbar) {
+        if (uiState.showQueueInfoSnackbar) {
+            val result = snackbarHostState.showSnackbar(
+                message = """
+                    Antrean dibuat otomatis dari tambahkan ke antrean.
+                    Untuk menambahkan lagu berikutnya, gunakan "Tambahkan ke Antrean" atau "Putar Setelah Ini".
+                """.trimIndent(),
+                actionLabel = "Oke",
+                duration = androidx.compose.material3.SnackbarDuration.Indefinite
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                playMusicViewModel.dismissQueueInfoSnackbar()
+            }
+        }
+    }
+
+    // 2. Auto-Dismiss Logic if Playlist Changes
+    LaunchedEffect(uiState.playingMusicFromPlaylist) {
+        // Jika snackbar aktif TAPI playlist ganti judul (artinya user memutar playlist lain),
+        // maka hilangkan snackbar.
+        if (uiState.showQueueInfoSnackbar && uiState.playingMusicFromPlaylist != "Tambahkan Lagu ke Antrean") {
+             // Dismiss secara internal di VM agar UI update
+             playMusicViewModel.dismissQueueInfoSnackbar()
+             // Secara visual side-effect di hostState mungkin butuh manual dismiss, 
+             // tapi karena showQueueInfoSnackbar jadi false, effect di atas akan recompose/batal?
+             // SnackbarHostState.currentSnackbarData?.dismiss() bisa dipanggil jika perlu immediate.
+             snackbarHostState.currentSnackbarData?.dismiss()
+        }
+    }
 
     // Gunakan BoxWithConstraints di root untuk mendapatkan tinggi layar (maxHeight)
     BoxWithConstraints (
@@ -356,6 +387,15 @@ fun PlayMusicScreen(
                 }
             }
         }
+         // ==========================================
+        // LAYER 3 (DEPAN LAGI): SNACKBAR HOST
+        // ==========================================
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 20.dp) // Berjarak sedikit dari bawah
+        )
     }
 
     if (showSleepTimerSheet) {

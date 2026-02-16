@@ -32,7 +32,8 @@ import kotlin.math.ceil
 @Composable
 fun QuickPickCarousel(
     songs: List<SongWithArtist>,
-    onSongClick: (Int) -> Unit = {}
+    onSongClick: (Int) -> Unit = {},
+    onMoreClick: (SongWithArtist) -> Unit
 ) {
     if (songs.isEmpty()) return
 
@@ -81,7 +82,8 @@ fun QuickPickCarousel(
                         artistName = songWithArtist.artist?.name ?: "Unknown Artist",
                         posterUri = songWithArtist.song.coverUrl ?: "",
                         isCurrentlyPlaying = false,
-                        onClickListener = { onSongClick(i) }
+                        onClickListener = { onSongClick(i) },
+                        onMoreClick = { onMoreClick(songWithArtist) }
                     )
                 }
             }

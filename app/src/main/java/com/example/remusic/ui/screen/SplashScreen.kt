@@ -87,11 +87,13 @@ fun SplashScreen(navController: NavController) {
 
         // --- OPTIMIZED: CEK CACHE DULU SEBELUM FETCH ---
         // Cek Login pakai Supabase
+        val TAG = "RemusicAuth" // Tag konsisten
         val session = SupabaseManager.client.auth.currentSessionOrNull()
+        Log.d(TAG, "🔍 [SplashScreen] Memeriksa sesi... Session ID: ${session?.user?.id}")
 
         if (session != null) {
             // User ada sesi -> Cek apakah user data sudah ada (dari MainActivity)
-            Log.d("SplashScreen", "🔐 Session ditemukan. Memastikan user data tersedia...")
+            Log.d(TAG, "🔐 [SplashScreen] Session ditemukan. Memastikan user data tersedia...")
             
             try {
                 // ⚡ OPTIMIZED: ensureUserLoaded() akan cek cache dulu
@@ -99,14 +101,14 @@ fun SplashScreen(navController: NavController) {
                 val user = com.example.remusic.data.UserManager.ensureUserLoaded()
                 
                 if (user != null) {
-                    Log.d("SplashScreen", "✅ User data tersedia: ${user.displayName}")
+                    Log.d(TAG, "✅ [SplashScreen] User data tersedia: ${user.displayName}. Navigasi ke Main.")
                     
                     // Navigasi ke Main
                     navController.navigate("main") {
                         popUpTo("splash") { inclusive = true }
                     }
                 } else {
-                    Log.e("SplashScreen", "❌ User data tidak bisa dimuat. Logout paksa.")
+                    Log.e(TAG, "❌ [SplashScreen] User data tidak bisa dimuat (ensureUserLoaded returned null). Logout paksa.")
                     // Logout dan ke login
                     SupabaseManager.client.auth.signOut()
                     navController.navigate("login") {
@@ -114,7 +116,7 @@ fun SplashScreen(navController: NavController) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("SplashScreen", "❌ Error ensure user: ${e.message}")
+                Log.e(TAG, "❌ [SplashScreen] Error ensure user: ${e.message}")
                 // Jika gagal total, logout dan ke login
                 SupabaseManager.client.auth.signOut()
                 navController.navigate("login") {
@@ -123,7 +125,7 @@ fun SplashScreen(navController: NavController) {
             }
         } else {
             // User tidak ada sesi -> Masuk Login
-            Log.d("SplashScreen", "🔓 Tidak ada session. Navigasi ke Login.")
+            Log.d(TAG, "🔓 [SplashScreen] Tidak ada session. Navigasi ke Login.")
             navController.navigate("login") {
                 popUpTo("splash") { inclusive = true }
             }

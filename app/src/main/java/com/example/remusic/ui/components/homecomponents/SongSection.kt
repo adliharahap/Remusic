@@ -3,6 +3,7 @@ package com.example.remusic.ui.components.homecomponents
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SongSection(
     title: String,
@@ -41,7 +43,8 @@ fun SongSection(
     fullPlaylistForPlayback: List<SongWithArtist> = displayItems,
     playMusicViewModel: PlayMusicViewModel,
     sectionColor: Color = Color(0xFF2CA5B2), // Default teal
-    onSeeAllClick: () -> Unit = {}
+    onSeeAllClick: () -> Unit = {},
+    onLongClick: (SongWithArtist) -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(vertical = 10.dp)) {
 
@@ -90,11 +93,16 @@ fun SongSection(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .width(100.dp)
-                        .clickable {
-                            // 1. Beri tahu ViewModel untuk memulai playlist dari lagu ini
-                            playMusicViewModel.setPlaylist(fullPlaylistForPlayback, index)
-                            playMusicViewModel.playingMusicFromPlaylist(title)
-                        }
+                        .combinedClickable(
+                            onClick = {
+                                // 1. Beri tahu ViewModel untuk memulai playlist dari lagu ini
+                                playMusicViewModel.setPlaylist(fullPlaylistForPlayback, index)
+                                playMusicViewModel.playingMusicFromPlaylist(title)
+                            },
+                            onLongClick = {
+                                onLongClick(item)
+                            }
+                        )
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(item.song.coverUrl),

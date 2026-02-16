@@ -59,6 +59,7 @@ data class Song2(
 @Composable
 fun SearchScreen(
     searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    playMusicViewModel: com.example.remusic.viewmodel.playmusic.PlayMusicViewModel, // Add this
     isSearchActive: Boolean = false, // Hoisted State
     onSearchActiveChange: (Boolean) -> Unit = {}, // State Change Callback
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> }
@@ -138,8 +139,7 @@ fun SearchScreen(
                             onMoreOptionsClick = { song2 ->
                                 val original = recentSongs.find { it.song.title == song2.title }
                                 original?.let { 
-                                    searchViewModel.onSongPlayed(it)
-                                    onSongClick(it, "Recent Added") 
+                                    playMusicViewModel.showQueueOptions(it)
                                 }
                             }
                         )
@@ -271,6 +271,9 @@ fun SearchScreen(
                                 android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
                                 searchViewModel.onSongPlayed(songWithArtist)
                                 onSongClick(songWithArtist, historyItem.title)
+                            },
+                            onMoreClick = {
+                                playMusicViewModel.showQueueOptions(songWithArtist)
                             }
                         )
                     }
@@ -542,6 +545,9 @@ fun SearchScreen(
                         onClickListener = {
                             searchViewModel.onSongPlayed(song)
                             onSongClick(song, searchQuery)
+                        },
+                        onMoreClick = {
+                            playMusicViewModel.showQueueOptions(song)
                         }
                     )
                 }

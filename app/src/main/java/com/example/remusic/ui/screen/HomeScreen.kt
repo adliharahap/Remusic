@@ -271,6 +271,9 @@ private fun HomeMainScreen(
                                         playMusicViewModel.playSongWithSmartQueue(song)
                                         playMusicViewModel.playingMusicFromPlaylist("Pilihan Cepat")
                                     }
+                                },
+                                onMoreClick = { song ->
+                                    playMusicViewModel.showQueueOptions(song)
                                 }
                             )
                         }
@@ -286,6 +289,9 @@ private fun HomeMainScreen(
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
                                 homeNavController.navigate(HomeRoute.createRoute("Sering Kamu Putar"))
+                            },
+                            onLongClick = { song ->
+                                playMusicViewModel.showQueueOptions(song)
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
@@ -310,6 +316,9 @@ private fun HomeMainScreen(
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
                                 homeNavController.navigate(HomeRoute.createRoute("Most Loved"))
+                            },
+                            onLongClick = { song ->
+                                playMusicViewModel.showQueueOptions(song)
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
@@ -323,6 +332,9 @@ private fun HomeMainScreen(
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
                                 homeNavController.navigate(HomeRoute.createRoute("Top Trending"))
+                            },
+                            onLongClick = { song ->
+                                playMusicViewModel.showQueueOptions(song)
                             }
                         )
                         Spacer(modifier = Modifier.height(16.dp))

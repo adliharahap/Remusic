@@ -647,6 +647,9 @@ fun PlaylistDetailScreen(
                                 playMusicViewModel?.playingMusicFromPlaylist(playlistName)
                             }
                         },
+                        onMoreClick = {
+                             playMusicViewModel?.showQueueOptions(songWithArtist)
+                        }
                     )
                 }
 
