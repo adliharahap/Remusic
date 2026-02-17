@@ -272,7 +272,9 @@ fun PlayMusicScreen(
                         playMusicViewModel.seekTo(newPosition)
                     },
                     uploader = uiState.uploader,
-                    isSearchContext = uiState.playlistSubtitle == "Memainkan Dari Pencarian"
+                    isSearchContext = uiState.playlistSubtitle == "Memainkan Dari Pencarian",
+                    isArtistFollowed = uiState.isArtistFollowed,
+                    onToggleFollowArtist = { playMusicViewModel.toggleFollowArtist() }
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,

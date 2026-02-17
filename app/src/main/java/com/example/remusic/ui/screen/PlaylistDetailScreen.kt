@@ -2,12 +2,8 @@ package com.example.remusic.ui.screen
 
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,28 +20,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AvTimer
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,28 +47,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import coil.compose.AsyncImage
 // import com.example.remusic.ui.theme.AppFont // Saya nonaktifkan ini agar preview jalan
 import java.util.concurrent.TimeUnit
-import com.example.remusic.R
 
 // --- Impor untuk data model Anda ---
 import com.example.remusic.data.model.Artist
@@ -97,6 +77,13 @@ import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 
 
+// --- Impor Custom Headers ---
+import com.example.remusic.ui.components.playlist.AutoPlaylistHeader
+import com.example.remusic.ui.components.playlist.ArtistPlaylistHeader
+import com.example.remusic.ui.components.playlist.UserPlaylistHeader
+import com.example.remusic.ui.components.playlist.OfficialPlaylistHeader
+import com.example.remusic.ui.components.skeletons.PlaylistDetailSkeleton
+
 // --- REVISI: Enum dengan Ikon ---
 enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
     DEFAULT("Urutan Playlist", Icons.AutoMirrored.Filled.List), // Default option
@@ -110,78 +97,21 @@ enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
     DURATION_DESC("Durasi (Panjang)", Icons.Default.Timer)
 }
 
-// --- Mock Data HANYA UNTUK PREVIEW ---
-private val mockArtists = listOf(
-    Artist(id = "a1", name = "One Ok Rock", photoUrl = "..."),
-    Artist(id = "a2", name = "Yoasobi", photoUrl = "..."),
-    Artist(id = "a3", name = "Ado", photoUrl = "...")
-)
-
-private val mockSongs = listOf(
-    SongWithArtist(
-        song = Song(
-            id = "s1",
-            title = "The Beginning",
-            artistId = "a1",
-            coverUrl = "https://i.scdn.co/image/ab67616d0000b2737d6e65e63833d780e77ad6f6",
-            durationMs = 295000,
-            // Ubah jadi String ISO (Supabase Format)
-            createdAt = "2025-01-01T10:00:00Z"
-        ),
-        artist = mockArtists[0]
-    ),
-    SongWithArtist(
-        song = Song(
-            id = "s2",
-            title = "Yoru ni Kakeru",
-            artistId = "a2",
-            coverUrl = "https://i.scdn.co/image/ab67616d0000b27330c6a7a01b43b6de9d8a1835",
-            durationMs = 261000,
-            createdAt = "2025-01-02T12:00:00Z" // Lebih baru
-        ),
-        artist = mockArtists[1]
-    ),
-    SongWithArtist(
-        song = Song(
-            id = "s3",
-            title = "Usseewa",
-            artistId = "a3",
-            coverUrl = "https://i.scdn.co/image/ab67616d0000b27341d3b2a30d977e5e3c50ea51",
-            durationMs = 206000,
-            createdAt = "2024-12-30T09:00:00Z" // Lebih lama
-        ),
-        artist = mockArtists[2]
-    ),
-    SongWithArtist(
-        song = Song(
-            id = "s4",
-            title = "We Are",
-            artistId = "a1",
-            coverUrl = "https://i.scdn.co/image/ab67616d0000b2731802d28e7636e651f93e9b1f",
-            durationMs = 250000,
-            createdAt = "2023-01-01T10:00:00Z" // Paling lama
-        ),
-        artist = mockArtists[0]
-    ),
-    SongWithArtist(
-        song = Song(
-            id = "s5",
-            title = "Idol",
-            artistId = "a2",
-            coverUrl = "https://i.scdn.co/image/ab67616d0000b27393c83e25d8a2455f46f32e65",
-            durationMs = 213000,
-            createdAt = "2025-01-03T15:00:00Z" // Paling baru
-        ),
-        artist = mockArtists[1]
-    )
-)
-
+// --- Playlist Type Enum ---
+enum class PlaylistType {
+    ARTIST,
+    USER_CREATED,
+    OFFICIAL,
+    AUTO // Top Hits, Most Loved, etc.
+}
 
 @Composable
 fun PlaylistDetailScreen(
     songs: List<SongWithArtist>,
     playlistName: String,
     playlistCoverUrl: String, // Fallback jika songs empty
+    playlistType: PlaylistType = PlaylistType.AUTO, // Default type
+    playlistId: String? = null, // New Param for ID-based fetching
     playMusicViewModel: PlayMusicViewModel? = null
 ) {
     val context = LocalContext.current
@@ -199,33 +129,70 @@ fun PlaylistDetailScreen(
 
     // --- Dynamic Gradient State ---
     var headersColors by remember { mutableStateOf(listOf(Color(0xFF202020), Color(0xFF000000))) }
-    
-    // Update Gradient when songs change
-    LaunchedEffect(songs) {
-        if (songs.isNotEmpty()) {
-            // Use the first song's cover for the gradient
-            val coverUrl = songs[0].song.coverUrl
-            if (!coverUrl.isNullOrBlank()) {
-                headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
-                Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+
+    // Update Gradient based on playlist type
+    LaunchedEffect(playlistType, uiState?.artistDetails, songs) {
+        when (playlistType) {
+            PlaylistType.ARTIST -> {
+                // For artist playlists, use artist photo
+                val artistPhotoUrl = uiState?.artistDetails?.photoUrl ?: playlistCoverUrl
+                if (artistPhotoUrl.isNotBlank()) {
+                    headersColors = extractGradientColorsFromImageUrl(context, artistPhotoUrl)
+                    Log.d("PlaylistDetailScreen", "Artist Headers Colors: $headersColors")
+                }
             }
-        } else if (playlistCoverUrl.isNotBlank()) {
-             headersColors = extractGradientColorsFromImageUrl(context, playlistCoverUrl)
-             Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+            else -> {
+                // For other playlists, use first song's cover
+                if (songs.isNotEmpty()) {
+                    val coverUrl = songs[0].song.coverUrl
+                    if (!coverUrl.isNullOrBlank()) {
+                        headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
+                        Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+                    }
+                } else if (playlistCoverUrl.isNotBlank()) {
+                    headersColors = extractGradientColorsFromImageUrl(context, playlistCoverUrl)
+                    Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
+                }
+            }
         }
     }
 
-    // --- Initial Scroll to Hide Search (Pull-to-Reveal Logic) ---
-    // We want to start at Index 1 (Header), hiding Index 0 (Search)
-    LaunchedEffect(Unit) {
-        // Scroll to the Header item (index 1) with 0 offset (top of header)
-        listState.scrollToItem(1, 0)
+    // --- Pagination Logic (Artist) ---
+    // For Artist playlists, always use paginated data from ViewModel
+    val effectiveSongs = if (playlistType == PlaylistType.ARTIST) {
+        uiState?.artistSongs ?: emptyList()
+    } else {
+        songs
+    }
+
+    // Initial Fetch for Artist
+    LaunchedEffect(playlistType, playlistId) {
+        if (playlistType == PlaylistType.ARTIST && !playlistId.isNullOrBlank()) {
+             playMusicViewModel?.fetchArtistSongs(playlistId)
+        }
+    }
+
+    // --- Loading State Logic ---
+    // Show skeleton until BOTH artist details AND songs are loaded
+    val isInitialLoading = remember(playlistType, uiState, effectiveSongs) {
+        when (playlistType) {
+            PlaylistType.ARTIST -> {
+                 val isLoadingSongs = uiState?.isArtistSongsLoading == true
+                 val isLoadingDetails = uiState?.isLoadingArtistDetails == true
+                 val hasSongs = effectiveSongs.isNotEmpty()
+                 val hasDetails = uiState?.artistDetails != null
+                 
+                 // Show skeleton ONLY if:
+                 // - Currently loading AND data not ready yet
+                 (isLoadingSongs || isLoadingDetails) && (!hasSongs || !hasDetails)
+            }
+            else -> false 
+        }
     }
 
     // --- Animation Logic ---
     
     // 1. Search Bar Scale Logic (Index 0)
-    // It should grow from small to 90% as we scroll UP (pull down content).
     val searchScale by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -234,18 +201,8 @@ fun PlaylistDetailScreen(
             if (searchItem == null) {
                 0f // Item not visible -> Scale 0
             } else {
-                // Calculate visibility fraction based on offset
-                // Search item is at the top.
-                // If offset is 0 (fully visible top), scale is max.
-                // If offset is negative (scrolled up/hidden), scale reduces.
-                // However, wait. "Initial scroll to index 1". So index 0 is ABOVE.
-                // When we scroll UP (pull down), offset of index 0 goes from negative (hidden) to 0 (visible).
-                // Or rather, we are looking at offset relative to viewport start.
                 val itemSize = searchItem.size
                 val itemOffset = searchItem.offset // Distance from top of viewport.
-                
-                // If offset is 0, it's fully visible at top. Scale 1.
-                // If offset is -itemSize, it's fully hidden above. Scale 0.
                 
                 val visibleFraction = 1f + (itemOffset.toFloat() / itemSize.toFloat())
                 visibleFraction.coerceIn(0f, 1f)
@@ -254,7 +211,6 @@ fun PlaylistDetailScreen(
     }
 
     // 2. Header Image Collapse Logic (Index 1)
-    // Request: "Only image changes". Shrink/Fade as we scroll down.
     val imageCollapseProgress by remember {
         derivedStateOf {
             val headerIndex = 1 // Header is now Index 1
@@ -272,25 +228,25 @@ fun PlaylistDetailScreen(
     }
 
     // --- Kalkulasi Total Durasi ---
-    val totalDurationMs = remember(songs) {
-        songs.sumOf { it.song.durationMs }
+    val totalDurationMs = remember(effectiveSongs) {
+        effectiveSongs.sumOf { it.song.durationMs }
     }
     val formattedTotalDuration = remember(totalDurationMs) {
         formatDuration(totalDurationMs)
     }
 
     // --- Logika Sorting ---
-    val sortedSongs = remember(songs, currentSort) {
+    val sortedSongs = remember(effectiveSongs, currentSort) {
         when (currentSort) {
-            SortOrder.DEFAULT -> songs // Return original order
-            SortOrder.NEWEST_FIRST -> songs.sortedByDescending { it.song.createdAt }
-            SortOrder.OLDEST_FIRST -> songs.sortedBy { it.song.createdAt }
-            SortOrder.TITLE_ASC -> songs.sortedBy { it.song.title }
-            SortOrder.TITLE_DESC -> songs.sortedByDescending { it.song.title }
-            SortOrder.ARTIST_ASC -> songs.sortedBy { it.artist?.name }
-            SortOrder.ARTIST_DESC -> songs.sortedByDescending { it.artist?.name }
-            SortOrder.DURATION_ASC -> songs.sortedBy { it.song.durationMs }
-            SortOrder.DURATION_DESC -> songs.sortedByDescending { it.song.durationMs }
+            SortOrder.DEFAULT -> effectiveSongs // Return original order
+            SortOrder.NEWEST_FIRST -> effectiveSongs.sortedByDescending { it.song.createdAt }
+            SortOrder.OLDEST_FIRST -> effectiveSongs.sortedBy { it.song.createdAt }
+            SortOrder.TITLE_ASC -> effectiveSongs.sortedBy { it.song.title }
+            SortOrder.TITLE_DESC -> effectiveSongs.sortedByDescending { it.song.title }
+            SortOrder.ARTIST_ASC -> effectiveSongs.sortedBy { it.artist?.name }
+            SortOrder.ARTIST_DESC -> effectiveSongs.sortedByDescending { it.artist?.name }
+            SortOrder.DURATION_ASC -> effectiveSongs.sortedBy { it.song.durationMs }
+            SortOrder.DURATION_DESC -> effectiveSongs.sortedByDescending { it.song.durationMs }
         }
     }
 
@@ -306,6 +262,115 @@ fun PlaylistDetailScreen(
         }
     }
 
+
+    if (isInitialLoading) {
+        PlaylistDetailSkeleton()
+    } else {
+        // --- REAL CONTENT ---
+        PlaylistDetailContent(
+            songs = songs,
+            effectiveSongs = effectiveSongs,
+            playlistName = playlistName,
+            playlistCoverUrl = playlistCoverUrl,
+            playlistType = playlistType,
+            playlistId = playlistId,
+            playMusicViewModel = playMusicViewModel,
+            listState = listState,
+            headersColors = headersColors,
+            uiState = uiState,
+            context = context,
+            density = density,
+            currentSort = currentSort,
+            onSortChange = { currentSort = it },
+            isSearching = isSearching,
+            onSearchChange = { isSearching = it },
+            searchQuery = searchQuery,
+            onSearchQueryChange = { searchQuery = it },
+            imageCollapseProgress = imageCollapseProgress,
+            formattedTotalDuration = formattedTotalDuration,
+            sortedSongs = sortedSongs,
+            filteredAndSortedSongs = filteredAndSortedSongs,
+            searchScale = searchScale,
+            showSortMenu = showSortMenu,
+            onShowSortMenuChange = { showSortMenu = it }
+        )
+    }
+}
+
+@Composable
+fun PlaylistDetailContent(
+    songs: List<SongWithArtist>,
+    effectiveSongs: List<SongWithArtist>,
+    playlistName: String,
+    playlistCoverUrl: String,
+    playlistType: PlaylistType,
+    playlistId: String?,
+    playMusicViewModel: PlayMusicViewModel?,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    headersColors: List<Color>,
+    uiState: com.example.remusic.viewmodel.playmusic.PlayerUiState?,
+    context: android.content.Context,
+    density: androidx.compose.ui.unit.Density,
+    currentSort: SortOrder,
+    onSortChange: (SortOrder) -> Unit,
+    isSearching: Boolean,
+    onSearchChange: (Boolean) -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    imageCollapseProgress: Float,
+    formattedTotalDuration: String,
+    sortedSongs: List<SongWithArtist>,
+    filteredAndSortedSongs: List<SongWithArtist>,
+    searchScale: Float,
+    showSortMenu: Boolean,
+    onShowSortMenuChange: (Boolean) -> Unit
+) {
+
+    // We want to start at Index 1 (Header), hiding Index 0 (Search)
+    LaunchedEffect(Unit) {
+        // Scroll to the Header item (index 1) with 0 offset (top of header)
+        listState.scrollToItem(1, 0)
+    }
+
+    // --- Smooth Scroll to Header when Search Exits ---
+    LaunchedEffect(isSearching) {
+        if (!isSearching) {
+            // User requested smooth scroll to top (Header - Index 1) but NOT Index 0 (Fake Search)
+            // This resets the view to the header cleanly.
+            listState.animateScrollToItem(index = 1, scrollOffset = 0)
+        }
+    }
+
+    // --- SNAP LOGIC (Pull-to-Reveal 60%) ---
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (!listState.isScrollInProgress && !isSearching) {
+            // Scroll stopped. Check where we are.
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+            
+            // Item 0 is the Search Dummy
+            if (firstVisibleIndex == 0) {
+                // Calculate how much of Item 0 is visible.
+                val searchItem = listState.layoutInfo.visibleItemsInfo.find { it.index == 0 }
+                
+                if (searchItem != null) {
+                    val itemSize = searchItem.size
+                    val hiddenPixels = firstVisibleOffset
+                    val visiblePixels = itemSize - hiddenPixels
+                    val visibleFraction = visiblePixels.toFloat() / itemSize.toFloat()
+                    
+                    if (visibleFraction >= 0.6f) {
+                         if (firstVisibleOffset > 0) {
+                               listState.animateScrollToItem(0)
+                         }
+                    } else {
+                         listState.animateScrollToItem(1)
+                    }
+                }
+            }
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black),
     ) {
@@ -314,8 +379,14 @@ fun PlaylistDetailScreen(
             // 1. ACTIVE SEARCH BAR (Full Screen Mode)
              AnimatedVisibility(
                 visible = isSearching,
-                enter = slideInVertically() + fadeIn(),
-                exit = slideOutVertically() + fadeOut()
+                enter = androidx.compose.animation.slideInVertically(
+                    animationSpec = androidx.compose.animation.core.tween(500),
+                    initialOffsetY = { -it }
+                ) + fadeIn(
+                    animationSpec = androidx.compose.animation.core.tween(500)
+                ),
+                //Exit animation should be instant (no animation)
+                exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.snap(0))
             ) {
                  // Top Bar untuk Search Mode
                  Box(
@@ -334,8 +405,8 @@ fun PlaylistDetailScreen(
                             modifier = Modifier
                                 .padding(horizontal = 16.dp)
                                 .clickable {
-                                    isSearching = false
-                                    searchQuery = "" 
+                                    onSearchChange(false)
+                                    onSearchQueryChange("")
                                 },
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -343,7 +414,7 @@ fun PlaylistDetailScreen(
                         )
                         CustomOutlinedTextField(
                             value = searchQuery,
-                            onValueChange = { searchQuery = it },
+                            onValueChange = { onSearchQueryChange(it) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(40.dp)
@@ -409,14 +480,13 @@ fun PlaylistDetailScreen(
                                     .graphicsLayer {
                                         // ANIMATION: Grow from small to 90%
                                         // Our 'searchScale' goes 0 -> 1 based on reveal.
-                                        // Let's modify opacity and scale.
                                         scaleX = 0.5f + (searchScale * 0.5f) // 50% -> 100% (of 0.9f)
                                         scaleY = 0.5f + (searchScale * 0.5f)
                                         alpha = searchScale
                                     }
                                     .clip(RoundedCornerShape(20)) // Pill shape
                                     .background(Color.White.copy(alpha = 0.2f)) // Glassy
-                                    .clickable { isSearching = true }
+                                    .clickable { onSearchChange(true) }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -443,8 +513,24 @@ fun PlaylistDetailScreen(
                 item {
                     AnimatedVisibility(
                         visible = !isSearching,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
+                        enter = androidx.compose.animation.slideInVertically(
+                            animationSpec = androidx.compose.animation.core.tween(500),
+                            initialOffsetY = { -it }
+                        ) + androidx.compose.animation.expandVertically(
+                            animationSpec = androidx.compose.animation.core.tween(500),
+                            expandFrom = Alignment.Top
+                        ) + fadeIn(
+                            animationSpec = androidx.compose.animation.core.tween(500)
+                        ),
+                        exit = androidx.compose.animation.slideOutVertically(
+                            animationSpec = androidx.compose.animation.core.tween(500),
+                            targetOffsetY = { -it }
+                        ) + androidx.compose.animation.shrinkVertically(
+                            animationSpec = androidx.compose.animation.core.tween(500),
+                            shrinkTowards = Alignment.Top
+                        ) + fadeOut(
+                            animationSpec = androidx.compose.animation.core.tween(500)
+                        )
                     ) {
                         Box(
                             modifier = Modifier
@@ -455,167 +541,91 @@ fun PlaylistDetailScreen(
                                     )
                                 )
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 50.dp, bottom = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                // 1. Artwork (ANIMATED)
-                                val imageUrl = if (songs.isNotEmpty()) songs[0].song.coverUrl else playlistCoverUrl
-                                AsyncImage(
-                                    model = imageUrl,
-                                    contentDescription = "Playlist Poster",
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.75f)
-                                        .aspectRatio(1f)
-                                        .graphicsLayer {
-                                            // ANIMATION LOGIC: Shrink/Fade ONLY Image
-                                            alpha = 1f - imageCollapseProgress
-                                            val scale = 1f - (imageCollapseProgress * 0.5f) // Shrink to 50%
-                                            scaleX = scale
-                                            scaleY = scale
-                                            translationY = -imageCollapseProgress * 100f
-                                        }
-                                        .shadow(elevation = 12.dp, shape = RoundedCornerShape(12.dp), clip = false)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Crop,
-                                    placeholder = painterResource(id = R.drawable.img_placeholder),
-                                    error = painterResource(id = R.drawable.img_placeholder)
-                                )
-
-                                Spacer(modifier = Modifier.height(24.dp))
-
-                                // 2. Title & Meta (STATIC - No Animation)
-                                Text(
-                                    text = playlistName,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontFamily = AppFont.Poppins,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 28.sp,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
-                                // Meta Data Row
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                     Text(
-                                        text = "${songs.size} Lagu",
-                                        fontFamily = AppFont.Poppins,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 13.sp,
-                                        color = Color.White.copy(0.7f)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(modifier = Modifier.size(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(0.5f)))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = formattedTotalDuration,
-                                        fontFamily = AppFont.Poppins,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 13.sp,
-                                        color = Color.White.copy(0.7f)
+                            when (playlistType) {
+                                PlaylistType.AUTO -> {
+                                    AutoPlaylistHeader(
+                                        songs = songs,
+                                        playlistName = playlistName,
+                                        playlistCoverUrl = playlistCoverUrl,
+                                        formattedTotalDuration = formattedTotalDuration,
+                                        imageCollapseProgress = imageCollapseProgress,
+                                        currentSort = currentSort,
+                                        showSortMenu = showSortMenu,
+                                        onSortMenuDismiss = { onShowSortMenuChange(false) },
+                                        onSortOptionSelected = { sortOption ->
+                                            onSortChange(sortOption)
+                                            onShowSortMenuChange(false)
+                                        },
+                                        onSortClick = { onShowSortMenuChange(true) },
+                                        playMusicViewModel = playMusicViewModel,
+                                        uiState = uiState,
+                                        sortedSongs = sortedSongs,
+                                        filteredAndSortedSongs = filteredAndSortedSongs
                                     )
                                 }
-
-                                Spacer(modifier = Modifier.height(24.dp))
-
-                                // 3. Action Buttons Row (STATIC - No Animation)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    // Sort Button (Left)
-                                     Box {
-                                        IconButton(
-                                            onClick = { showSortMenu = true },
-                                            modifier = Modifier.background(Color.White.copy(0.1f), RoundedCornerShape(50)).size(42.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.FilterList, // Use Sort icon if available
-                                                contentDescription = "Sort",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                         DropdownMenu(
-                                            expanded = showSortMenu,
-                                            onDismissRequest = { showSortMenu = false },
-                                            modifier = Modifier.background(Color(0xFF282828))
-                                        ) {
-                                            SortOrder.entries.forEach { sortOption ->
-                                                DropdownMenuItem(
-                                                    text = { Text(sortOption.SdisplayName, color = Color.White, fontFamily = AppFont.Poppins) },
-                                                    leadingIcon = {
-                                                        Icon(
-                                                            imageVector = sortOption.icon,
-                                                            contentDescription = sortOption.SdisplayName,
-                                                            tint = Color.White.copy(0.8f)
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        currentSort = sortOption
-                                                        showSortMenu = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                     }
-                                     
-                                     Spacer(Modifier.width(16.dp))
-
-                                     Button(
-                                         onClick = {
-                                            if (filteredAndSortedSongs.isNotEmpty()) {
-                                                playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
-                                                playMusicViewModel?.playingMusicFromPlaylist(playlistName)
-                                            }
-                                         },
-                                         modifier = Modifier
-                                             .weight(1f)
-                                             .height(52.dp),
-                                         colors = ButtonDefaults.buttonColors(
-                                             containerColor = Color.White,
-                                             contentColor = Color.Black
-                                         ),
-                                         shape = RoundedCornerShape(50)
-                                     ) {
-                                         Icon(
-                                             imageVector = Icons.Filled.PlayArrow,
-                                             contentDescription = null,
-                                             modifier = Modifier.size(28.dp)
-                                         )
-                                         Spacer(Modifier.width(8.dp))
-                                         Text(
-                                             "Play All",
-                                             fontFamily = AppFont.Poppins,
-                                             fontWeight = FontWeight.Bold,
-                                             fontSize = 16.sp
-                                         )
-                                     }
-
-                                     Spacer(Modifier.width(16.dp))
-
-                                     // Shuffle Button (Right)
-                                     IconButton(
-                                        onClick = {
-                                            playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
-                                            playMusicViewModel?.playingMusicFromPlaylist(playlistName)
-                                            if (uiState?.isShuffleModeEnabled == false) playMusicViewModel?.toggleShuffleMode()
+                                PlaylistType.ARTIST -> {
+                                    ArtistPlaylistHeader(
+                                        songs = songs,
+                                        playlistName = playlistName,
+                                        playlistCoverUrl = playlistCoverUrl,
+                                        formattedTotalDuration = formattedTotalDuration,
+                                        imageCollapseProgress = imageCollapseProgress,
+                                        currentSort = currentSort,
+                                        showSortMenu = showSortMenu,
+                                        onSortMenuDismiss = { onShowSortMenuChange(false) },
+                                        onSortOptionSelected = { sortOption ->
+                                            onSortChange(sortOption)
+                                            onShowSortMenuChange(false)
                                         },
-                                        modifier = Modifier.background(Color.White.copy(0.1f), RoundedCornerShape(50)).size(42.dp)
-                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Shuffle,
-                                            contentDescription = "Shuffle",
-                                            tint = if (uiState?.isShuffleModeEnabled == true) Color.Green else Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                     }
+                                        onSortClick = { onShowSortMenuChange(true) },
+                                        playMusicViewModel = playMusicViewModel,
+                                        uiState = uiState,
+                                        sortedSongs = sortedSongs,
+                                        filteredAndSortedSongs = filteredAndSortedSongs,
+                                        artistId = playlistId // Pass the artist ID
+                                    )
+                                }
+                                PlaylistType.USER_CREATED -> {
+                                     UserPlaylistHeader(
+                                        songs = songs,
+                                        playlistName = playlistName,
+                                        playlistCoverUrl = playlistCoverUrl,
+                                        formattedTotalDuration = formattedTotalDuration,
+                                        imageCollapseProgress = imageCollapseProgress,
+                                        currentSort = currentSort,
+                                        showSortMenu = showSortMenu,
+                                        onSortMenuDismiss = { onShowSortMenuChange(false) },
+                                        onSortOptionSelected = { sortOption ->
+                                            onSortChange(sortOption)
+                                            onShowSortMenuChange(false)
+                                        },
+                                        onSortClick = { onShowSortMenuChange(true) },
+                                        playMusicViewModel = playMusicViewModel,
+                                        uiState = uiState,
+                                        sortedSongs = sortedSongs,
+                                        filteredAndSortedSongs = filteredAndSortedSongs
+                                    )
+                                }
+                                PlaylistType.OFFICIAL -> {
+                                     OfficialPlaylistHeader(
+                                        songs = songs,
+                                        playlistName = playlistName,
+                                        playlistCoverUrl = playlistCoverUrl,
+                                        formattedTotalDuration = formattedTotalDuration,
+                                        imageCollapseProgress = imageCollapseProgress,
+                                        currentSort = currentSort,
+                                        showSortMenu = showSortMenu,
+                                        onSortMenuDismiss = { onShowSortMenuChange(false) },
+                                        onSortOptionSelected = { sortOption ->
+                                            onSortChange(sortOption)
+                                            onShowSortMenuChange(false)
+                                        },
+                                        onSortClick = { onShowSortMenuChange(true) },
+                                        playMusicViewModel = playMusicViewModel,
+                                        uiState = uiState,
+                                        sortedSongs = sortedSongs,
+                                        filteredAndSortedSongs = filteredAndSortedSongs
+                                    )
                                 }
                             }
                         }
@@ -653,6 +663,20 @@ fun PlaylistDetailScreen(
                     )
                 }
 
+                // --- Pagination Trigger (No Loading Indicator) ---
+                item {
+                    if (playlistType == PlaylistType.ARTIST && playlistId != null) {
+                         val isEndReached = uiState?.artistSongsEndReached == true
+                         
+                         if (!isEndReached) {
+                             // Trigger Load More when visible
+                             LaunchedEffect(Unit) {
+                                  playMusicViewModel?.loadMoreArtistSongs(playlistId)
+                             }
+                         }
+                    }
+                }
+
                 item {
                     Spacer(modifier = Modifier.height(130.dp)) // Padding bawah cukup besar
                 }
@@ -676,16 +700,3 @@ private fun formatDuration(ms: Long): String {
         else -> "${seconds} dtk"
     }
 }
-
-
-@Preview(showBackground = true)
-@Composable
-private fun PreviewPlaylistDetailScreen() {
-    PlaylistDetailScreen(
-        songs = mockSongs,
-        playlistName = "Music Yang Disukai",
-        playlistCoverUrl = "https://i.pinimg.com/474x/f7/7f/85/f77f8594da3b7c81e095df0b54ea9f86.jpg",
-        playMusicViewModel = null // Beri null untuk preview
-    )
-}
-

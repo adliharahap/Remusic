@@ -18,11 +18,13 @@ fun AppNavGraph(
     startDestination: String,
     onGoogleSignInClick: () -> Unit,
     notificationRoute: String?,
+    onRouteConsumed: () -> Unit = {},
     playMusicViewModel: PlayMusicViewModel
     ) {
     LaunchedEffect(notificationRoute) {
         if (notificationRoute != null) {
             navController.navigate(notificationRoute)
+            onRouteConsumed()
         }
     }
     //startDestination = startDestination

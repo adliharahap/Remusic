@@ -79,7 +79,7 @@ private fun ArtistCircle(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clickable { onClick() }
-            .padding(vertical = 8.dp)
+            .padding(vertical = 2.dp)
     ) {
         // Artist photo with gradient border
         AsyncImage(
@@ -87,7 +87,7 @@ private fun ArtistCircle(
             contentDescription = artist.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(80.dp)
+                .size(100.dp)
                 .shadow(
                     elevation = 8.dp,
                     shape = CircleShape,
@@ -95,14 +95,8 @@ private fun ArtistCircle(
                 )
                 .clip(CircleShape)
                 .border(
-                    width = 2.5.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF9C27B0),
-                            Color(0xFF673AB7),
-                            Color(0xFF3F51B5)
-                        )
-                    ),
+                    width = 1.5.dp,
+                    color = Color.White,
                     shape = CircleShape
                 )
         )
@@ -119,7 +113,6 @@ private fun ArtistCircle(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.size(80.dp, 40.dp)
         )
     }
 }

@@ -28,6 +28,7 @@ import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import io.github.jan.supabase.auth.auth
 import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.model.Artist
+import com.example.remusic.data.model.ArtistDetails
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,6 +72,13 @@ data class PlayerUiState(
     val debugStatus: String = "Preparing...",
     val errorMessage: String? = null,
     val isLiked: Boolean = false,
+    val isArtistFollowed: Boolean = false, // New State
+    
+    // --- Artist Songs Pagination ---
+    val artistSongs: List<SongWithArtist> = emptyList(),
+    val isArtistSongsLoading: Boolean = false,
+    val artistSongsEndReached: Boolean = false,
+    val artistSongsPage: Int = 0, // 0-indexed page or use offset directly // New State
     val uploader: User? = null,
     val playlistSubtitle: String = "Memainkan Dari Playlist", // Default
     
@@ -86,7 +94,12 @@ data class PlayerUiState(
     val selectedSongForQueueOptions: SongWithArtist? = null,
     
     // Snackbar State for Queue Info
-    val showQueueInfoSnackbar: Boolean = false
+    // Snackbar State for Queue Info
+    val showQueueInfoSnackbar: Boolean = false,
+
+    // Artist Details State (For Playlist Header)
+    val artistDetails: ArtistDetails? = null,
+    val isLoadingArtistDetails: Boolean = false
 )
 
 
@@ -561,42 +574,34 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun fetchFullSongDetails(songId: String, forceUpdate: Boolean = false) {
-        // 1. CLEANUP JOB LAMA
         fetchLyricsJob?.cancel()
         searchDebounceJob?.cancel()
-
-        // 2. DEBOUNCE
         searchDebounceJob = viewModelScope.launch(Dispatchers.IO) {
             delay(1000)
-
             fetchLyricsJob = launch {
-                // Nyalakan Loading
                 _uiState.update { it.copy(isLoadingLyrics = true) }
-
                 try {
-                    // --- RETRY LOOP LOGIC ---
                     var attempt = 1
                     val maxAttempts = 2
                     var isSuccess = false
 
                     while (attempt <= maxAttempts && !isSuccess) {
+
                         if (!isActive) break
 
                         try {
                             Log.d("DEBUG_PLAYER", "🔄 FETCH Attempt #$attempt untuk ID: $songId")
-
                             val timeoutMs = if (attempt == 1) 5000L else 10000L
                             val fullSongData = withTimeout(timeoutMs) {
                                 repository.getFullSongDetails(songId)
                             }
-
                             ensureActive()
 
                             if (fullSongData != null) {
+
                                 _uiState.update { state ->
                                     if (state.currentSong?.song?.id == songId) {
                                         state.copy(
-                                            // Loading dimatikan di finally, jadi disini update data aja
                                             currentSong = state.currentSong.copy(
                                                 song = state.currentSong.song.copy(
                                                     lyrics = fullSongData.lyrics,
@@ -605,59 +610,51 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                                 )
                                             )
                                         )
-                                    } else {
-                                        state
-                                    } 
+                                    } else state
                                 }
 
-                                // --- BARU: Fetch Artist Details ---
+                                // FETCH ARTIST
                                 fullSongData.artistId?.let { artistId ->
                                     val artistDetails = repository.fetchArtistDetails(artistId)
                                     if (artistDetails != null) {
                                         _uiState.update { state ->
                                             if (state.currentSong?.song?.id == songId) {
                                                 state.copy(
-                                                    currentSong = state.currentSong.copy(artist = artistDetails)
+                                                    currentSong = state.currentSong.copy(
+                                                        artist = artistDetails
+                                                    )
                                                 )
-                                            } else {
-                                                state
-                                            }
+                                            } else state
                                         }
                                         Log.d("DEBUG_PLAYER", "✅ Artist Fetched: ${artistDetails.name}")
+                                        checkIfArtistFollowed(artistDetails.id)
                                     }
+                                    isSuccess = true
                                 }
-                                // ----------------------------------
-                                isSuccess = true
                             } else {
                                 Log.w("DEBUG_PLAYER", "⚠️ Data server null. Stop retry.")
                                 break
                             }
+
                         } catch (e: Exception) {
-                            if (e is kotlinx.coroutines.CancellationException) throw e // Lempar ke blok finally luar
+                            if (e is kotlinx.coroutines.CancellationException) throw e
                             Log.w("DEBUG_PLAYER", "❌ Gagal Percobaan #$attempt: ${e.message}")
                             if (attempt < maxAttempts) delay(2000)
                         }
                         attempt++
                     }
+
                 } catch (e: Exception) {
-                    // Log error global jika ada (selain cancel)
                     if (e !is kotlinx.coroutines.CancellationException) {
                         Log.e("DEBUG_PLAYER", "❌ CRASH FETCH LIRIK: ${e.message}")
                     }
                 } finally {
                     _uiState.update { state ->
-                        // Cek Cerdas: Hanya matikan loading jika lagu yang aktif ADALAH lagu request ini.
-                        // Jangan sampai kita matikan loading punya lagu selanjutnya (Song B) karena Song A dicancel.
                         if (state.currentSong?.song?.id == songId) {
                             Log.d("DEBUG_PLAYER", "🏁 FETCH SELESAI/CANCEL: Matikan Loading untuk $songId")
                             state.copy(isLoadingLyrics = false)
-                        } else {
-                            // Kalau lagunya udah beda, jangan sentuh state loadingnya.
-                            state
-                        }
+                        } else state
                     }
-
-                    // Setelah dapat detail lagu (termasuk uploaderUserId), ambil detail uploader
                     _uiState.value.currentSong?.song?.uploaderUserId?.let { uploaderId ->
                         fetchUploaderDetails(uploaderId)
                     }
@@ -1530,6 +1527,73 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
     
+    // --- ARTIST DETAILS FETCHING (For Playlist Header) ---
+    fun fetchArtistDetailsForHeader(artistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLoadingArtistDetails = true, artistDetails = null) }
+            
+            // Get Current User ID from Supabase (Single Source of Truth)
+            val user = SupabaseManager.client.auth.currentUserOrNull()
+            val userId = user?.id
+            
+            if (userId != null) {
+                val details = repository.getArtistDetails(userId, artistId)
+                _uiState.update { 
+                    it.copy(
+                        isLoadingArtistDetails = false,
+                        artistDetails = details
+                    ) 
+                }
+            } else {
+                 _uiState.update { it.copy(isLoadingArtistDetails = false) }
+            }
+        }
+    }
+    
+    // Toggle Follow from Header
+    fun toggleFollowFromHeader(artistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val user = SupabaseManager.client.auth.currentUserOrNull() ?: return@launch
+            val currentDetails = _uiState.value.artistDetails ?: return@launch
+            
+            val isCurrentlyFollowed = currentDetails.isFollowed // Status SAAT INI
+            
+            // 1. Optimistic Update (Header)
+            _uiState.update { 
+                it.copy(
+                    artistDetails = currentDetails.copy(
+                        isFollowed = !isCurrentlyFollowed,
+                        followerCount = if (!isCurrentlyFollowed) 
+                            currentDetails.followerCount + 1 
+                        else 
+                            currentDetails.followerCount - 1
+                    )
+                ) 
+            }
+            
+            // 2. Sync Player State (Jika artist yang di-follow === artist yang sedang diputar)
+            val currentPlayingArtistId = _uiState.value.currentSong?.artist?.id
+            if (currentPlayingArtistId == artistId) {
+                _uiState.update { it.copy(isArtistFollowed = !isCurrentlyFollowed) }
+            }
+
+            try {
+                // 3. Call Repo (Pass Current Status, Repo will Toggle)
+                repository.toggleFollowArtist(user.id, artistId, isCurrentlyFollowed)
+                
+            } catch (e: Exception) {
+                // Rollback if failed
+                _uiState.update { state ->
+                    state.copy(
+                        artistDetails = currentDetails,
+                         // Rollback Player State too if synced
+                        isArtistFollowed = if (state.currentSong?.artist?.id == artistId) isCurrentlyFollowed else state.isArtistFollowed
+                    ) 
+                }
+            }
+        }
+    }
+    
     // --- Global Queue Options Helpers ---
     fun showQueueOptions(song: SongWithArtist) {
         _uiState.update { it.copy(selectedSongForQueueOptions = song) }
@@ -1541,5 +1605,102 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissQueueInfoSnackbar() {
         _uiState.update { it.copy(showQueueInfoSnackbar = false) }
+    }
+
+    // --- LOGIC: ARTIST FOLLOW ---
+    private fun checkIfArtistFollowed(artistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Ambil User ID dari sesi (butuh login)
+                val user = SupabaseManager.client.auth.currentUserOrNull()
+                if (user != null) {
+                    val isFollowed = repository.isArtistFollowed(user.id, artistId)
+                    _uiState.update { it.copy(isArtistFollowed = isFollowed) }
+                } else {
+                    _uiState.update { it.copy(isArtistFollowed = false) }
+                }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "❌ Gagal cek follow status: ${e.message}")
+            }
+        }
+    }
+
+    fun toggleFollowArtist() {
+        val currentArtist = _uiState.value.currentSong?.artist ?: return
+        val isCurrentlyFollowed = _uiState.value.isArtistFollowed
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val user = SupabaseManager.client.auth.currentUserOrNull()
+                if (user != null) {
+                    // Optimistic Update (UI duluan biar cepet)
+                    _uiState.update { it.copy(isArtistFollowed = !isCurrentlyFollowed) }
+
+                    repository.toggleFollowArtist(user.id, currentArtist.id, isCurrentlyFollowed)
+                    
+                    // Re-check for consistency (optional, but good for sync)
+                    // checkIfArtistFollowed(currentArtist.id) 
+                } else {
+                    Log.w("PlayMusicViewModel", "User belum login, tidak bisa follow artist.")
+                    // TODO: Show login snackbar?
+                }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "❌ Gagal toggle follow: ${e.message}")
+                // Rollback UI jika gagal
+                _uiState.update { it.copy(isArtistFollowed = isCurrentlyFollowed) }
+            }
+        }
+    }
+    // Fix: Removed stray closing brace
+
+    // --- Artist Songs Pagination Logic ---
+    
+    fun fetchArtistSongs(artistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Reset State for new artist
+            _uiState.update { 
+                it.copy(
+                    artistSongs = emptyList(),
+                    isArtistSongsLoading = true,
+                    artistSongsEndReached = false,
+                    artistSongsPage = 0
+                ) 
+            }
+
+            val limit = 100
+            val newSongs = repository.getSongsByArtistPagination(artistId, limit = limit, offset = 0)
+
+            _uiState.update { 
+                it.copy(
+                    artistSongs = newSongs,
+                    isArtistSongsLoading = false,
+                    artistSongsEndReached = newSongs.size < limit,
+                    artistSongsPage = 1 // Next page index
+                ) 
+            }
+        }
+    }
+
+    fun loadMoreArtistSongs(artistId: String) {
+        if (_uiState.value.isArtistSongsLoading || _uiState.value.artistSongsEndReached) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isArtistSongsLoading = true) }
+
+            val limit = 100
+            val currentPage = _uiState.value.artistSongsPage
+            val offset = currentPage * limit
+            
+            val newSongs = repository.getSongsByArtistPagination(artistId, limit = limit, offset = offset)
+
+            _uiState.update { state ->
+                state.copy(
+                    artistSongs = state.artistSongs + newSongs, // Append info
+                    isArtistSongsLoading = false,
+                    artistSongsEndReached = newSongs.size < limit,
+                    artistSongsPage = currentPage + 1
+                )
+            }
+        }
     }
 }

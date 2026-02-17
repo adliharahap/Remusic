@@ -46,6 +46,10 @@ import androidx.compose.runtime.LaunchedEffect
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.QueueSongCard
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 
 // Data class lagu
 data class Song2(
@@ -59,10 +63,76 @@ data class Song2(
 @Composable
 fun SearchScreen(
     searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
-    playMusicViewModel: com.example.remusic.viewmodel.playmusic.PlayMusicViewModel, // Add this
-    isSearchActive: Boolean = false, // Hoisted State
-    onSearchActiveChange: (Boolean) -> Unit = {}, // State Change Callback
-    onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> }
+    playMusicViewModel: com.example.remusic.viewmodel.playmusic.PlayMusicViewModel,
+    isSearchActive: Boolean = false,
+    onSearchActiveChange: (Boolean) -> Unit = {}
+) {
+    // Create nested NavController for Search screen
+    val searchNavController = rememberNavController()
+
+    androidx.navigation.compose.NavHost(
+        navController = searchNavController,
+        startDestination = com.example.remusic.navigation.SearchRoute.MAIN,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Main Search Screen
+        composable(com.example.remusic.navigation.SearchRoute.MAIN) {
+            SearchMainScreen(
+                searchViewModel = searchViewModel,
+                playMusicViewModel = playMusicViewModel,
+                isSearchActive = isSearchActive,
+                onSearchActiveChange = onSearchActiveChange,
+                onSongClick = { song, query ->
+                    playMusicViewModel.playFromSearch(song, query)
+                },
+                onArtistClick = { artistId ->
+                    // Navigate to local playlist detail
+                    searchNavController.navigate(
+                        com.example.remusic.navigation.SearchRoute.createRoute(
+                            id = artistId,
+                            type = "ARTIST"
+                        )
+                    )
+                }
+            )
+        }
+
+        // Playlist Detail Screen (nested in Search)
+        composable(
+            route = com.example.remusic.navigation.SearchRoute.PLAYLIST_DETAIL,
+            arguments = listOf(
+                navArgument(com.example.remusic.navigation.SearchRoute.ARGS_ID) { type = NavType.StringType },
+                navArgument(com.example.remusic.navigation.SearchRoute.ARGS_PLAYLIST_TYPE) { 
+                    type = NavType.StringType
+                    defaultValue = "AUTO"
+                }
+            )
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString(com.example.remusic.navigation.SearchRoute.ARGS_ID) ?: ""
+            val typeString = backStackEntry.arguments?.getString(com.example.remusic.navigation.SearchRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            val type = PlaylistType.valueOf(typeString)
+
+            PlaylistDetailScreen(
+                songs = emptyList(), // Will be fetched by detail screen
+                playlistName = "", // Will be fetched
+                playlistCoverUrl = "", // Will be fetched
+                playlistType = type,
+                playlistId = id,
+                playMusicViewModel = playMusicViewModel
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchMainScreen(
+    searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel,
+    playMusicViewModel: com.example.remusic.viewmodel.playmusic.PlayMusicViewModel,
+    isSearchActive: Boolean = false,
+    onSearchActiveChange: (Boolean) -> Unit = {},
+    onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> },
+    onArtistClick: (String) -> Unit = {}
 ) {
     // Local state for emptiness check only
     var showEmptyState by remember { mutableStateOf(false) }
@@ -367,7 +437,8 @@ fun SearchScreen(
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                                 .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
                                 .clickable { 
-                                    // Handle Artist Click (e.g. go to artist page)
+                                    // Navigate to Artist Playlist Detail Screen
+                                    onArtistClick(topArtist!!.id)
                                 }
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -417,7 +488,7 @@ fun SearchScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { /* TODO: Go to Artist Profile */ }
+                                    .clickable { onArtistClick(artist.id) }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {

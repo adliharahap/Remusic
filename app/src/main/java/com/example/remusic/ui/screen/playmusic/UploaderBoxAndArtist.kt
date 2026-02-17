@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.*
@@ -42,8 +43,8 @@ fun WavyText(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "WavyTextTransition")
     
-    // Duration of the wave cycle: 4000ms.
-    val totalCycle = 4000
+    // Duration of the wave cycle: 8000ms.
+    val totalCycle = 8000
     
     Row(modifier = modifier) {
         text.forEachIndexed { index, char ->
@@ -80,7 +81,9 @@ fun WavyText(
 @Composable
 fun UploaderBoxAndArtist(
     artist: Artist?,
-    uploader: User?
+    uploader: User?,
+    isFollowed: Boolean = false,
+    onToggleFollow: () -> Unit = {}
 ) {
     // 1. DELAYED STATE LOGIC (Prevent flickering to 'Unknown' during transitions)
     var displayedArtist by remember { mutableStateOf<Artist?>(null) }
@@ -201,16 +204,59 @@ fun UploaderBoxAndArtist(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            // Button Artist (Professional Design)
-                            OutlinedButton(
-                                onClick = {},
-                                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 0.dp),
-                                modifier = Modifier.height(38.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                            ) {
-                                Text("Lihat Playlist", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            // Button Row
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Button Lihat Playlist
+                                OutlinedButton(
+                                    onClick = {},
+                                    border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                                    shape = RoundedCornerShape(50),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                                ) {
+                                    Text("Lihat Playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                // Button Follow / Mengikuti
+                                if (isFollowed) {
+                                    // MENGIKUTI (Outlined, Green Text/Border)
+                                    OutlinedButton(
+                                        onClick = onToggleFollow,
+                                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(50),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(36.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Followed",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Diikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    // IKUTI (Filled Translucent White)
+                                    Button(
+                                        onClick = onToggleFollow,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color.White.copy(alpha = 0.2f),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(50),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Text("Ikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
@@ -274,18 +320,6 @@ fun UploaderBoxAndArtist(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Gambar Uploader (FANCY ROTATING RAINBOW BORDER)
-                        val infiniteRotation = rememberInfiniteTransition(label = "BorderRotation")
-                        val rotationAngle by infiniteRotation.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 360f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(3000, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "Rotation"
-                        )
-
                         Box(
                             modifier = Modifier
                                 .size(62.dp)
@@ -293,20 +327,16 @@ fun UploaderBoxAndArtist(
                                 .then(
                                     if (isOwner) {
                                         Modifier
-                                            .graphicsLayer(rotationZ = rotationAngle)
                                             .background(
-                                                brush = Brush.sweepGradient(
-                                                    listOf(
-                                                        Color(0xFFBF953F), // Emas Gelap (Dark Gold)
-                                                        Color(0xFFFCF6BA), // Emas Pucat Mengkilap (Light Gold)
-                                                        Color(0xFFB38728), // Emas Murni (Gold)
-                                                        Color(0xFFFBF5B7), // Putih Kekuningan (Pale Gold)
-                                                        Color(0xFFAA771C), // Bronze/Dark Gold
-                                                        Color(0xFFBF953F)  // Balik ke awal (Loop)
+                                                brush = Brush.linearGradient(
+                                                    colors = listOf(
+                                                        Color(0xFFE91E63),
+                                                        Color(0xFF9C27B0),
+                                                        Color(0xFF3F51B5)
                                                     )
                                                 )
                                             )
-                                            .padding(3.5.dp)
+                                            .padding(2.5.dp)
                                     } else if (isUploaderRole) {
                                         Modifier
                                             .background(Color(0xFF3897F0))
@@ -325,7 +355,6 @@ fun UploaderBoxAndArtist(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .graphicsLayer(rotationZ = if (isOwner) -rotationAngle else 0f) // Keep image upright
                             )
                         }
 
@@ -354,11 +383,11 @@ fun UploaderBoxAndArtist(
                             // WAVY ANIMATION FOR ROLE TEXT (Wavy cycle: 4s total, 1s action + 3s pause)
                             if (isOwner) {
                                 WavyText(
-                                    text = uploaderRole,
+                                    text = "Remusic Official $uploaderRole",
                                     style = MaterialTheme.typography.labelLarge.copy(
-                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = AppFont.Helvetica,
                                         letterSpacing = 3.sp,
-                                        fontSize = 15.sp
+                                        fontSize = 14.sp
                                     ),
                                     color = roleColor
                                 )
@@ -435,7 +464,9 @@ fun PreviewCombinedCardLuxury() {
                 uploader = User(
                     displayName = "Remusic Admin",
                     role = "owner"
-                )
+                ),
+                isFollowed = true,
+                onToggleFollow = {}
             )
         }
     }

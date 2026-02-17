@@ -110,7 +110,9 @@ fun NowPlaying(
     onLikeClick: () -> Unit,
     onSeek: (Float) -> Unit,
     uploader: User? = null,
-    isSearchContext: Boolean = false
+    isSearchContext: Boolean = false,
+    isArtistFollowed: Boolean = false,
+    onToggleFollowArtist: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
@@ -878,7 +880,9 @@ fun NowPlaying(
                 if (songWithArtist != null) {
                     UploaderBoxAndArtist(
                         artist = songWithArtist.artist,
-                        uploader = uploader
+                        uploader = uploader,
+                        isFollowed = isArtistFollowed,
+                        onToggleFollow = onToggleFollowArtist
                     )
                 }
 

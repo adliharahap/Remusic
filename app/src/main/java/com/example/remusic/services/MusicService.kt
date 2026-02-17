@@ -16,6 +16,7 @@ import com.example.remusic.utils.RemusicCache // Import file utils tadi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
+
 @UnstableApi
 class MusicService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
@@ -107,11 +108,24 @@ class MusicService : MediaSessionService() {
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(this)
                     .setDataSourceFactory(cacheDataSourceFactory) // <--- POWER OF CACHE
-                    .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy()) // <--- PANTANG MENYERAH!
+            .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy()) // <--- PANTANG MENYERAH!
             )
             .build()
 
+        // Create an intent to launch MainActivity
+        val sessionActivityIntent = Intent(this, com.example.remusic.MainActivity::class.java).apply {
+            putExtra("destination_route", "playmusic")
+            // Ensure proper flags for singleTop behavior if needed, though launchMode handles it
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            sessionActivityIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         mediaSession = MediaSession.Builder(this, player)
+            .setSessionActivity(pendingIntent)
             .setCallback(mediaSessionCallback)
             .build()
     }

@@ -19,6 +19,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.Instant
 
+// Data Models
+import com.example.remusic.data.model.ArtistDetails
+import com.example.remusic.data.model.SongWithArtist
+import io.github.jan.supabase.postgrest.query.Order
+
 class MusicRepository(private val musicDao: MusicDao) {
 
     // Tag Log biar gampang difilter: ketik "DEBUG_PLAYER" di Logcat
@@ -30,6 +35,7 @@ class MusicRepository(private val musicDao: MusicDao) {
     // --- MEMORY CACHE (Hilang saat app close) ---
     private val memoryUserCache = mutableMapOf<String, User>()
     private val memoryArtistCache = mutableMapOf<String, Artist>()
+    private val memoryFollowCache = mutableMapOf<String, Boolean>() // Cache untuk status follow artist
 
     // --- LOGIC 1: RESOLVE URL (DIRECT TELEGRAM WITH RETRY) ---
     suspend fun getPlayableUrl(songId: String, title: String, telegramFileId: String?, fallbackUrl: String?, artistId: String?): ResolvedSongUrl {
@@ -598,6 +604,161 @@ class MusicRepository(private val musicDao: MusicDao) {
             Log.d(TAG, "🆙 [PLAY COUNT] Berhasil increment play count untuk lagu: $songId")
         } catch (e: Exception) {
             Log.e(TAG, "❌ [PLAY COUNT ERROR] Gagal increment play count: ${e.message}")
+        }
+    }
+
+    // --- LOGIC 7: FOLLOW ARTIST (WITH CACHE) ---
+    suspend fun isArtistFollowed(userId: String, artistId: String): Boolean {
+        // 1. Cek Cache Memory Dulu
+        if (memoryFollowCache.containsKey(artistId)) {
+            Log.d(TAG, "⚡ [FOLLOW CACHE HIT] Status follow $artistId diambil dari cache.")
+            return memoryFollowCache[artistId] ?: false
+        }
+
+        return try {
+            // 2. Fetch ke Database
+            val result = SupabaseManager.client
+                .from("artist_followers")
+                .select(columns = Columns.list("id")) {
+                    filter {
+                        eq("user_id", userId)
+                        eq("artist_id", artistId)
+                    }
+                    limit(1)
+                }
+
+            val data = result.decodeList<JsonObject>()
+            val isFollowed = data.isNotEmpty()
+
+            // 3. Simpan ke Cache
+            memoryFollowCache[artistId] = isFollowed
+            Log.d(TAG, "🌍 [FOLLOW FETCH] Status follow $artistId fetched: $isFollowed")
+            isFollowed
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [FOLLOW CHECK ERROR]: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun toggleFollowArtist(userId: String, artistId: String, isFollowed: Boolean) {
+        try {
+            if (isFollowed) {
+                // UNFOLLOW (DELETE)
+                SupabaseManager.client
+                    .from("artist_followers")
+                    .delete {
+                        filter {
+                            eq("user_id", userId)
+                            eq("artist_id", artistId)
+                        }
+                    }
+                Log.d(TAG, "💔 [UNFOLLOW] Berhenti mengikuti artist: $artistId")
+            } else {
+                // FOLLOW (INSERT)
+                val data = mapOf("user_id" to userId, "artist_id" to artistId)
+                SupabaseManager.client
+                    .from("artist_followers")
+                    .insert(data)
+                Log.d(TAG, "❤️ [FOLLOW] Mulai mengikuti artist: $artistId")
+            }
+
+            // Update Cache sesuai aksi
+            memoryFollowCache[artistId] = !isFollowed
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [FOLLOW TOGGLE ERROR]: ${e.message}")
+            throw e
+        }
+    }
+
+    // --- LOGIC 8: GET AGGREGATED ARTIST DETAILS (HEADER) ---
+    suspend fun getArtistDetails(userId: String, artistId: String): ArtistDetails? {
+        Log.d(TAG, "📊 [ARTIST DETAILS] Meminta data lengkap artist: $artistId")
+
+        return try {
+            // 1. Ambil Info Artist (Name, Bio, Photo)
+            val artistInfo = fetchArtistDetails(artistId) ?: return null
+
+            // 2. Count Followers
+            val followersCount = SupabaseManager.client
+                .from("artist_followers")
+                .select(columns = Columns.list()) {
+                    count(io.github.jan.supabase.postgrest.query.Count.EXACT)
+                    filter { eq("artist_id", artistId) }
+                }.countOrNull() ?: 0L
+
+            // 3. Count Total Songs & Sum Total Plays
+            // Karena Supabase free tier ga support sum() langsung via API client mudah,
+            // kita ambil kolom play_count semua lagunya lalu sum manual.
+            // Jika lagunya ribuan, ini bad practice. Tapi untuk skala kecil ok.
+            // Alternative: Buat RPC 'get_artist_stats(artist_id)' di backend.
+            val songsStats = SupabaseManager.client
+                .from("songs")
+                .select(columns = Columns.list("play_count")) {
+                    filter { eq("artist_id", artistId) }
+                }
+                .decodeList<JsonObject>() // Decode partial
+
+            val totalSongs = songsStats.size
+            val totalPlays = songsStats.sumOf {
+                it["play_count"].toString().toLongOrNull() ?: 0L
+            }
+
+            // 4. Check isFollowed
+            val isFollowed = isArtistFollowed(userId, artistId)
+
+            Log.d(TAG, "📊 [ARTIST STATS] $followersCount Follows, $totalSongs Songs, $totalPlays Plays")
+
+            ArtistDetails(
+                id = artistInfo.id,
+                name = artistInfo.name,
+                description = artistInfo.description,
+                photoUrl = artistInfo.photoUrl,
+                followerCount = followersCount,
+                totalPlays = totalPlays,
+                totalSongs = totalSongs,
+                isFollowed = isFollowed
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [ARTIST DETAILS ERROR] Gagal ambil aggregated details: ${e.message}")
+            null
+        }
+    }
+
+    // --- LOGIC 9: GET ARTIST SONGS WITH PAGINATION ---
+    suspend fun getSongsByArtistPagination(
+        artistId: String, 
+        limit: Int = 20, 
+        offset: Int = 0 
+    ): List<SongWithArtist> {
+        return try {
+            Log.d(TAG, "🎵 [ARTIST SONGS] Fetching songs for $artistId (Limit: $limit, Offset: $offset)")
+            
+            val songs = SupabaseManager.client
+                .from("songs")
+                .select(columns = Columns.list(
+                    "id", "title", "artist_id", "cover_url", "audio_url", "duration_ms", "created_at", "lyrics", "lyrics_updated_at", "telegram_audio_file_id", "canvas_url"
+                )) {
+                    filter {
+                        eq("artist_id", artistId)
+                    }
+                    order("created_at", order = Order.DESCENDING) // Lagu terbaru dulu
+                    range(offset.toLong(), (offset + limit - 1).toLong())
+                }.decodeList<Song>()
+            
+            // Kita butuh Info Artist untuk setiap SongWithArtist.
+            // Efisiensi: Fetch Artist Sekali saja karena sama semua.
+            val artist = fetchArtistDetails(artistId) ?: return emptyList()
+
+            songs.map { song ->
+                SongWithArtist(song = song, artist = artist)
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [ARTIST SONGS ERROR]: ${e.message}")
+            emptyList()
         }
     }
 }

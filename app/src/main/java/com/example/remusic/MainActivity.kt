@@ -86,6 +86,19 @@ class MainActivity : ComponentActivity() {
 
     private var showDialog by mutableStateOf(false)
     private var errorMessage by mutableStateOf("")
+    
+    // State global untuk menampung intent baru (workaround simple untuk Compose)
+    private var pendingNavigationRoute by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) { 
+        super.onNewIntent(intent)
+        setIntent(intent) // Update intent terkini
+        val route = intent.getStringExtra("destination_route")
+        if (route != null) {
+            Log.d("MainActivity", "🚀 onNewIntent received route: $route")
+            pendingNavigationRoute = route
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,6 +123,8 @@ class MainActivity : ComponentActivity() {
 
                 // State untuk menyimpan tujuan awal (default null dulu)
                 var startDestination by remember { mutableStateOf<String?>(null) }
+
+
 
                 // State untuk loading screen (biar layar gak putih doang)
                 var isLoadingSession by remember { mutableStateOf(true) }
@@ -216,7 +231,13 @@ class MainActivity : ComponentActivity() {
                                                 popUpTo("login") { inclusive = true }
                                             }
                                         } },
-                                        notificationRoute = notificationRoute,
+                                        // Prioritaskan pendingNavigationRoute (dari onNewIntent) jika ada,
+                                        // jika tidak, pakai notificationRoute (dari intent awal)
+                                        notificationRoute = pendingNavigationRoute ?: notificationRoute,
+                                        onRouteConsumed = {
+                                            pendingNavigationRoute = null
+                                            intent.removeExtra("destination_route") // Optional: bersihkan intent lama juga
+                                        },
                                         playMusicViewModel = playMusicViewModel
                                     )
 

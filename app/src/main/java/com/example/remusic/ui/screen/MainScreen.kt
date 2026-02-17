@@ -46,6 +46,14 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.example.remusic.ui.screen.playmusic.QueueOptionsBottomSheet
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
+import com.example.remusic.ui.components.ExitDialog
+import androidx.activity.compose.BackHandler
+import com.example.remusic.navigation.HomeRoute
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import android.app.Activity
+import androidx.compose.runtime.mutableStateOf // Ensure this is imported
+import androidx.compose.runtime.remember // Ensure this is imported
 
 // ------ Sealed class untuk item navigasi ------
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -150,7 +158,8 @@ fun BottomNavGraph(
     playMusicViewModel: PlayMusicViewModel,
     isSearchActive: Boolean, // Receive state
     onSearchActiveChange: (Boolean) -> Unit, // Receive transition callback
-    onCreatePlaylistClick: () -> Unit // New callback
+    onCreatePlaylistClick: () -> Unit, // New callback
+    onAtHomeRoot: (Boolean) -> Unit = {} // NEW: Callback for home root status
 ) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
         composable(BottomNavItem.Home.route) { 
@@ -166,7 +175,8 @@ fun BottomNavGraph(
                         restoreState = true
                     }
                 },
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onAtHomeRoot = onAtHomeRoot // Pass the callback
             ) 
         }
         
@@ -175,10 +185,7 @@ fun BottomNavGraph(
             com.example.remusic.ui.screen.SearchScreen(
                 playMusicViewModel = playMusicViewModel, // Pass ViewModel
                 isSearchActive = isSearchActive, // Pass hoisted state
-                onSearchActiveChange = onSearchActiveChange, // Pass callback
-                onSongClick = { song, query ->
-                    playMusicViewModel.playFromSearch(song, query)
-                }
+                onSearchActiveChange = onSearchActiveChange // Pass callback
             )
         }
         
@@ -199,6 +206,9 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
     
     // Hoist Search State here
     var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    // Track if we're at the root of HomeScreen (not in nested navigation)
+    var isAtHomeRoot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
 
     // BottomSheet State
     var showCreatePlaylistSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -226,7 +236,8 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                 playMusicViewModel = playMusicViewModel,
                 isSearchActive = isSearchActive,
                 onSearchActiveChange = { isSearchActive = it },
-                onCreatePlaylistClick = { showCreatePlaylistSheet = true }
+                onCreatePlaylistClick = { showCreatePlaylistSheet = true },
+                onAtHomeRoot = { isAtRoot -> isAtHomeRoot = isAtRoot } // Pass the callback
             )
         }
 
@@ -246,6 +257,28 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                 navController = navController,
                 onSearchReset = { isSearchActive = false }, // Reset to inactive when tab clicked
                 onCreatePlaylistClick = { showCreatePlaylistSheet = true }
+            )
+        }
+
+        // --- EXIT CONFIRMATION MODAL ---
+
+        val context = LocalContext.current
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = navBackStackEntry?.destination?.route
+        var showExitDialog by remember { mutableStateOf(false) }
+
+        // Only show exit dialog when at Home tab AND at root home screen
+        BackHandler(enabled = currentRoute == BottomNavItem.Home.route && isAtHomeRoot) {
+            showExitDialog = true
+        }
+
+        if (showExitDialog) {
+            ExitDialog(
+                onDismissRequest = { showExitDialog = false },
+                onConfirm = {
+                    showExitDialog = false
+                    (context as? Activity)?.finish()
+                }
             )
         }
 

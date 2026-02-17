@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,6 +46,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.remusic.data.UserManager
@@ -69,10 +72,21 @@ fun HomeScreen(
     // rootNavController removed, using callback instead for clarity
     homeViewModel: HomeViewModel = viewModel(),
     playMusicViewModel: PlayMusicViewModel,
-    onSearchClick: () -> Unit
+    onSearchClick: () -> Unit,
+    onAtHomeRoot: (Boolean) -> Unit = {} // NEW: Callback to notify if at root
 ) {
     // Buat NavController BARU untuk navigasi di dalam Home
     val homeNavController = rememberNavController()
+
+    // Track if we're at the root home screen
+    val navBackStackEntry by homeNavController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val isAtRoot = currentRoute == HomeRoute.MAIN
+    
+    // Notify parent about root status
+    LaunchedEffect(isAtRoot) {
+        onAtHomeRoot(isAtRoot)
+    }
 
     // HomeViewModel akan dibagikan ke semua layar di dalam nested NavHost ini
 
@@ -94,34 +108,78 @@ fun HomeScreen(
         // --- Layar 2: Tampilan Detail Playlist ---
         composable(
             route = HomeRoute.PLAYLIST_DETAIL,
-            arguments = listOf(navArgument(HomeRoute.ARGS_PLAYLIST_TITLE) { type = NavType.StringType })
+            arguments = listOf(
+                navArgument(HomeRoute.ARGS_ID) { type = NavType.StringType },
+                navArgument(HomeRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" }
+            )
         ) { backStackEntry ->
-            // Ambil judul playlist dari argumen navigasi
-            val playlistTitle = backStackEntry.arguments?.getString(HomeRoute.ARGS_PLAYLIST_TITLE) ?: ""
+            // Extract Arguments
+            val id = backStackEntry.arguments?.getString(HomeRoute.ARGS_ID) ?: ""
+            val typeString = backStackEntry.arguments?.getString(HomeRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            
+            val playlistType = try {
+                com.example.remusic.ui.screen.PlaylistType.valueOf(typeString)
+            } catch (e: Exception) {
+                com.example.remusic.ui.screen.PlaylistType.AUTO
+            }
 
-            // Ambil state dari HomeViewModel yang sama
+            // Ambil state dari HomeViewModel dan tentukan Data + Title
             val homeState by homeViewModel.uiState.collectAsState()
+            
+            var playlistTitle = "Loading..."
+            var playlistCoverUrl = ""
+            var songs: List<SongWithArtist> = emptyList()
 
-            // Tentukan data mana yang akan ditampilkan
-            val (songs, coverUrl) = when (val state = homeState) {
+            when (val state = homeState) {
                 is HomeUiState.Success -> {
-                    val songList = when (playlistTitle) {
-                        "Sering Kamu Putar" -> state.recentlyPlayed
-                        "Top Trending" -> state.topTrending
-                        "Most Loved" -> state.mostLoved
-                        else -> state.allSongsWithArtists.take(20)
+                    when (playlistType) {
+                        com.example.remusic.ui.screen.PlaylistType.ARTIST -> {
+                            // For ARTIST type, DON'T pass any songs - let pagination handle it
+                            songs = emptyList()
+                            
+                            // Get artist info from followedArtists list
+                            val artist = state.followedArtists.find { it.id == id }
+                            playlistTitle = artist?.name ?: "Unknown Artist"
+                            playlistCoverUrl = artist?.photoUrl ?: ""
+                        }
+                        com.example.remusic.ui.screen.PlaylistType.AUTO -> {
+                            // Map ID to Data
+                            when (id) {
+                                "recently_played" -> {
+                                    playlistTitle = "Sering Kamu Putar"
+                                    songs = state.recentlyPlayed
+                                }
+                                "top_trending" -> {
+                                    playlistTitle = "Top Trending"
+                                    songs = state.topTrending
+                                }
+                                "most_loved" -> {
+                                    playlistTitle = "Paling Banyak Disukai"
+                                    songs = state.mostLoved
+                                }
+                                else -> {
+                                    // Fallback / Unknown
+                                    playlistTitle = "Playlist"
+                                    songs = state.allSongsWithArtists.take(20)
+                                }
+                            }
+                            playlistCoverUrl = songs.firstOrNull()?.song?.coverUrl ?: ""
+                        }
+                        else -> {
+                            // Handle other types later
+                        }
                     }
-                    val cover = songList.firstOrNull()?.song?.coverUrl ?: ""
-                    Pair(songList, cover)
                 }
-                else -> Pair(emptyList<SongWithArtist>(), "")
+                else -> { /* Loading or Error */ }
             }
 
             // Panggil PlaylistDetailScreen
             PlaylistDetailScreen(
                 songs = songs,
                 playlistName = playlistTitle,
-                playlistCoverUrl = coverUrl,
+                playlistCoverUrl = playlistCoverUrl,
+                playlistType = playlistType,
+                playlistId = id, // Pass ID for pagination
                 playMusicViewModel = playMusicViewModel
             )
         }
@@ -287,22 +345,14 @@ private fun HomeMainScreen(
                             title = "Sering Kamu Putar",
                             displayItems = state.recentlyPlayed,
                             playMusicViewModel = playMusicViewModel,
+                            
                             onSeeAllClick = {
-                                homeNavController.navigate(HomeRoute.createRoute("Sering Kamu Putar"))
+                                homeNavController.navigate(
+                                    HomeRoute.createRoute("recently_played", "AUTO")
+                                )
                             },
                             onLongClick = { song ->
                                 playMusicViewModel.showQueueOptions(song)
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
-
-                    // 3. Artists You Follow
-                    if (state.followedArtists.isNotEmpty()) {
-                        FollowedArtistsSection(
-                            artists = state.followedArtists,
-                            onArtistClick = { artist ->
-                                // TODO: Navigate to artist detail
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
@@ -315,7 +365,9 @@ private fun HomeMainScreen(
                             displayItems = state.mostLoved,
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
-                                homeNavController.navigate(HomeRoute.createRoute("Most Loved"))
+                                homeNavController.navigate(
+                                    HomeRoute.createRoute("most_loved", "AUTO")
+                                )
                             },
                             onLongClick = { song ->
                                 playMusicViewModel.showQueueOptions(song)
@@ -331,7 +383,9 @@ private fun HomeMainScreen(
                             displayItems = state.topTrending,
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
-                                homeNavController.navigate(HomeRoute.createRoute("Top Trending"))
+                                homeNavController.navigate(
+                                    HomeRoute.createRoute("top_trending", "AUTO")
+                                )
                             },
                             onLongClick = { song ->
                                 playMusicViewModel.showQueueOptions(song)
@@ -346,6 +400,22 @@ private fun HomeMainScreen(
                             playlists = state.officialPlaylists,
                             onPlaylistClick = { playlist ->
                                 // TODO: Navigate to playlist detail
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
+                    // 3. Artists You Follow
+                    if (state.followedArtists.isNotEmpty()) {
+                        FollowedArtistsSection(
+                            artists = state.followedArtists,
+                            onArtistClick = { artist ->
+                                homeNavController.navigate(
+                                    HomeRoute.createRoute(
+                                        id = artist.id,
+                                        type = "ARTIST"
+                                    )
+                                )
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
