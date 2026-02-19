@@ -54,6 +54,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import com.example.remusic.data.HomeCacheManager
 import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.UserManager
 import com.example.remusic.navigation.AppNavGraph
@@ -71,9 +72,6 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     // Hapus variable auth: FirebaseAuth
@@ -104,6 +102,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         connectivityObserver = NetworkConnectivityObserver(applicationContext)
         SupabaseManager.initialize(applicationContext)
+        UserManager.init(applicationContext)         // Load cached user dari SharedPreferences
+        HomeCacheManager.init(applicationContext)    // Load cached home data dari SharedPreferences
 
         credentialManager = CredentialManager.create(this)
         NotificationUtils.createNotificationChannel(this)
@@ -131,8 +131,16 @@ class MainActivity : ComponentActivity() {
 
                 // Ambil status koneksi secara real-time
                 val status by connectivityObserver.observe().collectAsState(
-                    initial = ConnectivityObserver.Status.Available
+                    initial = ConnectivityObserver.Status.Lost
                 )
+
+                // LOGIKA SMART RETRY: Player Check
+                LaunchedEffect(status) {
+                    if (status == ConnectivityObserver.Status.Available) {
+                        Log.d("MainActivity", "🌐 Main: Internet Available -> Triggering Player Retry")
+                        playMusicViewModel.onConnectivityRestored()
+                    }
+                }
 
                 // LOGIKA BARU: Cek Login secara Asynchronous
                 LaunchedEffect (Unit) {
@@ -238,7 +246,8 @@ class MainActivity : ComponentActivity() {
                                             pendingNavigationRoute = null
                                             intent.removeExtra("destination_route") // Optional: bersihkan intent lama juga
                                         },
-                                        playMusicViewModel = playMusicViewModel
+                                        playMusicViewModel = playMusicViewModel,
+                                        connectivityObserver = connectivityObserver
                                     )
 
                                     // 3. Layer Paling Atas: Dialog Error (Tetap Overlay)
@@ -353,46 +362,24 @@ fun OfflineBanner(
     modifier: Modifier = Modifier,
     status: ConnectivityObserver.Status
 ) {
-    // State untuk status yang akan ditampilkan setelah delay (jika perlu)
-    var activeStatus by remember { mutableStateOf(ConnectivityObserver.Status.Available) }
+    // Derive visibility directly from status — no LaunchedEffect, no delay
+    val isOffline = status == ConnectivityObserver.Status.Lost ||
+                    status == ConnectivityObserver.Status.Unavailable
 
-    // Gunakan snapshotFlow + debounce logic manual (Versi Lebih Stabil)
-    LaunchedEffect(Unit) {
-        snapshotFlow { status }
-            .collectLatest { newStatus ->
-                when (newStatus) {
-                    ConnectivityObserver.Status.Limited,
-                    ConnectivityObserver.Status.Losing -> {
-                        // Tunda 5 detik untuk status "buruk" agar tidak flickering
-                        delay(5000)
-                        activeStatus = newStatus
-                    }
-                    else -> {
-                        // Langsung update untuk status Available, Lost, Unavailable
-                        activeStatus = newStatus
-                    }
-                }
-            }
+    val message = when (status) {
+        ConnectivityObserver.Status.Limited  -> "Koneksi Terbatas"
+        ConnectivityObserver.Status.Losing   -> "Koneksi Tidak Stabil"
+        else                                 -> "Tidak ada koneksi internet"
     }
 
-    val isVisible = activeStatus != ConnectivityObserver.Status.Available
-    
-    val message = when (activeStatus) {
-        ConnectivityObserver.Status.Limited -> "Koneksi Terbatas"
-        ConnectivityObserver.Status.Losing -> "Koneksi Tidak Stabil"
-        ConnectivityObserver.Status.Unavailable, ConnectivityObserver.Status.Lost -> "Tidak ada koneksi internet"
-        else -> ""
-    }
-
-    // Animasi biar munculnya halus (Slide dari bawah + Fade In)
     AnimatedVisibility(
-        visible = isVisible,
-        enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-        exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+        visible = isOffline,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier
     ) {
         Surface(
-            color = Color.Black,
+            color = Color(0xFFB00020),
             shape = androidx.compose.ui.graphics.RectangleShape,
             modifier = Modifier
                 .fillMaxWidth()

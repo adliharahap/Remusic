@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.Player
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import androidx.datastore.preferences.core.longPreferencesKey
 
 // Buat instance DataStore sebagai extension property pada Context
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -126,6 +127,32 @@ class UserPreferencesRepository(private val context: Context) {
             settings[LYRICS_ALIGN_KEY] = config.align.name
             settings[LYRICS_AUTO_SCALE_KEY] = config.autoScaleIfNoTranslation
             settings[LYRICS_SCALE_FACTOR_KEY] = config.scaleFactor
+        }
+        }
+
+    // --- PLAYBACK PERSISTENCE ---
+    private val LAST_SONG_ID_KEY = stringPreferencesKey("last_song_id")
+    private val LAST_POSITION_KEY = longPreferencesKey("last_position_ms")
+
+    val lastSongIdFlow: Flow<String?> = context.dataStore.data
+        .map { preferences ->
+            preferences[LAST_SONG_ID_KEY]
+        }
+
+    val lastPositionFlow: Flow<Long> = context.dataStore.data
+        .map { preferences ->
+            preferences[LAST_POSITION_KEY] ?: 0L
+        }
+
+    suspend fun saveLastSongId(songId: String) {
+        context.dataStore.edit { settings ->
+            settings[LAST_SONG_ID_KEY] = songId
+        }
+    }
+
+    suspend fun saveLastPosition(positionMs: Long) {
+        context.dataStore.edit { settings ->
+            settings[LAST_POSITION_KEY] = positionMs
         }
     }
 }

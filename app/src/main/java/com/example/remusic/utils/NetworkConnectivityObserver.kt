@@ -32,7 +32,7 @@ class NetworkConnectivityObserver(
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     super.onAvailable(network)
-                    launch { send(ConnectivityObserver.Status.Limited) } // Default to Limited until Validated
+                    launch { send(ConnectivityObserver.Status.Available) }
                 }
 
                 override fun onLosing(network: Network, maxMsToLive: Int) {

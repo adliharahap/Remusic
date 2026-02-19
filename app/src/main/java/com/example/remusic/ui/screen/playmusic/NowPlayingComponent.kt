@@ -112,7 +112,8 @@ fun NowPlaying(
     uploader: User? = null,
     isSearchContext: Boolean = false,
     isArtistFollowed: Boolean = false,
-    onToggleFollowArtist: () -> Unit = {}
+    onToggleFollowArtist: () -> Unit = {},
+    onLihatPlaylistClick: () -> Unit = {} // NEW: Navigate to artist playlist
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
@@ -882,7 +883,9 @@ fun NowPlaying(
                         artist = songWithArtist.artist,
                         uploader = uploader,
                         isFollowed = isArtistFollowed,
-                        onToggleFollow = onToggleFollowArtist
+                        onToggleFollow = onToggleFollowArtist,
+                        onLihatPlaylistClick = onLihatPlaylistClick,
+                        onSemuaLaguClick = onLihatPlaylistClick // Same action: go to artist detail
                     )
                 }
 

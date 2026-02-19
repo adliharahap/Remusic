@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.utils.ConnectivityObserver
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -70,11 +71,19 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 @Composable
 fun HomeScreen(
     // rootNavController removed, using callback instead for clarity
-    homeViewModel: HomeViewModel = viewModel(),
+    homeViewModel: HomeViewModel,
     playMusicViewModel: PlayMusicViewModel,
     onSearchClick: () -> Unit,
-    onAtHomeRoot: (Boolean) -> Unit = {} // NEW: Callback to notify if at root
+    onAtHomeRoot: (Boolean) -> Unit = {}, // Callback to notify if at root
+    homeResetTrigger: Int = 0,            // Increments to reset nested nav to root
+    connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available
 ) {
+    // Listen to connectivity changes and trigger refresh
+    LaunchedEffect(connectivityStatus) {
+        if (connectivityStatus == ConnectivityObserver.Status.Available) {
+            homeViewModel.onConnectivityRestored()
+        }
+    }
     // Buat NavController BARU untuk navigasi di dalam Home
     val homeNavController = rememberNavController()
 
@@ -86,6 +95,26 @@ fun HomeScreen(
     // Notify parent about root status
     LaunchedEffect(isAtRoot) {
         onAtHomeRoot(isAtRoot)
+    }
+
+    // --- Consume pending artist navigation from PlayMusic "Lihat Playlist" via SharedFlow ---
+    val playerUiState by playMusicViewModel.uiState.collectAsState()
+    LaunchedEffect(Unit) {
+        playMusicViewModel.artistNavigationFlow.collect { artistId ->
+            if (artistId != null && playerUiState.previousTab == "home") {
+                playMusicViewModel.consumePendingArtistNavigation()
+                homeNavController.navigate(
+                    HomeRoute.createRoute(id = artistId, type = "ARTIST")
+                )
+            }
+        }
+    }
+
+    // --- Reset nested nav to root when user returns to Home from another tab ---
+    LaunchedEffect(homeResetTrigger) {
+        if (homeResetTrigger > 0) {
+            homeNavController.popBackStack(HomeRoute.MAIN, inclusive = false)
+        }
     }
 
     // HomeViewModel akan dibagikan ke semua layar di dalam nested NavHost ini

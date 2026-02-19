@@ -1,26 +1,76 @@
 package com.example.remusic.data
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.remusic.data.model.User
 import io.github.jan.supabase.auth.auth
-// Import Supabase
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.delay
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 object UserManager {
 
     private val TAG = "RemusicAuth"
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private const val PREFS_NAME = "remusic_user_cache"
+    private const val KEY_USER = "cached_user"
+
+    private var prefs: SharedPreferences? = null
+
+    /** Harus dipanggil sekali saat app start (dari Application atau MainActivity) */
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // Load cached user ke memory saat inisialisasi
+        loadFromCache()
+    }
 
     var currentUser by mutableStateOf<User?>(null)
         private set
 
+    // ──────────────────────────────────────────────────
+    // Cache operations (SharedPreferences)
+    // ──────────────────────────────────────────────────
+
+    private fun loadFromCache() {
+        val raw = prefs?.getString(KEY_USER, null) ?: return
+        try {
+            currentUser = json.decodeFromString<User>(raw)
+            Log.d(TAG, "📦 [UserManager] User dimuat dari cache: ${currentUser?.displayName}")
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ [UserManager] Gagal parse cache user: ${e.message}")
+            prefs?.edit()?.remove(KEY_USER)?.apply()
+        }
+    }
+
+    private fun saveToCache(user: User) {
+        try {
+            val raw = json.encodeToString(user)
+            prefs?.edit()?.putString(KEY_USER, raw)?.apply()
+            Log.d(TAG, "💾 [UserManager] User disimpan ke cache: ${user.displayName}")
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ [UserManager] Gagal simpan cache user: ${e.message}")
+        }
+    }
+
+    private fun clearCache() {
+        prefs?.edit()?.remove(KEY_USER)?.apply()
+        Log.d(TAG, "🗑️ [UserManager] Cache user dibersihkan.")
+    }
+
+    // ──────────────────────────────────────────────────
+    // Network operations
+    // ──────────────────────────────────────────────────
+
     /**
-     * Mengambil data user dari tabel 'public.users' di Supabase dengan retry logic.
-     * Akan mencoba hingga 4 kali dengan delay 1 detik jika gagal.
+     * Fetch user dari Supabase dengan retry logic.
+     * Jika berhasil, simpan ke cache lokal.
      */
     suspend fun fetchCurrentUser(uid: String) {
         Log.d(TAG, "================================================================")
@@ -33,34 +83,28 @@ object UserManager {
             try {
                 if (attempt > 1) Log.d(TAG, "🔄 [UserManager] RETRY USER: Percobaan ke-$attempt...")
 
-                // Query ke Supabase
                 val user = SupabaseManager.client
                     .from("users")
                     .select(columns = Columns.ALL) {
-                        filter {
-                            eq("id", uid)
-                        }
+                        filter { eq("id", uid) }
                     }
                     .decodeSingle<User>()
 
-                // SUKSES! Set currentUser
+                // SUKSES — update memory + cache
                 currentUser = user
-                Log.d(TAG, "✅ [UserManager] [SUCCESS] Profil dimuat: ${user.displayName}, Role: ${user.role}, Email: ${user.email}")
+                saveToCache(user)
+                Log.d(TAG, "✅ [UserManager] [SUCCESS] Profil dimuat: ${user.displayName}")
                 Log.d(TAG, "================================================================")
-                return // Keluar dari fungsi, tidak perlu retry lagi
+                return
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [UserManager] [USER ERROR] Percobaan $attempt Gagal: ${e.message}")
-
-                // Jika ini adalah percobaan terakhir, set currentUser = null dan throw error
                 if (attempt >= maxAttempts) {
-                    Log.e(TAG, "💀 [UserManager] [GIVE UP] Gagal total ambil user setelah $maxAttempts percobaan.")
-                    currentUser = null
-                    throw e // Re-throw biar caller tau kalau gagal
+                    Log.e(TAG, "💀 [UserManager] [GIVE UP] Gagal total setelah $maxAttempts percobaan.")
+                    throw e // throw biar caller bisa handle
                 }
             }
 
-            // Delay sebelum retry (kecuali di percobaan terakhir)
             if (attempt < maxAttempts) {
                 Log.d(TAG, "⏳ [UserManager] Menunggu 1 detik sebelum coba lagi...")
                 delay(1000)
@@ -70,29 +114,37 @@ object UserManager {
     }
 
     /**
-     * Fungsi untuk memastikan user data sudah loaded.
-     * Jika currentUser masih null, akan mencoba fetch ulang.
+     * Pastikan user data tersedia.
+     * Cek cache dulu → jika ada, langsung return (offline-safe).
+     * Jika tidak ada, fetch dari network.
      */
     suspend fun ensureUserLoaded(): User? {
+        // Cache hit → langsung return, tidak perlu network
         if (currentUser != null) {
             Log.d(TAG, "✅ [UserManager] [CACHE HIT] User sudah ada: ${currentUser?.displayName}")
             return currentUser
         }
 
-        // Jika null, coba ambil dari session yang tersimpan
+        // Coba fetch dari network
         val session = SupabaseManager.client.auth.currentSessionOrNull()
         if (session != null) {
             Log.d(TAG, "🔄 [UserManager] [ENSURE] User null, fetching dari session...")
-            fetchCurrentUser(session.user?.id ?: return null)
-            return currentUser
+            try {
+                fetchCurrentUser(session.user?.id ?: return null)
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ [UserManager] [ENSURE] Gagal fetch (mungkin offline): ${e.message}")
+                // Tidak throw — return null agar caller bisa handle gracefully
+            }
+        } else {
+            Log.w(TAG, "⚠️ [UserManager] [ENSURE FAIL] Tidak ada session dan user null.")
         }
 
-        Log.w(TAG, "⚠️ [UserManager] [ENSURE FAIL] Tidak ada session dan user null.")
-        return null
+        return currentUser
     }
 
     fun clearUser() {
         currentUser = null
+        clearCache()
         Log.d(TAG, "🗑️ [UserManager] Data user dibersihkan (logout).")
     }
 }

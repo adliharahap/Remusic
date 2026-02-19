@@ -2,7 +2,9 @@ package com.example.remusic.data.model
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Parcelize
 data class SongWithArtist(
     val song: Song,

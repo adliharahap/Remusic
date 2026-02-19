@@ -7,6 +7,8 @@ import androidx.room.Query
 import com.example.remusic.data.local.entity.CachedArtist
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.local.entity.LikedSong
+import com.example.remusic.data.local.entity.CachedFollowedArtist
+import com.example.remusic.data.local.entity.PlaybackQueueEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -70,6 +72,20 @@ interface MusicDao {
     """)
     fun getAllLikedSongs(): Flow<List<CachedSong>>
 
+    // --- FOLLOWED ARTISTS ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFollowedArtist(artist: CachedFollowedArtist)
+
+    @Query("DELETE FROM cached_followed_artists WHERE artistId = :artistId")
+    suspend fun deleteFollowedArtist(artistId: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM cached_followed_artists WHERE artistId = :artistId)")
+    fun isArtistFollowed(artistId: String): Flow<Boolean>
+
+    @Query("SELECT * FROM cached_followed_artists")
+    fun getAllFollowedArtists(): Flow<List<CachedFollowedArtist>>
+
     // --- SEARCH HISTORY ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -83,4 +99,13 @@ interface MusicDao {
         LIMIT 20
     """)
     fun getSearchHistory(): Flow<List<CachedSong>>
+    // --- PLAYBACK QUEUE ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlaybackQueue(queue: List<PlaybackQueueEntity>)
+
+    @Query("DELETE FROM playback_queue")
+    suspend fun clearPlaybackQueue()
+
+    @Query("SELECT * FROM playback_queue ORDER BY listOrder ASC")
+    suspend fun getPlaybackQueue(): List<PlaybackQueueEntity>
 }

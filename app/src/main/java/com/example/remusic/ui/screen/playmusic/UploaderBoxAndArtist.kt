@@ -83,7 +83,9 @@ fun UploaderBoxAndArtist(
     artist: Artist?,
     uploader: User?,
     isFollowed: Boolean = false,
-    onToggleFollow: () -> Unit = {}
+    onToggleFollow: () -> Unit = {},
+    onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
+    onSemuaLaguClick: () -> Unit = {}      // NEW: Navigate to all songs (same as artist playlist)
 ) {
     // 1. DELAYED STATE LOGIC (Prevent flickering to 'Unknown' during transitions)
     var displayedArtist by remember { mutableStateOf<Artist?>(null) }
@@ -208,7 +210,7 @@ fun UploaderBoxAndArtist(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // Button Lihat Playlist
                                 OutlinedButton(
-                                    onClick = {},
+                                    onClick = onLihatPlaylistClick,
                                     border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
                                     shape = RoundedCornerShape(50),
                                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
@@ -419,7 +421,7 @@ fun UploaderBoxAndArtist(
                     )
 
                     OutlinedButton(
-                        onClick = { /* TODO */ },
+                        onClick = onSemuaLaguClick,
                         border = BorderStroke(1.5.dp, roleColor.copy(alpha = 0.4f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = roleColor),
                         shape = RoundedCornerShape(16.dp),

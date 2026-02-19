@@ -35,7 +35,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -99,7 +102,12 @@ data class PlayerUiState(
 
     // Artist Details State (For Playlist Header)
     val artistDetails: ArtistDetails? = null,
-    val isLoadingArtistDetails: Boolean = false
+    val isLoadingArtistDetails: Boolean = false,
+
+    // --- Tab Tracking for "Lihat Playlist" Navigation ---
+    val previousTab: String = "home", // Default to Home tab route
+    val navigateToArtistEvent: String? = null, // One-shot event: artistId to navigate to
+    val pendingArtistNavigation: String? = null // Pending artistId for tab screens to consume
 )
 
 
@@ -123,6 +131,15 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     private var isFading = false
 
     private val _uiState = MutableStateFlow(PlayerUiState())
+
+    // ===================== ARTIST NAVIGATION SHARED FLOW =====================
+    // replay=1 ensures late subscribers still receive the last emitted artistId
+    private val _artistNavigationFlow = MutableSharedFlow<String?>(
+        replay = 1,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val artistNavigationFlow = _artistNavigationFlow.asSharedFlow()
     
     // Variabel untuk melacak lagu terakhir yang play count-nya sudah di-increment
     private var lastIncrementedSongId: String? = null
@@ -201,6 +218,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     _uiState.update { it.copy(repeatMode = savedRepeatMode) }
                     Log.d("PlayMusicViewModel", "Applied saved repeat mode: $savedRepeatMode")
                 }
+                
+                // --- RESTORE PLAYBACK QUEUE & STATE ---
+                viewModelScope.launch {
+                    restorePlaybackState()
+                }
 
                 val lastIndex = _uiState.value.playlist
                     .indexOfFirst { it.song.id == _uiState.value.currentSong?.song?.id }
@@ -243,6 +265,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         totalDuration = player.duration.coerceAtLeast(0L),
                         currentPosition = player.currentPosition.coerceAtLeast(0L)
                     )
+                }
+                
+                // Save state on pause or specific events
+                if (events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) && !player.playWhenReady) {
+                     savePlaybackState()
+                }
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                     savePlaybackState()
+                }
+                // Save state on Seek
+                if (events.contains(Player.EVENT_POSITION_DISCONTINUITY)) {
+                     savePlaybackState()
                 }
             }
 
@@ -315,7 +349,24 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     prefetchSongAtIndex(newIndex - 1)
 
                     if (matchedSong != null) {
-                        // 🔍 CRITICAL FIX: Cek URL sebelum play
+                        // 1. UPDATE UI STATE IMMEDIATELY (Agar judul lagu berubah instan)
+                        _uiState.update {
+                            it.copy(
+                                currentSong = matchedSong,
+                                currentSongIndex = newIndex,
+                                animationDirection = direction,
+                                uploader = null, // Reset uploader for new song
+                                hasError = false, // Reset error state on new song
+                                errorType = null
+                            )
+                        }
+                        
+                        // Reset Smart Retry Flag on transition
+                        hasRetriedCurrentSong = false
+
+                        Log.d("DEBUG_PLAYER", "🎵 Lagu Terdeteksi: ${matchedSong.song.title}")
+
+                        // 🔍 CRITICAL FIX: Cek URL sebelum play (ASYNC)
                         // Jika URL kosong/invalid, resolve dulu sebelum ExoPlayer coba load
                         val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
                         val isUrlValid = currentUrl.isNotBlank() && 
@@ -330,10 +381,22 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             // Resolve URL di background
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val newUrl = resolveSongUrl(matchedSong)
+                                    val result = resolveSongUrl(matchedSong)
+                                    val newUrl = result.url
                                     
                                     withContext(Dispatchers.Main) {
-                                        if (newUrl.isNotBlank()) {
+                                        // 🔥 CRITICAL FIX: STOP AUTO-SKIP ON NETWORK ERROR 🔥
+                                        if (result.errorType == MusicRepository.ErrorType.NETWORK && newUrl.isEmpty()) {
+                                            Log.e("DEBUG_PLAYER", "❌ NETWORK ERROR on Auto-Next. PAUSING PLAYER.")
+                                            player.pause()
+                                            _uiState.update { 
+                                                it.copy(
+                                                    hasError = true, 
+                                                    errorType = "Koneksi Terputus. Playback dipause.",
+                                                    isPlaying = false
+                                                ) 
+                                            }
+                                        } else if (newUrl.isNotBlank()) {
                                             Log.d("DEBUG_PLAYER", "✅ URL Resolved: $newUrl")
                                             
                                             // Update MediaItem dengan URL valid
@@ -342,7 +405,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                             player.prepare()
                                             player.play()
                                         } else {
-                                            Log.e("DEBUG_PLAYER", "❌ Gagal resolve URL. Skip lagu ini.")
+                                            Log.e("DEBUG_PLAYER", "❌ Gagal resolve URL (Fatal/Not Found). Skip lagu ini.")
                                             // Skip ke lagu berikutnya
                                             if (player.hasNextMediaItem()) {
                                                 player.seekToNextMediaItem()
@@ -354,16 +417,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                 }
                             }
                         }
-                        
-                        _uiState.update {
-                            it.copy(
-                                currentSong = matchedSong,
-                                currentSongIndex = newIndex,
-                                animationDirection = direction,
-                                uploader = null // Reset uploader for new song
-                            )
-                        }
-                        Log.d("DEBUG_PLAYER", "🎵 Lagu Terdeteksi: ${matchedSong.song.title}")
+
+                        // PRE-FETCH Data Lengkap (Lirik, dll)
                         fetchFullSongDetails(matchedSong.song.id)
 
                         // --- LOGIKA WARNA DITAMBAHKAN DI SINI JUGA ---
@@ -558,6 +613,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     }
                     
+                    // 4. PERIODIC SAVE (Setiap 3 Detik = 60 loop * 50ms)
+                    if (loopCounter > 0 && loopCounter % 60 == 0) {
+                        savePlaybackState()
+                        Log.d("PlayMusicViewModel", "💾 [PERIODIC SAVE] Saved position: ${pos}ms")
+                    }
+                    
                     loopCounter++
                 }
                 // 🔥 CRITICAL FIX: Changed from delay(1000) to delay(50)
@@ -690,6 +751,14 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 2. Update UI State Langsung (Biar user lihat judul lagu berubah cepat)
         _uiState.update { it.copy(playlist = songs, currentSong = songs[startIndex]) }
+        
+        // SAVE QUEUE TO DB
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.savePlaybackQueue(songs.map { it.song })
+        }
+        
+        // Reset Smart Retry Flag
+        hasRetriedCurrentSong = false
 
         // 3. MULAI PROSES ASYNC (Resolve URL & Warna)
         // Kita bungkus semua proses mapping & player setup di sini
@@ -702,8 +771,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             Log.d("DEBUG_PLAYER", "⚡ PROCESS: Resolving URL untuk lagu pertama (Index $startIndex): ${songToPlay.song.title}")
             // B. Resolve URL (Tunggu sebentar request ke Vercel/Cache)
             // Ini langkah kuncinya! Kita putuskan mau pakai link Telegram atau AudioURL biasa
-            val resolvedUrl = resolveSongUrl(songToPlay)
+            val resolvedResult = resolveSongUrl(songToPlay)
+            val resolvedUrl = resolvedResult.url
             Log.d("PlayMusicViewModel", "URL Resolved for first song: $resolvedUrl")
+            
+            // Cek Error Network di awal play
+            if (resolvedResult.errorType == MusicRepository.ErrorType.NETWORK) {
+                 withContext(Dispatchers.Main) {
+                     _uiState.update { it.copy(hasError = true, errorType = "Gagal memuat: Masalah Koneksi Internet", isPlaying = false) }
+                 }
+                 // Masih lanjut coba play (mungkin ada cache parsial?), atau stop?
+                 // Kita lanjut aja, nanti ExoPlayer bakal error juga kalau URL kosong, tapi minimal UI udah kasih tau.
+            }
 
             // C. Fetch Data Lengkap (Lirik, dll) untuk lagu pertama
             fetchFullSongDetails(songToPlay.song.id)
@@ -1004,6 +1083,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 currentPosition = 0L
             )
         }
+        
+        // Reset Smart Retry Flag
+        hasRetriedCurrentSong = false
 
         jumpJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1033,11 +1115,28 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // 2. RESOLVE URL (Pastikan dapat yang fresh)
                 Log.d("DEBUG_PLAYER", "🌐 FETCH: Resolving URL...")
-                val newUrl = resolveSongUrl(targetSong)
+                // 2. RESOLVE URL (Pastikan dapat yang fresh)
+                Log.d("DEBUG_PLAYER", "🌐 FETCH: Resolving URL...")
+                val result = resolveSongUrl(targetSong)
+                val newUrl = result.url
 
                 // 3. UPDATE PLAYER (Hanya update item yang sedang aktif)
                 withContext(Dispatchers.Main) {
-                    // VALIDASI URL: Jangan play kalau URL kosong/gagal resolve
+                    
+                    // VALIDASI URL: Cek Error Network atau URL kosong
+                    if (result.errorType == MusicRepository.ErrorType.NETWORK) {
+                        Log.e("DEBUG_PLAYER", "❌ NETWORK ERROR during song update. Pausing.")
+                        _uiState.update { 
+                            it.copy(
+                                hasError = true, 
+                                errorType = "Gagal memuat: Masalah Koneksi Internet", 
+                                isPlaying = false 
+                            ) 
+                        }
+                        controller.pause()
+                        return@withContext
+                    }
+                    
                     if (newUrl.isBlank()) {
                         Log.e("DEBUG_PLAYER", "❌ ERROR: URL kosong/gagal resolve. Skip playback.")
                         // Kembalikan UI ke state aman atau tampilkan error
@@ -1128,6 +1227,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             initJob?.join()
             Log.d("PlayMusicViewModel", "🟢 Seed song ready. Fetching Smart Queue...")
 
+            generateSmartQueue(seedSong)
+        }
+    }
+
+    private suspend fun generateSmartQueue(seedSong: SongWithArtist) {
+        withContext(Dispatchers.IO) {
             val fullSongDetails = repository.getFullSongDetails(seedSong.song.id) // Pastikan metadata lengkap (moods/language)
             val seedSongWithMeta = fullSongDetails?.let { 
                  seedSong.song.copy(
@@ -1169,33 +1274,49 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d("PlayMusicViewModel", "===========================================================")
 
                 // Update ViewModel State
-                val fullPlaylist = mutableListOf(seedSong)
-                fullPlaylist.addAll(queueWithArtists)
-
-                _uiState.update { 
-                    it.copy(
-                        playlist = fullPlaylist
-                    )
-                }
-                Log.d("PlayMusicViewModel", "✅ Smart Queue loaded: ${smartQueue.size} songs added to UI State.")
+                // HATI-HATI: Playlist mungkin sudah berubah jika user ganti lagu cepat-cepat.
+                // Kita append ke current playlist jika seed song masih ada di sana.
+                val currentPlaylist = _uiState.value.playlist.toMutableList()
+                val isSeedStillPresent = currentPlaylist.any { it.song.id == seedSong.song.id }
                 
-                // 5. Update Player (APPEND NEW SONGS)
-                withContext(Dispatchers.Main) {
-                    val controller = mediaController
-                    if (controller != null) {
-                        // Create MediaItems for the queue (using raw audioUrl, will be resolved later)
-                        val newMediaItems = queueWithArtists.map { 
-                            createMediaItem(it, it.song.audioUrl ?: "") 
+                if (isSeedStillPresent) {
+                    // Cek duplikasi (jangan add kalau sudah ada)
+                    val existingIds = currentPlaylist.map { it.song.id }.toSet()
+                    val uniqueNewSongs = queueWithArtists.filter { !existingIds.contains(it.song.id) }
+
+                    if (uniqueNewSongs.isNotEmpty()) {
+                         currentPlaylist.addAll(uniqueNewSongs)
+
+                        _uiState.update { 
+                            it.copy(
+                                playlist = currentPlaylist
+                            )
                         }
-                        controller.addMediaItems(newMediaItems)
-                        Log.d("PlayMusicViewModel", "✅ Added ${newMediaItems.size} songs from Smart Queue to Player.")
+                        Log.d("PlayMusicViewModel", "✅ Smart Queue loaded: ${uniqueNewSongs.size} new songs added to UI State.")
+                        
+                        // 5. Update Player (APPEND NEW SONGS)
+                        withContext(Dispatchers.Main) {
+                            val controller = mediaController
+                            if (controller != null) {
+                                // Create MediaItems for the queue (using raw audioUrl, will be resolved later)
+                                val newMediaItems = uniqueNewSongs.map { 
+                                    createMediaItem(it, it.song.audioUrl ?: "") 
+                                }
+                                controller.addMediaItems(newMediaItems)
+                                Log.d("PlayMusicViewModel", "✅ Added ${newMediaItems.size} songs from Smart Queue to Player.")
+                            }
+                        }
+                    } else {
+                         Log.d("PlayMusicViewModel", "⚠️ Smart Queue fetched but all songs already exist in playlist.")
                     }
+                } else {
+                     Log.w("PlayMusicViewModel", "⚠️ Seed song no longer in playlist. Aborting Smart Queue update.")
                 }
             }
         }
     }
 
-    private suspend fun resolveSongUrl(song: SongWithArtist): String {
+    private suspend fun resolveSongUrl(song: SongWithArtist): MusicRepository.ResolvedSongUrl {
         // Logika disederhanakan: Serahkan ke Repository
         // Repository akan otomatis cek SQLite -> Cek Expired -> Request API jika perlu
         val result = repository.getPlayableUrl(
@@ -1207,7 +1328,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         )
 
         Log.d("PlayMusicViewModel", "✅ RESOLVED URL [${result.source}]: ${result.url}")
-        return result.url
+        return result
     }
 
     // --- SLEEP TIMER ---
@@ -1339,7 +1460,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             if (!targetSong.song.telegramFileId.isNullOrBlank()) {
                 Log.d("PlayMusicViewModel", "🚀 PRE-FETCH START: Menyiapkan lagu tetangga (Index $index): ${targetSong.song.title}")
 
-                val newUrl = resolveSongUrl(targetSong)
+                val result = resolveSongUrl(targetSong)
+                val newUrl = result.url
 
                 if (newUrl != targetSong.song.audioUrl) {
                     updateMediaItemUrlInPlayer(index, targetSong, newUrl)
@@ -1550,6 +1672,39 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
     
+    // ===================== TAB TRACKING & ARTIST NAVIGATION =====================
+
+    /** Called by MainScreen whenever the user switches tabs */
+    fun setPreviousTab(route: String) {
+        _uiState.update { it.copy(previousTab = route) }
+    }
+
+    /** Called by PlayMusicScreen when user clicks "Lihat Playlist" or "Semua Lagu" */
+    fun requestNavigateToArtist(artistId: String) {
+        _uiState.update { it.copy(navigateToArtistEvent = artistId) }
+    }
+
+    /** Called by MainScreen after consuming the navigation event */
+    fun consumeNavigateToArtistEvent() {
+        _uiState.update { it.copy(navigateToArtistEvent = null) }
+    }
+
+    /** Set pending artist navigation - also emits to SharedFlow for reliable delivery */
+    fun setPendingArtistNavigation(artistId: String) {
+        _uiState.update { it.copy(pendingArtistNavigation = artistId) }
+        viewModelScope.launch {
+            _artistNavigationFlow.emit(artistId)
+        }
+    }
+
+    /** Called by HomeScreen/SearchScreen after consuming the pending navigation */
+    fun consumePendingArtistNavigation() {
+        _uiState.update { it.copy(pendingArtistNavigation = null) }
+        viewModelScope.launch {
+            _artistNavigationFlow.emit(null) // Reset replay cache
+        }
+    }
+
     // Toggle Follow from Header
     fun toggleFollowFromHeader(artistId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1701,6 +1856,188 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     artistSongsPage = currentPage + 1
                 )
             }
+        }
+    }
+
+    // --- SMART CONNECTIVITY RETRY ---
+    private var hasRetriedCurrentSong = false
+
+    fun onConnectivityRestored() {
+        val currentState = _uiState.value
+        // Cek apakah sedang error karena network?
+        if (currentState.hasError && currentState.errorType?.contains("Koneksi", ignoreCase = true) == true) {
+            // Cek apakah sudah pernah retry untuk lagu ini?
+            if (!hasRetriedCurrentSong) {
+                Log.d("PlayMusicViewModel", "🌐 CONNECTIVITY RESTORED: Retrying playback for '${currentState.currentSong?.song?.title}'")
+                hasRetriedCurrentSong = true
+                retryPlayback()
+            } else {
+                Log.d("PlayMusicViewModel", "🌐 CONNECTIVITY RESTORED: Already retried this song once. Skipping.")
+            }
+        }
+    }
+
+    private fun retryPlayback() {
+        val currentSong = _uiState.value.currentSong ?: return
+        val controller = mediaController ?: return
+        val currentIndex = _uiState.value.currentSongIndex
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Set Loading State
+            withContext(Dispatchers.Main) {
+                _uiState.update { 
+                    it.copy(
+                        hasError = false, 
+                        errorType = null, 
+                        isLoadingData = true,
+                        debugStatus = "Retrying connection..."
+                    ) 
+                }
+            }
+
+            // Resolve URL ulang
+            val result = resolveSongUrl(currentSong)
+
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(isLoadingData = false) }
+
+                if (result.errorType == MusicRepository.ErrorType.NONE && result.url.isNotBlank()) {
+                     Log.d("PlayMusicViewModel", "✅ RETRY SUCCESS for '${currentSong.song.title}': URL resolved.")
+                     
+                     // 1. Recover Metadata (Lyrics, etc)
+                     fetchFullSongDetails(currentSong.song.id, forceUpdate = true)
+
+                     // 2. Replace Media Item & Play
+                     val newItem = createMediaItem(currentSong, result.url)
+                     
+                     if (currentIndex < controller.mediaItemCount) {
+                         // Cek apakah kita masih di lagu yang sama?
+                         if (controller.currentMediaItemIndex == currentIndex) {
+                             Log.d("PlayMusicViewModel", "▶ RESUMING PLAYBACK...")
+                             controller.replaceMediaItem(currentIndex, newItem)
+                             controller.prepare() // Wajib prepare ulang jika sebelumnya error
+                             controller.playWhenReady = true // Force play
+                             controller.play()
+                         } else {
+                             Log.w("PlayMusicViewModel", "⚠️ User moved to another song. Retry result ignored.")
+                         }
+                     }
+
+                     // 3. RECOVER SMART QUEUE (If only 1 song exists - e.g. played from search/quick pick)
+                     val currentPlaylistSize = _uiState.value.playlist.size
+                     if (currentPlaylistSize == 1) {
+                         Log.d("PlayMusicViewModel", "♻️ RESTORING QUEUE: Only 1 song in playlist. Generating Smart Queue...")
+                         viewModelScope.launch {
+                             generateSmartQueue(currentSong)
+                         }
+                     }
+
+                } else {
+                    Log.e("PlayMusicViewModel", "❌ RETRY FAILED: Error=${result.errorType}, URL Empty?=${result.url.isBlank()}")
+                     // Tetap di error state, user bisa coba manual lagi nanti
+                     _uiState.update { 
+                        it.copy(
+                            hasError = true, 
+                            errorType = "Gagal memuat ulang (${result.errorType}). Coba lagi.",
+                            isLoadingData = false
+                        ) 
+                    }
+                }
+            }
+        }
+    }
+
+    // --- PLAYBACK PERSISTENCE LOGIC ---
+    // Dipanggil saat inisialisasi ViewModel
+    private suspend fun restorePlaybackState() {
+        Log.d("PlayMusicViewModel", "♻️ [RESTORE] Memulai restorasi state...")
+        
+        // 1. Ambil Data Terakhir dari Prefs
+        val lastSongId = userPreferencesRepository.lastSongIdFlow.first()
+        val lastPosition = userPreferencesRepository.lastPositionFlow.first()
+        
+        // 2. Ambil Queue dari Room
+        val savedQueue = withContext(Dispatchers.IO) {
+            repository.restorePlaybackQueue()
+        }
+        
+        if (savedQueue.isNotEmpty()) {
+            Log.d("PlayMusicViewModel", "♻️ [RESTORE] Queue (${savedQueue.size} lagu) ditemukan. Mengembalikan player...")
+            
+            // Konversi ke SongWithArtist
+            val playlist = savedQueue.map { SongWithArtist(it, null) }
+            
+            // Cari index lagu terakhir
+            val startIndex = if (lastSongId != null) {
+                playlist.indexOfFirst { it.song.id == lastSongId }.coerceAtLeast(0)
+            } else 0
+            
+            // Setup Player (TAPI JANGAN AUTO-PLAY)
+            _uiState.update { 
+                it.copy(
+                    playlist = playlist,
+                    currentSong = playlist[startIndex],
+                    currentSongIndex = startIndex
+                ) 
+            }
+            
+            val controller = mediaController ?: return
+            
+            // Setup Media Items
+            val mediaItems = playlist.map { s ->
+                val meta = MediaMetadata.Builder()
+                    .setTitle(s.song.title)
+                    .setArtist(s.artist?.name ?: "Unknown")
+                    .setArtworkUri(s.song.coverUrl?.toUri())
+                    .build()
+                    
+                MediaItem.Builder()
+                    .setMediaId(s.song.id)
+                    .setUri(s.song.audioUrl ?: s.song.telegramDirectUrl ?: "")
+                    .setMediaMetadata(meta)
+                    .build()
+            }
+            
+            controller.setMediaItems(mediaItems, startIndex, lastPosition)
+            controller.prepare()
+            controller.pause() // Pastikan PAUSE saat start
+            
+            // Update UI agar bottom player muncul dengan posisi yang benar
+            _uiState.update { 
+                it.copy(
+                    currentPosition = lastPosition,
+                    totalDuration = controller.duration.coerceAtLeast(0L),
+                    isBuffering = false
+                )
+            }
+            
+            // Fetch details for UI (Async) - Biar cover art & lirik muncul
+            fetchFullSongDetails(playlist[startIndex].song.id)
+            
+            // Ambil Warna Dominan
+            val coverUrl = playlist[startIndex].song.coverUrl
+            if (coverUrl != null) {
+                val colors = extractGradientColorsFromImageUrl(getApplication(), coverUrl)
+                _uiState.update { it.copy(dominantColors = colors) }
+            }
+            
+            Log.d("PlayMusicViewModel", "✅ [RESTORE] Berhasil! Siap di posisi: ${lastPosition}ms")
+            
+        } else {
+            Log.d("PlayMusicViewModel", "⚠️ [RESTORE] Tidak ada history queue.")
+        }
+    }
+    
+    // Dipanggil saat pause, stop, atau ganti lagu
+    private fun savePlaybackState() {
+        val currentSong = _uiState.value.currentSong?.song
+        val currentPosition = _uiState.value.currentPosition
+        
+        if (currentSong != null) {
+             viewModelScope.launch(Dispatchers.IO) {
+                 userPreferencesRepository.saveLastSongId(currentSong.id)
+                 userPreferencesRepository.saveLastPosition(currentPosition)
+             }
         }
     }
 }

@@ -85,46 +85,33 @@ fun SplashScreen(navController: NavController) {
 
         delay(1200L)
 
-        // --- OPTIMIZED: CEK CACHE DULU SEBELUM FETCH ---
-        // Cek Login pakai Supabase
-        val TAG = "RemusicAuth" // Tag konsisten
+        // --- CEK SESI & LOAD USER (offline-safe) ---
+        val TAG = "RemusicAuth"
         val session = SupabaseManager.client.auth.currentSessionOrNull()
         Log.d(TAG, "🔍 [SplashScreen] Memeriksa sesi... Session ID: ${session?.user?.id}")
 
         if (session != null) {
-            // User ada sesi -> Cek apakah user data sudah ada (dari MainActivity)
             Log.d(TAG, "🔐 [SplashScreen] Session ditemukan. Memastikan user data tersedia...")
-            
-            try {
-                // ⚡ OPTIMIZED: ensureUserLoaded() akan cek cache dulu
-                // Hanya fetch jika user data masih null (jarang terjadi)
-                val user = com.example.remusic.data.UserManager.ensureUserLoaded()
-                
-                if (user != null) {
-                    Log.d(TAG, "✅ [SplashScreen] User data tersedia: ${user.displayName}. Navigasi ke Main.")
-                    
-                    // Navigasi ke Main
-                    navController.navigate("main") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                } else {
-                    Log.e(TAG, "❌ [SplashScreen] User data tidak bisa dimuat (ensureUserLoaded returned null). Logout paksa.")
-                    // Logout dan ke login
-                    SupabaseManager.client.auth.signOut()
-                    navController.navigate("login") {
-                        popUpTo("splash") { inclusive = true }
-                    }
+
+            // ensureUserLoaded() sudah ambil dari cache jika offline — tidak throw
+            val user = com.example.remusic.data.UserManager.ensureUserLoaded()
+
+            if (user != null) {
+                // Ada data user (dari cache atau fresh fetch) → langsung masuk
+                Log.d(TAG, "✅ [SplashScreen] User siap: ${user.displayName}. Navigasi ke Main.")
+                navController.navigate("main") {
+                    popUpTo("splash") { inclusive = true }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ [SplashScreen] Error ensure user: ${e.message}")
-                // Jika gagal total, logout dan ke login
-                SupabaseManager.client.auth.signOut()
-                navController.navigate("login") {
+            } else {
+                // Tidak ada cache DAN offline → tetap masuk dengan data auth dari session
+                // (Profile mungkin kosong tapi user tidak perlu login ulang)
+                Log.w(TAG, "⚠️ [SplashScreen] User data null (kemungkinan offline, no cache). Masuk sebagai auth-only.")
+                navController.navigate("main") {
                     popUpTo("splash") { inclusive = true }
                 }
             }
         } else {
-            // User tidak ada sesi -> Masuk Login
+            // Benar-benar tidak ada session → harus login
             Log.d(TAG, "🔓 [SplashScreen] Tidak ada session. Navigasi ke Login.")
             navController.navigate("login") {
                 popUpTo("splash") { inclusive = true }

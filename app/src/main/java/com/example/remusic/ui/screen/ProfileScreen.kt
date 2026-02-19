@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,14 +52,75 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.remusic.data.UserManager
+import com.example.remusic.navigation.ProfileRoute
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.handleLogout
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import kotlinx.coroutines.delay
 
 @Composable
-fun ProfileScreen(navController: NavController) {
+fun ProfileScreen(
+    navController: NavController,
+    playMusicViewModel: PlayMusicViewModel
+) {
+    val profileNavController = rememberNavController()
+    val playerUiState by playMusicViewModel.uiState.collectAsState()
+
+    // --- Consume pending artist navigation from PlayMusic "Lihat Playlist" via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.artistNavigationFlow.collect { artistId ->
+            if (artistId != null && playerUiState.previousTab == "profile") {
+                playMusicViewModel.consumePendingArtistNavigation()
+                profileNavController.navigate(
+                    ProfileRoute.createRoute(id = artistId, type = "ARTIST")
+                )
+            }
+        }
+    }
+
+    NavHost(
+        navController = profileNavController,
+        startDestination = ProfileRoute.MAIN,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable(ProfileRoute.MAIN) {
+            ProfileMainContent(navController = navController)
+        }
+        composable(
+            route = ProfileRoute.PLAYLIST_DETAIL,
+            arguments = listOf(
+                navArgument(ProfileRoute.ARGS_ID) { type = NavType.StringType },
+                navArgument(ProfileRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" }
+            )
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString(ProfileRoute.ARGS_ID) ?: ""
+            val typeString = backStackEntry.arguments?.getString(ProfileRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            val playlistType = try {
+                PlaylistType.valueOf(typeString)
+            } catch (e: Exception) {
+                PlaylistType.AUTO
+            }
+            PlaylistDetailScreen(
+                songs = emptyList(),
+                playlistName = "Artist",
+                playlistCoverUrl = "",
+                playlistType = playlistType,
+                playlistId = id,
+                playMusicViewModel = playMusicViewModel
+            )
+        }
+    }
+}
+
+@Composable
+fun ProfileMainContent(navController: NavController) {
     val userProfile = UserManager.currentUser
     var isVisible by remember { mutableStateOf(false) }
 

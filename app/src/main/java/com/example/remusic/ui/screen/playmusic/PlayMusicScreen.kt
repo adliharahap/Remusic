@@ -62,7 +62,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlayMusicScreen(
     playMusicViewModel: PlayMusicViewModel,
-    navController: NavController
+    navController: NavController,
+    onNavigateToArtist: (artistId: String) -> Unit = {} // Callback: navigate to artist detail
 ) {
     LockScreenOrientationPortrait()
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
@@ -274,7 +275,13 @@ fun PlayMusicScreen(
                     uploader = uiState.uploader,
                     isSearchContext = uiState.playlistSubtitle == "Memainkan Dari Pencarian",
                     isArtistFollowed = uiState.isArtistFollowed,
-                    onToggleFollowArtist = { playMusicViewModel.toggleFollowArtist() }
+                    onToggleFollowArtist = { playMusicViewModel.toggleFollowArtist() },
+                    onLihatPlaylistClick = {
+                        val artistId = uiState.currentSong?.artist?.id
+                        if (!artistId.isNullOrBlank()) {
+                            onNavigateToArtist(artistId)
+                        }
+                    }
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,

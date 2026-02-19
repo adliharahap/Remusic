@@ -2,15 +2,18 @@ package com.example.remusic.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.example.remusic.ui.screen.BottomNavItem
 import com.example.remusic.ui.screen.LoginScreen
 import com.example.remusic.ui.screen.MainScreen
 import com.example.remusic.ui.screen.SplashScreen
 import com.example.remusic.ui.screen.playmusic.PlayMusicScreen
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavGraph(
@@ -19,8 +22,12 @@ fun AppNavGraph(
     onGoogleSignInClick: () -> Unit,
     notificationRoute: String?,
     onRouteConsumed: () -> Unit = {},
-    playMusicViewModel: PlayMusicViewModel
+    playMusicViewModel: PlayMusicViewModel,
+    connectivityObserver: com.example.remusic.utils.ConnectivityObserver
     ) {
+    val connectivityStatus by connectivityObserver.observe().collectAsState(
+        initial = com.example.remusic.utils.ConnectivityObserver.Status.Available
+    )
     LaunchedEffect(notificationRoute) {
         if (notificationRoute != null) {
             navController.navigate(notificationRoute)
@@ -40,20 +47,32 @@ fun AppNavGraph(
             LoginScreen(onGoogleSignInClick = onGoogleSignInClick)
         }
         // Removed Search routes from here as they are now handled in BottomNavGraph (MainScreen)
-        composable(
-            route = "main",
-        ) {
+        composable(route = "main") {
             MainScreen(
                 rootNavController = navController,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                connectivityStatus = connectivityStatus
             )
         }
         composable(
             route = "playmusic",
         ) {
+            val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
             PlayMusicScreen(
                 navController = navController,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onNavigateToArtist = { artistId ->
+                    // 1. Pop PlayMusic → kembali ke MainScreen
+                    navController.popBackStack()
+
+                    // 2. Setelah layar kembali ke MainScreen, set pendingArtistNavigation
+                    //    HomeScreen/SearchScreen akan consume via SharedFlow
+                    coroutineScope.launch {
+                        // Beri waktu MainScreen + HomeScreen/SearchScreen untuk recompose
+                        delay(200)
+                        playMusicViewModel.setPendingArtistNavigation(artistId)
+                    }
+                }
             )
         }
     }

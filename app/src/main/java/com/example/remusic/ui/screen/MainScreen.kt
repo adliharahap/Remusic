@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.utils.ConnectivityObserver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -43,6 +45,8 @@ import com.example.remusic.ui.LocalBottomPadding
 import com.example.remusic.ui.components.BottomPlayerCard
 import com.example.remusic.ui.screen.BottomNavItem.Home.BottomBar
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.remusic.ui.screen.playmusic.QueueOptionsBottomSheet
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +56,7 @@ import com.example.remusic.navigation.HomeRoute
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import android.app.Activity
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf // Ensure this is imported
 import androidx.compose.runtime.remember // Ensure this is imported
 
@@ -90,7 +95,7 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
                 // Menggunakan NavigationBarItem dari Material 3
                 NavigationBarItem(
                     icon = {
-                        if (item is BottomNavItem.Upload) {
+                        if (item is Upload) {
                             // Custom icon Upload dengan background bulat putih
                             Box(
                                 modifier = Modifier
@@ -128,11 +133,8 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
                              onCreatePlaylistClick()
                         } else if (currentRoute != item.route) {
                             navController.navigate(item.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                                popUpTo(navController.graph.findStartDestination().id)
                                 launchSingleTop = true
-                                restoreState = true
                             }
                         }
                     },
@@ -156,27 +158,29 @@ fun BottomNavGraph(
     navController: NavHostController, 
     rootNavController: NavController, 
     playMusicViewModel: PlayMusicViewModel,
-    isSearchActive: Boolean, // Receive state
-    onSearchActiveChange: (Boolean) -> Unit, // Receive transition callback
-    onCreatePlaylistClick: () -> Unit, // New callback
-    onAtHomeRoot: (Boolean) -> Unit = {} // NEW: Callback for home root status
+    isSearchActive: Boolean,
+    onSearchActiveChange: (Boolean) -> Unit,
+    onCreatePlaylistClick: () -> Unit,
+    onAtHomeRoot: (Boolean) -> Unit = {},
+    homeResetTrigger: Int = 0, // Increments to reset HomeScreen nested nav to root
+    connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available,
+    homeViewModel: HomeViewModel // Hoisted ViewModel
 ) {
     NavHost(navController = navController, startDestination = BottomNavItem.Home.route) {
         composable(BottomNavItem.Home.route) { 
             HomeScreen(
                 onSearchClick = {
-                    // Set active = true before navigating
                     onSearchActiveChange(true)
                     navController.navigate(BottomNavItem.Search.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
+                        popUpTo(navController.graph.findStartDestination().id)
                         launchSingleTop = true
-                        restoreState = true
                     }
                 },
                 playMusicViewModel = playMusicViewModel,
-                onAtHomeRoot = onAtHomeRoot // Pass the callback
+                onAtHomeRoot = onAtHomeRoot,
+                homeResetTrigger = homeResetTrigger,
+                connectivityStatus = connectivityStatus,
+                homeViewModel = homeViewModel // Pass shared instance
             ) 
         }
         
@@ -191,24 +195,42 @@ fun BottomNavGraph(
         
 
         composable(BottomNavItem.Playlist.route) { 
-            PlaylistScreen(onCreatePlaylistClick = onCreatePlaylistClick) 
+            PlaylistScreen(
+                onCreatePlaylistClick = onCreatePlaylistClick,
+                playMusicViewModel = playMusicViewModel
+            ) 
         }
-        composable(BottomNavItem.Profile.route) { ProfileScreen(navController = rootNavController) }
+        composable(BottomNavItem.Profile.route) {
+            ProfileScreen(
+                navController = rootNavController,
+                playMusicViewModel = playMusicViewModel
+            )
+        }
     }
 }
 
 // ------ Main Screen diperbarui ke Material 3 ------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicViewModel) {
+fun MainScreen(
+    rootNavController: NavController, 
+    playMusicViewModel: PlayMusicViewModel,
+    connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available
+) {
     val navController = rememberNavController()
     val playerUiState by playMusicViewModel.uiState.collectAsState()
+    
+    // Hoist HomeViewModel here to persist state across tabs
+    val homeViewModel: HomeViewModel = viewModel()
     
     // Hoist Search State here
     var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     // Track if we're at the root of HomeScreen (not in nested navigation)
     var isAtHomeRoot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+
+    // Trigger to reset HomeScreen nested nav to root when user returns to Home tab
+    var homeResetTrigger by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
 
     // BottomSheet State
     var showCreatePlaylistSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -237,7 +259,10 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
                 isSearchActive = isSearchActive,
                 onSearchActiveChange = { isSearchActive = it },
                 onCreatePlaylistClick = { showCreatePlaylistSheet = true },
-                onAtHomeRoot = { isAtRoot -> isAtHomeRoot = isAtRoot } // Pass the callback
+                onAtHomeRoot = { isAtRoot -> isAtHomeRoot = isAtRoot },
+                homeResetTrigger = homeResetTrigger,
+                connectivityStatus = connectivityStatus,
+                homeViewModel = homeViewModel
             )
         }
 
@@ -248,6 +273,7 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
             BottomPlayerCard(
                 uiState = playerUiState,
                 onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+                onLikeClick = { playMusicViewModel.toggleLike() },
                 onCardClick = {
                     rootNavController.navigate("playmusic")
                 }
@@ -266,6 +292,24 @@ fun MainScreen(rootNavController: NavController, playMusicViewModel: PlayMusicVi
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route
         var showExitDialog by remember { mutableStateOf(false) }
+
+        // --- TAB TRACKING: Update previousTab whenever user switches tabs ---
+        var previousRoute by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(currentRoute) {
+            if (currentRoute != null &&
+                (currentRoute == BottomNavItem.Home.route ||
+                 currentRoute == BottomNavItem.Search.route ||
+                 currentRoute == BottomNavItem.Playlist.route ||
+                 currentRoute == BottomNavItem.Profile.route)) {
+                playMusicViewModel.setPreviousTab(currentRoute)
+
+                // Reset HomeScreen nested nav if user is returning to Home from another tab
+                if (currentRoute == BottomNavItem.Home.route && previousRoute != null && previousRoute != BottomNavItem.Home.route) {
+                    homeResetTrigger++
+                }
+                previousRoute = currentRoute
+            }
+        }
 
         // Only show exit dialog when at Home tab AND at root home screen
         BackHandler(enabled = currentRoute == BottomNavItem.Home.route && isAtHomeRoot) {

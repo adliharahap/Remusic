@@ -11,10 +11,12 @@ import com.example.remusic.data.local.entity.CachedArtist
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.local.entity.LikedSong
 import com.example.remusic.data.local.entity.SearchHistoryEntity
+import com.example.remusic.data.local.entity.CachedFollowedArtist
+import com.example.remusic.data.local.entity.PlaybackQueueEntity
 
 @Database(
-    entities = [CachedSong::class, CachedArtist::class, LikedSong::class, SearchHistoryEntity::class],
-    version = 8,
+    entities = [CachedSong::class, CachedArtist::class, LikedSong::class, SearchHistoryEntity::class, CachedFollowedArtist::class, PlaybackQueueEntity::class],
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
@@ -82,6 +84,18 @@ abstract class MusicDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `cached_followed_artists` (`artistId` TEXT NOT NULL, `followedAt` INTEGER NOT NULL, PRIMARY KEY(`artistId`))")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `playback_queue` (`songId` TEXT NOT NULL, `listOrder` INTEGER NOT NULL, PRIMARY KEY(`songId`))")
+            }
+        }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -89,7 +103,7 @@ abstract class MusicDatabase : RoomDatabase() {
                                 MusicDatabase::class.java,
                                 "music_database"
                             )
-                                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_6_7, MIGRATION_7_8)
+                                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance

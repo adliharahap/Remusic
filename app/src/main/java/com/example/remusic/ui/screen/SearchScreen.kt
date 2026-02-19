@@ -70,6 +70,22 @@ fun SearchScreen(
     // Create nested NavController for Search screen
     val searchNavController = rememberNavController()
 
+    // --- Consume pending artist navigation from PlayMusic "Lihat Playlist" via SharedFlow ---
+    val playerUiState by playMusicViewModel.uiState.collectAsState()
+    LaunchedEffect(Unit) {
+        playMusicViewModel.artistNavigationFlow.collect { artistId ->
+            if (artistId != null && playerUiState.previousTab == "search") {
+                playMusicViewModel.consumePendingArtistNavigation()
+                searchNavController.navigate(
+                    com.example.remusic.navigation.SearchRoute.createRoute(
+                        id = artistId,
+                        type = "ARTIST"
+                    )
+                )
+            }
+        }
+    }
+
     androidx.navigation.compose.NavHost(
         navController = searchNavController,
         startDestination = com.example.remusic.navigation.SearchRoute.MAIN,

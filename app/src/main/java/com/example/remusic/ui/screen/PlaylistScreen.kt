@@ -41,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,10 +56,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.UserManager
+import com.example.remusic.navigation.PlaylistRoute
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import kotlinx.coroutines.delay
 
 enum class ViewMode { LIST, GRID }
@@ -76,7 +84,61 @@ data class PlaylistItem(
 )
 
 @Composable
-fun PlaylistScreen(onCreatePlaylistClick: () -> Unit) {
+fun PlaylistScreen(
+    onCreatePlaylistClick: () -> Unit,
+    playMusicViewModel: PlayMusicViewModel
+) {
+    val playlistNavController = rememberNavController()
+    val playerUiState by playMusicViewModel.uiState.collectAsState()
+
+    // --- Consume pending artist navigation from PlayMusic "Lihat Playlist" via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.artistNavigationFlow.collect { artistId ->
+            if (artistId != null && playerUiState.previousTab == "playlist") {
+                playMusicViewModel.consumePendingArtistNavigation()
+                playlistNavController.navigate(
+                    PlaylistRoute.createRoute(id = artistId, type = "ARTIST")
+                )
+            }
+        }
+    }
+
+    NavHost(
+        navController = playlistNavController,
+        startDestination = PlaylistRoute.MAIN,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        composable(PlaylistRoute.MAIN) {
+            PlaylistMainContent(onCreatePlaylistClick = onCreatePlaylistClick)
+        }
+        composable(
+            route = PlaylistRoute.PLAYLIST_DETAIL,
+            arguments = listOf(
+                navArgument(PlaylistRoute.ARGS_ID) { type = NavType.StringType },
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" }
+            )
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_ID) ?: ""
+            val typeString = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            val playlistType = try {
+                PlaylistType.valueOf(typeString)
+            } catch (e: Exception) {
+                PlaylistType.AUTO
+            }
+            PlaylistDetailScreen(
+                songs = emptyList(),
+                playlistName = "Artist",
+                playlistCoverUrl = "",
+                playlistType = playlistType,
+                playlistId = id,
+                playMusicViewModel = playMusicViewModel
+            )
+        }
+    }
+}
+
+@Composable
+fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
     var isVisible by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
     var filterType by remember { mutableStateOf<FilterType?>(null) } // Default null (All)

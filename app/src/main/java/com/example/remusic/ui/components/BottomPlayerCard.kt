@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -38,6 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.ui.res.painterResource
+import com.example.remusic.R
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.playmusic.PlayerUiState
@@ -46,6 +49,7 @@ import com.example.remusic.viewmodel.playmusic.PlayerUiState
 fun BottomPlayerCard(
     uiState: PlayerUiState,
     onPlayPauseClick: () -> Unit,
+    onLikeClick: () -> Unit, // New callback
     onCardClick: () -> Unit, // Untuk navigasi ke full screen
     modifier: Modifier = Modifier
 ) {
@@ -87,6 +91,8 @@ fun BottomPlayerCard(
                                 clip = false
                             ),
                         contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = R.drawable.img_placeholder),
+                        error = painterResource(id = R.drawable.img_placeholder)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -108,14 +114,20 @@ fun BottomPlayerCard(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    IconButton(onClick = {}) {
+                    
+                    // --- LIKE BUTTON ---
+                    IconButton(onClick = onLikeClick) {
                         Icon(
-                            imageVector = Icons.Filled.FavoriteBorder,
-                            contentDescription = "Add to Favorite",
-                            tint = Color.White,
+                            imageVector = if (uiState.isLiked) 
+                                Icons.Filled.Favorite 
+                            else 
+                                Icons.Filled.FavoriteBorder,
+                            contentDescription = if (uiState.isLiked) "Unlike" else "Like",
+                            tint = if (uiState.isLiked) Color.Red else Color.White,
                             modifier = Modifier.size(26.dp)
                         )
                     }
+                    
                     Spacer(modifier = Modifier.width(5.dp))
                     IconButton(onClick = onPlayPauseClick) {
                         Icon(
