@@ -197,16 +197,23 @@ fun AutoPlaylistHeader(
                         .clickable {
                             // Fix: Start from a random index instead of 0
                             if (sortedSongs.isNotEmpty()) {
-                                // Ensure Shuffle Mode is ON
-                                if (uiState?.isShuffleModeEnabled == false) {
-                                    playMusicViewModel?.toggleShuffleMode()
-                                }
-
-                                // Pick a random index
+                                // Pick a random index to start from
                                 val randomIndex = sortedSongs.indices.random()
 
+                                // 🔥 FIX BUG SHUFFLE SKIP:
+                                // setPlaylist DULU dengan index random,
+                                // BARU aktifkan shuffle SETELAH player siap.
+                                // Jika shuffle diaktifkan SEBELUM setPlaylist,
+                                // ExoPlayer akan shuffle ke lagu lain yang URLnya masih kosong.
                                 playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
                                 playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+
+                                // 🔥 FIX RACE CONDITION:
+                                // Gunakan forceSetShuffle(true) bukan toggleShuffleMode()!
+                                // toggleShuffleMode() membaca uiState yang masih STALE di Compose snapshot
+                                // saat tombol diklik, menyebabkan toggle bisa jadi OFF bukan ON.
+                                // forceSetShuffle(true) langsung set ke mediaController tanpa cek state.
+                                playMusicViewModel?.forceSetShuffle(true)
                             }
                         },
                     contentAlignment = Alignment.Center

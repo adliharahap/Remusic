@@ -125,6 +125,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     // variabel untuk playsongat
     private var jumpJob: Job? = null
     private var setPlaylistJob: Job? = null
+    private var preSearchShuffleState: Boolean = false // ← Simpan state shuffle sebelum masuk search
 
     // --- VARIABEL UNTUK MENGELOLA FADE ---
     private var volumeFadeJob: Job? = null
@@ -342,11 +343,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     val playlist = _uiState.value.playlist
                     val matchedSong = playlist.find { it.song.id == mediaItem.mediaId }
 
-                    // PRE-FETCH: Siapkan lagu BERIKUTNYA secara diam-diam
-                    prefetchSongAtIndex(newIndex + 1)
-
-                    // 2. Siapkan lagu SEBELUMNYA (Untuk tombol Prev)
-                    prefetchSongAtIndex(newIndex - 1)
+                    // 🔥 FIX: Pre-fetch dipindah ke bawah SETELAH matchedSong check
+                    // dan HANYA untuk transisi AUTO/SEEK, bukan PLAYLIST_CHANGED!
+                    // Memanggil pre-fetch di sini (sebelum check) menyebabkan feedback loop.
 
                     if (matchedSong != null) {
                         // 1. UPDATE UI STATE IMMEDIATELY (Agar judul lagu berubah instan)
@@ -402,7 +401,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                             // Update MediaItem dengan URL valid
                                             val newItem = createMediaItem(matchedSong, newUrl)
                                             player.replaceMediaItem(newIndex, newItem)
-                                            player.prepare()
+                                            // 🔥 FIX SHUFFLE CASCADE:
+                                            // seekTo() memaksa ExoPlayer kembali ke index yang benar
+                                            // sebelum play(). Tanpa ini, ExoPlayer (shuffle mode) bisa
+                                            // melompat ke item acak lain setelah replaceMediaItem().
+                                            player.seekTo(newIndex, 0)
                                             player.play()
                                         } else {
                                             Log.e("DEBUG_PLAYER", "❌ Gagal resolve URL (Fatal/Not Found). Skip lagu ini.")
@@ -416,6 +419,15 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                     Log.e("DEBUG_PLAYER", "❌ Error resolving URL: ${e.message}")
                                 }
                             }
+                        }
+
+                        // PRE-FETCH: Siapkan lagu tetangga HANYA untuk AUTO/SEEK.
+                        // PLAYLIST_CHANGED (dari replaceMediaItem) DILARANG mem-prefetch
+                        // karena menyebabkan feedback loop yaitu:
+                        // replaceMediaItem → PLAYLIST_CHANGED → prefetch → replaceMediaItem → ...
+                        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                            prefetchSongAtIndex(newIndex + 1)
+                            prefetchSongAtIndex(newIndex - 1)
                         }
 
                         // PRE-FETCH Data Lengkap (Lirik, dll)
@@ -998,6 +1010,16 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         mediaController?.shuffleModeEnabled = !currentShuffleState
     }
 
+    /**
+     * Set shuffle mode secara LANGSUNG tanpa toggle.
+     * Digunakan oleh AutoPlaylistHeader agar tidak ada race condition
+     * dengan state Compose yang masih stale.
+     */
+    fun forceSetShuffle(enabled: Boolean) {
+        Log.d("PlayMusicViewModel", "🔀 [FORCE SHUFFLE] Set shuffle to: $enabled")
+        mediaController?.shuffleModeEnabled = enabled
+    }
+
     // Fungsi ini akan berputar: OFF -> ONE -> ALL -> OFF
     // FIX: Jika dari Search, hanya OFF -> ONE -> OFF (Skip ALL)
     fun cycleRepeatMode() {
@@ -1199,11 +1221,23 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 playlistSubtitle = "Memainkan Dari Playlist" // Reset subtitle
             )
         }
+        // NOTE: Shuffle restoration from search context is NOT done here.
+        // AutoPlaylistHeader uses forceSetShuffle(true) explicitly.
+        // Restoring here caused a race condition (stale Compose state + delayed toggle).
+        preSearchShuffleState = false // Selalu reset flag agar tidak menumpuk
     }
 
     // --- LOGIC BARU V4: PLAY FROM SEARCH ---
     fun playFromSearch(seedSong: SongWithArtist, query: String) {
         Log.d("PlayMusicViewModel", "🚀 playFromSearch CALLED! Seed: ${seedSong.song.title}, Query: $query")
+        
+        // --- CONTEXT-AWARE SHUFFLE: Simpan state shuffle sekarang, lalu paksa OFF ---
+        preSearchShuffleState = _uiState.value.isShuffleModeEnabled
+        if (preSearchShuffleState) {
+            Log.d("PlayMusicViewModel", "🔀 [SEARCH] Pre-search shuffle ON → disimpan, lalu dimatikan")
+            mediaController?.shuffleModeEnabled = false
+            // Jangan simpan ke prefs agar ketika balik ke playlist, state asli tetap ada
+        }
         
         // 1. SET PLAYLIST dengan LAGU INI
         // FIX RACE CONDITION: Tunggu setPlaylist selesai dulu sebelum fetch queue!
@@ -1471,24 +1505,19 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // 3. Update Playlist ExoPlayer Diam-diam
+    // 🔥 FIX SHUFFLE CASCADE:
+    // DILARANG memanggil replaceMediaItem() untuk lagu yang TIDAK sedang dimainkan!
+    // Di mode shuffle, replaceMediaItem() menyebabkan ExoPlayer MERESET internal shuffle order,
+    // sehingga player melompat ke index acak lain secara cascade (19→8→4→0→7→...).
+    // Strategi yang benar: Pre-fetch hanya MENGHANGATKAN CACHE (simpan URL ke DB),
+    // biarkan onMediaItemTransition yang menangani update ExoPlayer saat lagu itu benar-benar diputar.
     private suspend fun updateMediaItemUrlInPlayer(index: Int, song: SongWithArtist, newUrl: String) {
-        withContext(Dispatchers.Main) {
-            val controller = mediaController ?: return@withContext
-            if (index >= controller.mediaItemCount) return@withContext
-
-            // 🛑 CRITICAL FIX: Jangan replace item jika sedang dimainkan!
-            // Mengganti item yang sedang aktif akan menyebabkan ExoPlayer reset/pause sesaat.
-            // Lebih baik pakai URL lama (fallback) daripada musik putus.
-            if (index == controller.currentMediaItemIndex) {
-                 Log.w("PlayMusicViewModel", "⚠️ Skipping update for currently playing song (Index $index) to prevent playback reset.")
-                 return@withContext
-            }
-
-            val newItem = createMediaItem(song, newUrl)
-            controller.replaceMediaItem(index, newItem)
-            Log.d("Remusic", "Berhasil update link streaming untuk lagu index: $index")
-        }
+        // URL sudah disimpan ke DB oleh resolveSongUrl() di atas.
+        // Tidak perlu update ExoPlayer MediaItem sekarang!
+        // onMediaItemTransition akan re-resolve dari DB cache ketika lagu ini diputar.
+        Log.d("PlayMusicViewModel", "✅ PRE-FETCH SELESAI: URL untuk index $index ('${song.song.title}') sudah di-cache. ExoPlayer TIDAK disentuh.")
     }
+
 
     fun refreshCurrentSongData() {
         val currentSong = _uiState.value.currentSong
