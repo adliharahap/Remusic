@@ -1943,6 +1943,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // Update Player (Silent)
         mediaController?.addMediaItem(createMediaItem(song.song, song.song.audioUrl ?: ""))
         Log.d("PlayMusicViewModel", "Added to queue: ${song.song.title}")
+
+        // Save new queue to DB
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.savePlaybackQueue(mutableList, _uiState.value.playingMusicFromPlaylist)
+        }
+
         return "${song.song.title} ditambahkan ke antrean"
     }
 
@@ -1984,6 +1990,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     createMediaItem(song.song, song.song.audioUrl ?: "")
             )
             Log.d("PlayMusicViewModel", "Moved to next: ${song.song.title} to index $targetIndex")
+
+            // Prefetch audio and save to DB
+            prefetchSongAtIndex(targetIndex)
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+            }
         } else {
             // Logic Lama: Insert Baru
             val nextIndex = currentIndex + 1
@@ -1993,6 +2005,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // Update Player
             controller.addMediaItem(nextIndex, createMediaItem(song.song, song.song.audioUrl ?: ""))
             Log.d("PlayMusicViewModel", "Inserted next: ${song.song.title} at index $nextIndex")
+
+            // Prefetch audio and save to DB
+            prefetchSongAtIndex(nextIndex)
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+            }
         }
     }
 
