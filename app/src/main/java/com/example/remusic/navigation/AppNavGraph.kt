@@ -30,7 +30,9 @@ fun AppNavGraph(
     )
     LaunchedEffect(notificationRoute) {
         if (notificationRoute != null) {
-            navController.navigate(notificationRoute)
+            navController.navigate(notificationRoute) {
+                launchSingleTop = true
+            }
             onRouteConsumed()
         }
     }

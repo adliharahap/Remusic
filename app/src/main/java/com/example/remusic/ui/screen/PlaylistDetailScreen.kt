@@ -650,11 +650,16 @@ fun PlaylistDetailContent(
                             // Use sortedSongs (full list) instead of filteredAndSortedSongs
                             val originalIndex = sortedSongs.indexOfFirst { it.song.id == songWithArtist.song.id }
                             if (originalIndex != -1) {
+                                val effectivePlaylistName = if (playlistType == PlaylistType.ARTIST && !uiState?.artistDetails?.name.isNullOrBlank()) {
+                                    uiState?.artistDetails?.name ?: playlistName
+                                } else {
+                                    playlistName
+                                }
+                                playMusicViewModel?.playingMusicFromPlaylist(effectivePlaylistName)
                                 playMusicViewModel?.setPlaylist(
                                     songs = sortedSongs,
                                     startIndex = originalIndex
                                 )
-                                playMusicViewModel?.playingMusicFromPlaylist(playlistName)
                             }
                         },
                         onMoreClick = {

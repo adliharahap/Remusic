@@ -66,7 +66,8 @@ import com.example.remusic.utils.GreetingUtils
 import com.example.remusic.viewmodel.homeviewmodel.HomeUiState
 import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
-
+import com.example.remusic.ui.screen.NotificationScreen
+import com.example.remusic.ui.screen.RequestSongScreen
 
 @Composable
 fun HomeScreen(
@@ -74,6 +75,8 @@ fun HomeScreen(
     homeViewModel: HomeViewModel,
     playMusicViewModel: PlayMusicViewModel,
     onSearchClick: () -> Unit,
+    onNotificationClick: () -> Unit = {},
+    onRequestSongClick: () -> Unit = {},
     onAtHomeRoot: (Boolean) -> Unit = {}, // Callback to notify if at root
     homeResetTrigger: Int = 0,            // Increments to reset nested nav to root
     connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available
@@ -105,7 +108,9 @@ fun HomeScreen(
                 playMusicViewModel.consumePendingArtistNavigation()
                 homeNavController.navigate(
                     HomeRoute.createRoute(id = artistId, type = "ARTIST")
-                )
+                ) {
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -130,7 +135,9 @@ fun HomeScreen(
                 homeViewModel = homeViewModel,
                 playMusicViewModel = playMusicViewModel,
                 homeNavController = homeNavController, // Berikan nested controller
-                onSearchClick = onSearchClick
+                onSearchClick = onSearchClick,
+                onNotificationClick = onNotificationClick,
+                onRequestSongClick = onRequestSongClick
             )
         }
 
@@ -212,6 +219,12 @@ fun HomeScreen(
                 playMusicViewModel = playMusicViewModel
             )
         }
+        composable("notification") {
+            NotificationScreen(navController = homeNavController)
+        }
+        composable("request_song") {
+            RequestSongScreen(navController = homeNavController, playMusicViewModel = playMusicViewModel)
+        }
     }
 }
 
@@ -221,7 +234,9 @@ private fun HomeMainScreen(
     homeViewModel: HomeViewModel,
     playMusicViewModel: PlayMusicViewModel,
     homeNavController: NavHostController, // Controller nested
-    onSearchClick: () -> Unit
+    onSearchClick: () -> Unit,
+    onNotificationClick: () -> Unit,
+    onRequestSongClick: () -> Unit
 ) {
     val user = UserManager.currentUser
     val homeState by homeViewModel.uiState.collectAsState()
@@ -288,8 +303,9 @@ private fun HomeMainScreen(
                                 name = user?.displayName,
                                 greeting = greeting,
                                 profileImageUrl = user?.photoUrl,
-                                onSearchClick = { },
-                                onNotificationClick = { },
+                                onSearchClick = onSearchClick,
+                                onNotificationClick = { homeNavController.navigate("notification") },
+                                onRequestSongClick = { homeNavController.navigate("request_song") },
                                 dominantColor = lastSongColor
                             )
 
@@ -345,7 +361,12 @@ private fun HomeMainScreen(
                                 profileImageUrl = user?.photoUrl,
                                 // Use callback to navigate
                                 onSearchClick = onSearchClick,
-                                onNotificationClick = { /* TODO: Show notifications */ },
+                                onNotificationClick = { 
+                                    homeNavController.navigate("notification") { launchSingleTop = true }
+                                },
+                                onRequestSongClick = { 
+                                    homeNavController.navigate("request_song") { launchSingleTop = true }
+                                },
                                 dominantColor = lastSongColor
                             )
 

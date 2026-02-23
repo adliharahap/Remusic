@@ -1,5 +1,7 @@
 package com.example.remusic.utils
 
+import com.example.remusic.data.preferences.GradientStyle
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -59,7 +61,8 @@ suspend fun extractGradientColorsFromImageUrl(
         Color(0xFF181818),
         Color(0xFF141414),
         Color(0xFF121212)
-    )
+    ),
+    gradientStyle: GradientStyle = GradientStyle.PRIMARY
 ): List<Color> {
     if (imageUrl.isBlank()) return defaultColors
 
@@ -80,47 +83,54 @@ suspend fun extractGradientColorsFromImageUrl(
                 Palette.from(bitmap).maximumColorCount(24).generate()
             }
 
-            // --- LOGIKA BARU: SKORING ANTI-KULIT ---
-
-            // 1. Kumpulkan semua kandidat swatch yang valid
-            val candidates = listOfNotNull(
-                palette.darkVibrantSwatch,
-                palette.vibrantSwatch,
-                palette.lightVibrantSwatch,
-                palette.mutedSwatch,
-                palette.darkMutedSwatch,
-                palette.dominantSwatch
-            ).distinctBy { it.rgb } // Hapus duplikat
-
+            // --- LOGIKA BARU: BERDASARKAN GRADIENT STYLE ---
             var bestSwatch: Palette.Swatch? = null
-            var highestScore = -1.0f
 
-            for (swatch in candidates) {
-                // Skor Dasar = Jumlah Pixel (Seberapa dominan warna ini)
-                var score = swatch.population.toFloat()
-
-                val colorInt = swatch.rgb
-
-                // 2. CEK HUKUMAN / BONUS
-                if (isSkinOrYellowTone(colorInt)) {
-                    // PENALTY: Jika warna kulit/kuning, kurangi nilainya drastis (diskon 70%)
-                    // Artinya: Warna kulit harus 3.5x lebih banyak pixelnya dibanding warna biru untuk bisa menang.
-                    score *= 0.3f
-                } else {
-                    // BONUS: Warna selain kulit (Biru, Merah, Hijau, Ungu)
-                    // Kita prioritaskan vibrant (warna hidup)
-                    val hsl = swatch.hsl
-                    val saturation = hsl[1]
-
-                    if (saturation > 0.3f) {
-                        score *= 1.5f // Boost warna yang saturasi tinggi (Vibrant)
-                    }
+            when (gradientStyle) {
+                GradientStyle.VIBRANT -> {
+                    bestSwatch = palette.vibrantSwatch ?: palette.darkVibrantSwatch ?: palette.lightVibrantSwatch ?: palette.dominantSwatch
                 }
+                GradientStyle.MUTED -> {
+                    bestSwatch = palette.mutedSwatch ?: palette.darkMutedSwatch ?: palette.lightMutedSwatch ?: palette.dominantSwatch
+                }
+                GradientStyle.DARK -> {
+                    bestSwatch = palette.darkVibrantSwatch ?: palette.darkMutedSwatch ?: palette.dominantSwatch
+                }
+                GradientStyle.LIGHT -> {
+                    bestSwatch = palette.lightVibrantSwatch ?: palette.lightMutedSwatch ?: palette.dominantSwatch
+                }
+                GradientStyle.PRIMARY -> {
+                    // Logika lama (Skoring Anti-Kulit)
+                    val candidates = listOfNotNull(
+                        palette.darkVibrantSwatch,
+                        palette.vibrantSwatch,
+                        palette.lightVibrantSwatch,
+                        palette.mutedSwatch,
+                        palette.darkMutedSwatch,
+                        palette.dominantSwatch
+                    ).distinctBy { it.rgb }
 
-                // Simpan yang skornya paling tinggi
-                if (score > highestScore) {
-                    highestScore = score
-                    bestSwatch = swatch
+                    var highestScore = -1.0f
+
+                    for (swatch in candidates) {
+                        var score = swatch.population.toFloat()
+                        val colorInt = swatch.rgb
+
+                        if (isSkinOrYellowTone(colorInt)) {
+                            score *= 0.3f
+                        } else {
+                            val hsl = swatch.hsl
+                            val saturation = hsl[1]
+                            if (saturation > 0.3f) {
+                                score *= 1.5f
+                            }
+                        }
+
+                        if (score > highestScore) {
+                            highestScore = score
+                            bestSwatch = swatch
+                        }
+                    }
                 }
             }
 

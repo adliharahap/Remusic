@@ -210,6 +210,7 @@ fun LyricsScreen(
                                 LyricLineItem(
                                     line = line,
                                     isActive = index == activeIndex,
+                                    isPassed = index <= activeIndex,
                                     isTranslateLyrics = isTranslateLyrics,
                                     lyricsConfig = lyricsConfig
                                 )
@@ -365,6 +366,7 @@ fun EmptyLyricsView() {
 fun LyricLineItem(
     line: LyricLine,
     isActive: Boolean,
+    isPassed: Boolean,
     isTranslateLyrics: Boolean,
     lyricsConfig: LyricsConfig
 ) {
@@ -374,18 +376,9 @@ fun LyricLineItem(
 
     // 1. Tentukan Font Family berdasarkan Config
     val fontFamily = when (lyricsConfig.fontFamily) {
-        LyricsFontFamily.MONTSERRAT -> AppFont.MontserratRegular
-        LyricsFontFamily.MONTSERRAT_BOLD -> AppFont.MontserratBold
-        LyricsFontFamily.MONTSERRAT_BLACK -> AppFont.MontserratBlack
         LyricsFontFamily.POPPINS -> AppFont.Poppins
         LyricsFontFamily.ROBOTO -> AppFont.RobotoRegular
-        LyricsFontFamily.COOLVETICA -> AppFont.Coolvetica
-        LyricsFontFamily.COOLVETICA_CONDENSED -> AppFont.CoolveticaCondensed
-        LyricsFontFamily.COOLVETICA_COMPRESSED -> AppFont.CoolveticaCompressed
         LyricsFontFamily.HELVETICA -> AppFont.Helvetica
-        LyricsFontFamily.HELVETICA_ROUNDED -> AppFont.HelveticaRoundedBold
-        LyricsFontFamily.HELVETICA_COMPRESSED -> AppFont.HelveticaCompressed
-        LyricsFontFamily.HELVETICA_LIGHT -> AppFont.HelveticaLight
     }
 
     // 2. Tentukan Alignment berdasarkan Config
@@ -417,15 +410,27 @@ fun LyricLineItem(
     )
 
     // 4. Animasikan Warna Font Utama
+    val targetFontColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
+        Color.White
+    } else {
+        Color.White.copy(alpha = 0.5f)
+    }
+
     val fontColor by animateColorAsState(
-        targetValue = if (isActive) Color.White else Color.White.copy(alpha = 0.5f),
+        targetValue = targetFontColor,
         animationSpec = colorAnimationSpec,
         label = "fontColorAnimation"
     )
 
     // 5. Animasikan Warna Font Terjemahan
+    val targetTranslatedColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
+        Color.White.copy(alpha = 0.9f)
+    } else {
+        Color.White.copy(alpha = 0.5f)
+    }
+
     val translatedColor by animateColorAsState(
-        targetValue = if (isActive) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.5f),
+        targetValue = targetTranslatedColor,
         animationSpec = colorAnimationSpec,
         label = "translatedColorAnimation"
     )

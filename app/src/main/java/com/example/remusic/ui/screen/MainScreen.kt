@@ -59,6 +59,7 @@ import android.app.Activity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf // Ensure this is imported
 import androidx.compose.runtime.remember // Ensure this is imported
+import com.example.remusic.ui.screen.RequestSongScreen
 
 // ------ Sealed class untuk item navigasi ------
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -206,6 +207,9 @@ fun BottomNavGraph(
                 playMusicViewModel = playMusicViewModel
             )
         }
+        composable("request_song") {
+            RequestSongScreen(navController = navController, playMusicViewModel = playMusicViewModel)
+        }
     }
 }
 
@@ -350,6 +354,14 @@ fun MainScreen(
                      scope.launch { sheetState.hide() }.invokeOnCompletion {
                         if (!sheetState.isVisible) {
                             showCreatePlaylistSheet = false
+                        }
+                    }
+                },
+                onRequestSongClick = {
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) {
+                            showCreatePlaylistSheet = false
+                            navController.navigate("request_song") { launchSingleTop = true }
                         }
                     }
                 }

@@ -50,6 +50,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import com.example.remusic.ui.screen.RequestSongScreen
 
 // Data class lagu
 data class Song2(
@@ -81,7 +82,9 @@ fun SearchScreen(
                         id = artistId,
                         type = "ARTIST"
                     )
-                )
+                ) {
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -109,6 +112,9 @@ fun SearchScreen(
                             type = "ARTIST"
                         )
                     )
+                },
+                onRequestSongClick = {
+                    searchNavController.navigate("request_song") { launchSingleTop = true }
                 }
             )
         }
@@ -137,6 +143,9 @@ fun SearchScreen(
                 playMusicViewModel = playMusicViewModel
             )
         }
+        composable("request_song") {
+            RequestSongScreen(navController = searchNavController, playMusicViewModel = playMusicViewModel)
+        }
     }
 }
 
@@ -148,7 +157,8 @@ fun SearchMainScreen(
     isSearchActive: Boolean = false,
     onSearchActiveChange: (Boolean) -> Unit = {},
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> },
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onRequestSongClick: () -> Unit = {}
 ) {
     // Local state for emptiness check only
     var showEmptyState by remember { mutableStateOf(false) }
@@ -402,7 +412,7 @@ fun SearchMainScreen(
                             )
                             Spacer(modifier = Modifier.height(24.dp))
                             androidx.compose.material3.Button(
-                                onClick = { /* TODO: Navigate to request song */ },
+                                onClick = onRequestSongClick,
                                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFF755D8D)
                                 ),

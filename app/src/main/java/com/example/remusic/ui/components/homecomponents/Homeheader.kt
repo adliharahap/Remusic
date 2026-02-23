@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -52,6 +53,7 @@ fun HomeHeader(
     profileImageUrl: String? = null,
     onSearchClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
+    onRequestSongClick: () -> Unit = {},
     dominantColor: Color = Color(0xFF755D8D) // Default purple
 ) {
     Box(
@@ -111,6 +113,25 @@ fun HomeHeader(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Request Song
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                color = Color.White.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onRequestSongClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Request Song",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )

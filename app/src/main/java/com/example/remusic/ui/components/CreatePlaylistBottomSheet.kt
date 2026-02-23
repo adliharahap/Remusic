@@ -40,7 +40,8 @@ fun CreatePlaylistBottomSheet(
     onDismissRequest: () -> Unit,
     onCreatePlaylistClick: () -> Unit,
     onCreatePlaylistWithFriendClick: () -> Unit,
-    onCreatePublicPlaylistClick: () -> Unit
+    onCreatePublicPlaylistClick: () -> Unit,
+    onRequestSongClick: () -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -87,21 +88,21 @@ fun CreatePlaylistBottomSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             PlaylistItemCard(
-                icon = Icons.Default.GroupAdd,
-                title = "Playlist with Friend",
-                subtitle = "Collaborate on a playlist together",
-                onClick = onCreatePlaylistWithFriendClick,
-                color = Color(0xFF2ECC71) // Green
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            PlaylistItemCard(
                 icon = Icons.Default.Public,
                 title = "Public Playlist",
                 subtitle = "Share your music taste with everyone",
                 onClick = onCreatePublicPlaylistClick,
                 color = Color(0xFFF39C12) // Orange
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PlaylistItemCard(
+                icon = Icons.Default.LibraryAdd, // Using LibraryAdd or Add icon
+                title = "Request New Song",
+                subtitle = "Can't find your song? Request it!",
+                onClick = onRequestSongClick,
+                color = Color(0xFFE74C3C) // Red/Pink
             )
         }
     }

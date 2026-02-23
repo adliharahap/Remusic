@@ -115,7 +115,7 @@ class MusicService : MediaSessionService() {
         // Create an intent to launch MainActivity
         val sessionActivityIntent = Intent(this, com.example.remusic.MainActivity::class.java).apply {
             putExtra("destination_route", "playmusic")
-            // Ensure proper flags for singleTop behavior if needed, though launchMode handles it
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = android.app.PendingIntent.getActivity(
             this,

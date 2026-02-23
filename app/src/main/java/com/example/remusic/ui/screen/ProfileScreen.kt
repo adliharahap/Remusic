@@ -80,7 +80,9 @@ fun ProfileScreen(
                 playMusicViewModel.consumePendingArtistNavigation()
                 profileNavController.navigate(
                     ProfileRoute.createRoute(id = artistId, type = "ARTIST")
-                )
+                ) {
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -115,6 +117,9 @@ fun ProfileScreen(
                 playlistId = id,
                 playMusicViewModel = playMusicViewModel
             )
+        }
+        composable("request_song") {
+            com.example.remusic.ui.screen.RequestSongScreen(navController = profileNavController, playMusicViewModel = playMusicViewModel)
         }
     }
 }

@@ -42,7 +42,19 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,22 +78,15 @@ data class LyricsConfig(
     val fontSize: Int = 21, // dp
     val align: LyricsAlign = LyricsAlign.LEFT,
     val autoScaleIfNoTranslation: Boolean = false,
-    val scaleFactor: Int = 1 // +1, +2, +3
+    val scaleFactor: Int = 1, // +1, +2, +3
+    val markPassedLyrics: Boolean = false,
+    val translateFontSize: Float = 15.5f
 )
 
 enum class LyricsFontFamily(val displayName: String) {
-    MONTSERRAT("Montserrat"),
-    MONTSERRAT_BOLD("Montserrat Bold"),
-    MONTSERRAT_BLACK("Montserrat Black"),
     POPPINS("Poppins"),
     ROBOTO("Roboto"),
-    COOLVETICA("Coolvetica"),
-    COOLVETICA_CONDENSED("Coolvetica Condensed"),
-    COOLVETICA_COMPRESSED("Coolvetica Compressed"),
-    HELVETICA("Helvetica"),
-    HELVETICA_ROUNDED("Helvetica Rounded"),
-    HELVETICA_COMPRESSED("Helvetica Compressed"),
-    HELVETICA_LIGHT("Helvetica Light")
+    HELVETICA("Helvetica")
 }
 
 enum class LyricsAlign {
@@ -102,7 +107,18 @@ fun MoreOptionsBottomSheet(
     onSetSleepTimer: () -> Unit = {},
     // Lyrics Config
     lyricsConfig: LyricsConfig = LyricsConfig(),
-    onLyricsConfigChange: (LyricsConfig) -> Unit = {}
+    onLyricsConfigChange: (LyricsConfig) -> Unit = {},
+    // Background Style
+    gradientStyle: com.example.remusic.data.preferences.GradientStyle = com.example.remusic.data.preferences.GradientStyle.PRIMARY,
+    onGradientStyleChange: (com.example.remusic.data.preferences.GradientStyle) -> Unit = {},
+    // Gradient Color Positions
+    gradientTopColorIndex: Int = 0,
+    onGradientTopColorIndexChange: (Int) -> Unit = {},
+    gradientBottomColorIndex: Int = 1,
+    onGradientBottomColorIndexChange: (Int) -> Unit = {},
+    // Data Saver
+    isDataSaverModeEnabled: Boolean = false,
+    onDataSaverModeChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     
@@ -225,36 +241,89 @@ fun MoreOptionsBottomSheet(
                 }
             )
 
+            // --- DATA SAVER MODE ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onDataSaverModeChange(!isDataSaverModeEnabled) }
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Mode Hemat Data",
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        "Mematikan canvas video di player",
+                        color = Color.White.copy(0.6f),
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = isDataSaverModeEnabled,
+                    onCheckedChange = { onDataSaverModeChange(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.Black,
+                        checkedTrackColor = Color.White,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.DarkGray
+                    )
+                )
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider(thickness = 0.5.dp, color = Color.White.copy(0.1f))
             Spacer(modifier = Modifier.height(20.dp))
 
-            // --- LYRICS SETTINGS ---
-            Text(
-                "Lyrics Settings",
-                modifier = Modifier.padding(horizontal = 20.dp),
-                color = Color.White.copy(0.7f),
-                fontSize = 14.sp,
-                fontFamily = AppFont.HelveticaRoundedBold
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 1. Font Family
-            Text("Font Config", modifier = Modifier.padding(horizontal = 20.dp), color = Color.White, fontSize = 16.sp, fontFamily = AppFont.Helvetica)
-            
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
+            // --- BACKGROUND SETTINGS ---
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                LyricsFontFamily.values().forEach { font ->
+                Text(
+                    "Background Style",
+                    color = Color.White.copy(0.7f),
+                    fontSize = 14.sp,
+                    fontFamily = AppFont.HelveticaRoundedBold
+                )
+
+                if (gradientStyle != com.example.remusic.data.preferences.GradientStyle.PRIMARY ||
+                    gradientTopColorIndex != 0 ||
+                    gradientBottomColorIndex != 1
+                ) {
+                    TextButton(
+                        onClick = {
+                            onGradientStyleChange(com.example.remusic.data.preferences.GradientStyle.PRIMARY)
+                            onGradientTopColorIndexChange(0)
+                            onGradientBottomColorIndexChange(1)
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Restore Default", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                com.example.remusic.data.preferences.GradientStyle.values().forEach { style ->
                     FilterChip(
-                        selected = lyricsConfig.fontFamily == font,
-                        onClick = { onLyricsConfigChange(lyricsConfig.copy(fontFamily = font)) },
-                        label = { Text(font.displayName) },
+                        selected = gradientStyle == style,
+                        onClick = { onGradientStyleChange(style) },
+                        label = { Text(style.displayName) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Color.White,
                             selectedLabelColor = Color.Black,
@@ -262,6 +331,147 @@ fun MoreOptionsBottomSheet(
                             labelColor = Color.White
                         )
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- TOP COLOR INDEX ---
+            Text(
+                "Top Color Position",
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = Color.White.copy(0.7f),
+                fontSize = 14.sp,
+                fontFamily = AppFont.HelveticaRoundedBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                (0..3).forEach { index ->
+                    FilterChip(
+                        selected = gradientTopColorIndex == index,
+                        onClick = { onGradientTopColorIndexChange(index) },
+                        label = { Text("Color ${index + 1}") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color.White,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Color.Transparent,
+                            labelColor = Color.White
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- BOTTOM COLOR INDEX ---
+            Text(
+                "Bottom Color Position",
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = Color.White.copy(0.7f),
+                fontSize = 14.sp,
+                fontFamily = AppFont.HelveticaRoundedBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                (0..3).forEach { index ->
+                    FilterChip(
+                        selected = gradientBottomColorIndex == index,
+                        onClick = { onGradientBottomColorIndexChange(index) },
+                        label = { Text("Color ${index + 1}") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color.White,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Color.Transparent,
+                            labelColor = Color.White
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = Color.White.copy(0.1f))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // --- LYRICS SETTINGS ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Lyrics Settings",
+                    color = Color.White.copy(0.7f),
+                    fontSize = 14.sp,
+                    fontFamily = AppFont.HelveticaRoundedBold
+                )
+
+                if (lyricsConfig != LyricsConfig()) {
+                    TextButton(
+                        onClick = { onLyricsConfigChange(LyricsConfig()) },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Restore Default", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 1. Font Family
+            var fontMenuExpanded by remember { mutableStateOf(false) }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Font Config",
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = AppFont.Helvetica
+                )
+
+                Box {
+                    OutlinedButton(
+                        onClick = { fontMenuExpanded = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text(lyricsConfig.fontFamily.displayName)
+                    }
+                    DropdownMenu(
+                        expanded = fontMenuExpanded,
+                        onDismissRequest = { fontMenuExpanded = false },
+                        modifier = Modifier.background(Color(0xFF2A2A2A))
+                    ) {
+                        LyricsFontFamily.values().forEach { font ->
+                            DropdownMenuItem(
+                                text = { Text(font.displayName, color = Color.White) },
+                                onClick = {
+                                    onLyricsConfigChange(lyricsConfig.copy(fontFamily = font))
+                                    fontMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -345,6 +555,82 @@ fun MoreOptionsBottomSheet(
                         )
                     }
                 }
+            }
+
+            // 5. Sliders Output Ukuran Font Lirik
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "Ukuran Lirik Asli: ${lyricsConfig.fontSize}sp",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            androidx.compose.material3.Slider(
+                value = lyricsConfig.fontSize.toFloat(),
+                onValueChange = { newValue ->
+                    onLyricsConfigChange(lyricsConfig.copy(fontSize = newValue.toInt()))
+                },
+                valueRange = 15f..35f,
+                modifier = Modifier.padding(horizontal = 16.dp),
+                colors = androidx.compose.material3.SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.DarkGray
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Ukuran Lirik Terjemahan: ${String.format("%.1f", lyricsConfig.translateFontSize)}sp",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            androidx.compose.material3.Slider(
+                value = lyricsConfig.translateFontSize,
+                onValueChange = { newValue ->
+                    onLyricsConfigChange(lyricsConfig.copy(translateFontSize = newValue))
+                },
+                valueRange = 10f..30f,
+                modifier = Modifier.padding(horizontal = 16.dp),
+                colors = androidx.compose.material3.SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.DarkGray
+                )
+            )
+
+            // 6. Mark Passed Lyrics
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onLyricsConfigChange(
+                            lyricsConfig.copy(markPassedLyrics = !lyricsConfig.markPassedLyrics)
+                        )
+                    }
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Tandai lirik yang dilewati",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+                Switch(
+                    checked = lyricsConfig.markPassedLyrics,
+                    onCheckedChange = {
+                        onLyricsConfigChange(lyricsConfig.copy(markPassedLyrics = it))
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.Black,
+                        checkedTrackColor = Color.White,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.DarkGray
+                    )
+                )
             }
 
             Spacer(modifier = Modifier.height(40.dp))

@@ -113,7 +113,8 @@ fun NowPlaying(
     isSearchContext: Boolean = false,
     isArtistFollowed: Boolean = false,
     onToggleFollowArtist: () -> Unit = {},
-    onLihatPlaylistClick: () -> Unit = {} // NEW: Navigate to artist playlist
+    onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
+    isDataSaverModeEnabled: Boolean = false
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
@@ -169,8 +170,8 @@ fun NowPlaying(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // 1. Tentukan State apakah Canvas Aktif atau Tidak
-            val isCanvasMode = !songWithArtist?.song?.canvasUrl.isNullOrBlank()
+            // 1. Tentukan State apakah Canvas Aktif atau Tidak (Ditambah cek Mode Hemat Data)
+            val isCanvasMode = !isDataSaverModeEnabled && !songWithArtist?.song?.canvasUrl.isNullOrBlank()
 
             // ==========================================
             // COLUMN 1: PLAYER CONTROL (FULL SCREEN 100%)

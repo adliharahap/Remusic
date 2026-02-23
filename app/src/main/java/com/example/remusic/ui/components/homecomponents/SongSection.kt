@@ -96,8 +96,8 @@ fun SongSection(
                         .combinedClickable(
                             onClick = {
                                 // 1. Beri tahu ViewModel untuk memulai playlist dari lagu ini
-                                playMusicViewModel.setPlaylist(fullPlaylistForPlayback, index)
                                 playMusicViewModel.playingMusicFromPlaylist(title)
+                                playMusicViewModel.setPlaylist(fullPlaylistForPlayback, index)
                             },
                             onLongClick = {
                                 onLongClick(item)

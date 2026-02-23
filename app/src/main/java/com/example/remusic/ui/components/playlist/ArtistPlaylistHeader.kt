@@ -205,6 +205,13 @@ fun ArtistPlaylistHeader(
                                         playMusicViewModel?.toggleShuffleMode()
                                     }
                                     val randomIndex = sortedSongs.indices.random()
+                                    
+                                    val effectivePlaylistName = if (!artistDetails?.name.isNullOrBlank()) {
+                                        artistDetails?.name ?: playlistName
+                                    } else {
+                                        playlistName
+                                    }
+                                    playMusicViewModel?.playingMusicFromPlaylist(effectivePlaylistName)
                                     playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
                                 }
                             },
@@ -227,8 +234,13 @@ fun ArtistPlaylistHeader(
                             .background(Color(0xFF1DB954))
                             .clickable {
                                 if (filteredAndSortedSongs.isNotEmpty()) {
+                                    val effectivePlaylistName = if (!artistDetails?.name.isNullOrBlank()) {
+                                        artistDetails?.name ?: playlistName
+                                    } else {
+                                        playlistName
+                                    }
+                                    playMusicViewModel?.playingMusicFromPlaylist(effectivePlaylistName)
                                     playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
-                                    playMusicViewModel?.playingMusicFromPlaylist(playlistName)
                                 }
                             },
                         contentAlignment = Alignment.Center

@@ -205,8 +205,8 @@ fun AutoPlaylistHeader(
                                 // BARU aktifkan shuffle SETELAH player siap.
                                 // Jika shuffle diaktifkan SEBELUM setPlaylist,
                                 // ExoPlayer akan shuffle ke lagu lain yang URLnya masih kosong.
-                                playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
                                 playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                                playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
 
                                 // 🔥 FIX RACE CONDITION:
                                 // Gunakan forceSetShuffle(true) bukan toggleShuffleMode()!
@@ -235,8 +235,8 @@ fun AutoPlaylistHeader(
                         .background(Color.White)
                         .clickable {
                             if (filteredAndSortedSongs.isNotEmpty()) {
-                                playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
                                 playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                                playMusicViewModel?.setPlaylist(filteredAndSortedSongs, 0)
                             }
                         },
                     contentAlignment = Alignment.Center

@@ -119,14 +119,14 @@ fun PlayMusicScreen(
     // 2. ANIMASIKAN setiap warna secara terpisah
     // Animasi untuk warna atas (top color)
     val animatedTopColor by animateColorAsState(
-        targetValue = uiState.dominantColors.getOrElse(0) { Color.DarkGray },
+        targetValue = uiState.dominantColors.getOrElse(uiState.gradientTopColorIndex) { Color.DarkGray },
         animationSpec = tween(1000),
         label = "topColorAnimation"
     )
 
     // Animasi untuk warna bawah (bottom color)
     val animatedBottomColor by animateColorAsState(
-        targetValue = uiState.dominantColors.getOrElse(1) { Color.Black },
+        targetValue = uiState.dominantColors.getOrElse(uiState.gradientBottomColorIndex) { Color.Black },
         animationSpec = tween(1000),
         label = "bottomColorAnimation"
     )
@@ -281,7 +281,8 @@ fun PlayMusicScreen(
                         if (!artistId.isNullOrBlank()) {
                             onNavigateToArtist(artistId)
                         }
-                    }
+                    },
+                    isDataSaverModeEnabled = uiState.isDataSaverModeEnabled
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -440,7 +441,15 @@ fun PlayMusicScreen(
                 showSleepTimerSheet = true
             },
             lyricsConfig = uiState.lyricsConfig,
-            onLyricsConfigChange = { playMusicViewModel.updateLyricsConfig(it) }
+            onLyricsConfigChange = { playMusicViewModel.updateLyricsConfig(it) },
+            gradientStyle = uiState.gradientStyle,
+            onGradientStyleChange = { playMusicViewModel.setGradientStyle(it) },
+            gradientTopColorIndex = uiState.gradientTopColorIndex,
+            onGradientTopColorIndexChange = { playMusicViewModel.setGradientTopColorIndex(it) },
+            gradientBottomColorIndex = uiState.gradientBottomColorIndex,
+            onGradientBottomColorIndexChange = { playMusicViewModel.setGradientBottomColorIndex(it) },
+            isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
+            onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) }
         )
     }
 }

@@ -98,7 +98,9 @@ fun PlaylistScreen(
                 playMusicViewModel.consumePendingArtistNavigation()
                 playlistNavController.navigate(
                     PlaylistRoute.createRoute(id = artistId, type = "ARTIST")
-                )
+                ) {
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -133,6 +135,9 @@ fun PlaylistScreen(
                 playlistId = id,
                 playMusicViewModel = playMusicViewModel
             )
+        }
+        composable("request_song") {
+            com.example.remusic.ui.screen.RequestSongScreen(navController = playlistNavController, playMusicViewModel = playMusicViewModel)
         }
     }
 }
