@@ -321,6 +321,14 @@ fun MainScreen(
             }
         }
 
+        // --- CREATE PLAYLIST NAVIGATION: Listen to ViewModel events ---
+        LaunchedEffect(playerUiState.navigateToCreatePlaylistEvent) {
+            if (playerUiState.navigateToCreatePlaylistEvent) {
+                navController.navigate("create_playlist") { launchSingleTop = true }
+                playMusicViewModel.consumeNavigateToCreatePlaylistEvent()
+            }
+        }
+
         // Only show exit dialog when at Home tab AND at root home screen
         BackHandler(enabled = currentRoute == BottomNavItem.Home.route && isAtHomeRoot) {
             showExitDialog = true
@@ -400,6 +408,18 @@ fun MainScreen(
                 },
                 onAddToLiked = {
                     playMusicViewModel.toggleLike(selectedSong.song.id)
+                },
+                showRemoveFromPlaylist = playerUiState.playlistIdToRemoveFromQueueOptions != null,
+                onRemoveFromPlaylist = {
+                    val playlistId = playerUiState.playlistIdToRemoveFromQueueOptions
+                    if (playlistId != null) {
+                        playMusicViewModel.removeSongFromPlaylist(playlistId, selectedSong.song.id) { success, message ->
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            if (success) {
+                                playMusicViewModel.dismissQueueOptions()
+                            }
+                        }
+                    }
                 }
             )
         }

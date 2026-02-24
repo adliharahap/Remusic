@@ -38,12 +38,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.remusic.R
-import com.example.remusic.utils.LockScreenOrientationPortrait
-import kotlinx.coroutines.delay
-
-// --- IMPORT SUPABASE ---
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.utils.LockScreenOrientationPortrait
 import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SplashScreen(navController: NavController) {
@@ -55,68 +60,76 @@ fun SplashScreen(navController: NavController) {
     val textAlpha = remember { Animatable(0f) }
     val subtextAlpha = remember { Animatable(0f) }
 
+    // Persiapkan daftar permission yang akan diminta berdasarkan versi Android
+    val permissionsToRequest = remember {
+        val perms = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+            perms.add(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        perms.toTypedArray()
+    }
+
+    // Fungsi untuk melanjutkan navigasi setelah permission diminta/sudah ada
+    val proceedToApp = {
+        CoroutineScope(Dispatchers.Main).launch {
+            val TAG = "RemusicAuth"
+            val session = SupabaseManager.client.auth.currentSessionOrNull()
+            Log.d(TAG, "🔍 [SplashScreen] Memeriksa sesi... Session ID: ${session?.user?.id}")
+
+            if (session != null) {
+                Log.d(TAG, "🔐 [SplashScreen] Session ditemukan. Memastikan user data tersedia...")
+                val user = com.example.remusic.data.UserManager.ensureUserLoaded()
+
+                if (user != null) {
+                    Log.d(TAG, "✅ [SplashScreen] User siap: ${user.displayName}. Navigasi ke Main.")
+                    navController.navigate("main") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                } else {
+                    Log.w(TAG, "⚠️ [SplashScreen] User data null. Masuk sebagai auth-only.")
+                    navController.navigate("main") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                }
+            } else {
+                Log.d(TAG, "🔓 [SplashScreen] Tidak ada session. Navigasi ke Login.")
+                navController.navigate("login") {
+                    popUpTo("splash") { inclusive = true }
+                }
+            }
+        }
+    }
+
+    // Launcher untuk meminta permission
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissions ->
+            // Apakah diizinkan atau ditolak, kita tetap lanjut ke aplikasi
+            Log.d("SplashScreen", "Permission results: $permissions")
+            proceedToApp()
+        }
+    )
+
     LaunchedEffect(key1 = true) {
-        // 1. Animasi Logo
+        // 1. Animasi Logo & Teks Muncul Bersamaan (Lebih Cepat)
         logoScale.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 800)
-        )
-
-        // 2. Loading muncul
-        loadingAlpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 300)
-        )
-        delay(1500L)
-
-        // 3. Loading hilang, Teks muncul
-        loadingAlpha.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(durationMillis = 300)
+            animationSpec = tween(durationMillis = 500)
         )
         textAlpha.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 500)
+            animationSpec = tween(durationMillis = 300)
         )
         subtextAlpha.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 500)
+            animationSpec = tween(durationMillis = 300)
         )
 
-        delay(1200L)
-
-        // --- CEK SESI & LOAD USER (offline-safe) ---
-        val TAG = "RemusicAuth"
-        val session = SupabaseManager.client.auth.currentSessionOrNull()
-        Log.d(TAG, "🔍 [SplashScreen] Memeriksa sesi... Session ID: ${session?.user?.id}")
-
-        if (session != null) {
-            Log.d(TAG, "🔐 [SplashScreen] Session ditemukan. Memastikan user data tersedia...")
-
-            // ensureUserLoaded() sudah ambil dari cache jika offline — tidak throw
-            val user = com.example.remusic.data.UserManager.ensureUserLoaded()
-
-            if (user != null) {
-                // Ada data user (dari cache atau fresh fetch) → langsung masuk
-                Log.d(TAG, "✅ [SplashScreen] User siap: ${user.displayName}. Navigasi ke Main.")
-                navController.navigate("main") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            } else {
-                // Tidak ada cache DAN offline → tetap masuk dengan data auth dari session
-                // (Profile mungkin kosong tapi user tidak perlu login ulang)
-                Log.w(TAG, "⚠️ [SplashScreen] User data null (kemungkinan offline, no cache). Masuk sebagai auth-only.")
-                navController.navigate("main") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            }
-        } else {
-            // Benar-benar tidak ada session → harus login
-            Log.d(TAG, "🔓 [SplashScreen] Tidak ada session. Navigasi ke Login.")
-            navController.navigate("login") {
-                popUpTo("splash") { inclusive = true }
-            }
-        }
+        // 2. Minta Permission (Ini akan meng-pause navigasi sampai user merespons)
+        permissionLauncher.launch(permissionsToRequest)
     }
 
     // ... (SISA KODE UI KE BAWAH TIDAK PERLU DIUBAH, SAMA PERSIS) ...

@@ -281,7 +281,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .select {
                 filter { eq("is_official", true) }
                 order(column = "created_at", order = Order.DESCENDING)
-                limit(10)
+                limit(20)
             }
             .decodeList<Playlist>()
     }

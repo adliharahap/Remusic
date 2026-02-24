@@ -1,5 +1,6 @@
 package com.example.remusic.ui.components.searchcomponents
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import com.example.remusic.ui.theme.AppFont
 fun RecentlyPlayedSection(
     title: String = "Baru Saja Diputar",
     songs: List<Song2>,
+    onSongClick: (Song2) -> Unit = {},
     onMoreOptionsClick: (Song2) -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(vertical = 5.dp)) {
@@ -44,6 +46,7 @@ fun RecentlyPlayedSection(
         songs.forEach { song ->
             SongListItem(
                 song = song,
+                onSongClick = { onSongClick(song) },
                 onMoreOptionsClick = { onMoreOptionsClick(song) }
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -54,10 +57,11 @@ fun RecentlyPlayedSection(
 @Composable
 fun SongListItem(
     song: Song2,
+    onSongClick: () -> Unit = {},
     onMoreOptionsClick: () -> Unit = {}
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp).padding(bottom = 5.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onSongClick() }.padding(start = 16.dp).padding(bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(

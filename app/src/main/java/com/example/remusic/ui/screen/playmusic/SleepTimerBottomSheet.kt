@@ -3,7 +3,6 @@ package com.example.remusic.ui.screen.playmusic
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,7 +26,6 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,8 +50,9 @@ fun SleepTimerBottomSheet(
 ) {
 
     // State untuk Custom Picker (Default 1 Jam)
-    var selectedHour by remember { mutableIntStateOf(1) }
-    var selectedMinute by remember { mutableIntStateOf(0) }
+    val initialHour = 1
+    val initialMinute = 0
+    val selectedTime = remember { mutableStateOf(Pair(initialHour, initialMinute)) }
 
     // Warna Dinamis
     val primaryColor = dominantColors.getOrElse(0) { Color.Green }
@@ -216,11 +214,10 @@ fun SleepTimerBottomSheet(
                         ) {
                             SleepTimerSelector(
                                 primaryColor = primaryColor,
-                                initialHour = selectedHour,
-                                initialMinute = selectedMinute,
+                                initialHour = initialHour,
+                                initialMinute = initialMinute,
                                 onTimeChanged = { h, m ->
-                                    selectedHour = h
-                                    selectedMinute = m
+                                    selectedTime.value = Pair(h, m)
                                 }
                             )
                         }
@@ -245,7 +242,7 @@ fun SleepTimerBottomSheet(
                             Spacer(modifier = Modifier.width(16.dp))
                             Button(
                                 onClick = {
-                                    val totalMinutes = (selectedHour * 60) + selectedMinute
+                                    val totalMinutes = (selectedTime.value.first * 60) + selectedTime.value.second
                                     if (totalMinutes > 0) {
                                         onSetTimer(totalMinutes)
                                         onDismiss()
@@ -300,34 +297,140 @@ fun SleepTimerSelector(
     initialMinute: Int,
     onTimeChanged: (Int, Int) -> Unit
 ) {
-    // Optimization: Stabilize objects to prevent unnecessary recompositions inside the library
-    val textStyle = remember {
-        androidx.compose.ui.text.TextStyle(
-            color = Color.White,
-            fontSize = 32.sp,
-            fontFamily = AppFont.MontserratBold
-        )
+    val hours = (0..23).toList()
+    val minutes = (0..59).toList()
+
+    val hourState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialHour)
+    val minuteState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialMinute)
+
+    val itemHeight = 50.dp
+    val visibleItemsCount = 5
+    val listHeight = itemHeight * visibleItemsCount
+
+    // Helper to calculate the center item based on scroll state
+    fun calculateCenterItemIndex(state: androidx.compose.foundation.lazy.LazyListState, itemsCount: Int): Int {
+        val layoutInfo = state.layoutInfo
+        val visibleItemsInfo = layoutInfo.visibleItemsInfo
+        if (visibleItemsInfo.isEmpty()) return 0
+        
+        val center = layoutInfo.viewportStartOffset + (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset) / 2
+        
+        var closestItemInfo = visibleItemsInfo.first()
+        var minDistance = Int.MAX_VALUE
+        
+        for (itemInfo in visibleItemsInfo) {
+            val itemCenter = itemInfo.offset + itemInfo.size / 2
+            val distance = kotlin.math.abs(itemCenter - center)
+            if (distance < minDistance) {
+                minDistance = distance
+                closestItemInfo = itemInfo
+            }
+        }
+        return closestItemInfo.index.coerceIn(0, itemsCount - 1)
     }
 
-    val selectorProperties = com.commandiron.wheel_picker_compose.core.WheelPickerDefaults.selectorProperties(
-        enabled = true,
-        color = Color.White.copy(alpha = 0.1f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor)
-    )
-    
-    val initialTime = remember { java.time.LocalTime.of(initialHour, initialMinute) }
-
-    com.commandiron.wheel_picker_compose.WheelTimePicker(
-        startTime = initialTime,
-        timeFormat = com.commandiron.wheel_picker_compose.core.TimeFormat.HOUR_24,
-        textStyle = textStyle,
-        size = androidx.compose.ui.unit.DpSize(350.dp, 250.dp),
-        rowCount = 5,
-        selectorProperties = selectorProperties,
-        onSnappedTime = { time ->
-             onTimeChanged(time.hour, time.minute)
+    // Effect to report time changes when scrolling stops
+    androidx.compose.runtime.LaunchedEffect(hourState.isScrollInProgress, minuteState.isScrollInProgress) {
+        if (!hourState.isScrollInProgress && !minuteState.isScrollInProgress) {
+            val selectedHour = calculateCenterItemIndex(hourState, hours.size)
+            val selectedMinute = calculateCenterItemIndex(minuteState, minutes.size)
+            onTimeChanged(selectedHour, selectedMinute)
         }
-    )
+    }
+
+    Box(
+        modifier = Modifier
+            .width(350.dp)
+            .height(listHeight),
+        contentAlignment = Alignment.Center
+    ) {
+        // Selection highlight box
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(itemHeight)
+                .background(Color.White.copy(alpha = 0.1f))
+                .border(androidx.compose.foundation.BorderStroke(1.dp, primaryColor))
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Hours Wheel
+            androidx.compose.foundation.lazy.LazyColumn(
+                state = hourState,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(listHeight),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = itemHeight * 2),
+                flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(lazyListState = hourState)
+            ) {
+                items(hours.size) { index ->
+                    val isSelected = index == calculateCenterItemIndex(hourState, hours.size)
+                    Box(
+                        modifier = Modifier.height(itemHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = String.format("%02d", hours[index]),
+                            style = androidx.compose.ui.text.TextStyle(
+                                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                                fontSize = if (isSelected) 32.sp else 24.sp,
+                                fontFamily = AppFont.MontserratBold
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Separator Box to align with wheels visually
+            Box(
+                modifier = Modifier
+                    .width(itemHeight)
+                    .height(listHeight),
+                contentAlignment = Alignment.Center
+            ) {
+                 Text(
+                    text = ":",
+                    style = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 32.sp,
+                        fontFamily = AppFont.MontserratBold
+                    )
+                )
+            }
+
+            // Minutes Wheel
+            androidx.compose.foundation.lazy.LazyColumn(
+                state = minuteState,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(listHeight),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = itemHeight * 2),
+                flingBehavior = androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(lazyListState = minuteState)
+            ) {
+                items(minutes.size) { index ->
+                    val isSelected = index == calculateCenterItemIndex(minuteState, minutes.size)
+                    Box(
+                        modifier = Modifier.height(itemHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = String.format("%02d", minutes[index]),
+                            style = androidx.compose.ui.text.TextStyle(
+                                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                                fontSize = if (isSelected) 32.sp else 24.sp,
+                                fontFamily = AppFont.MontserratBold
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 

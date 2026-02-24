@@ -113,6 +113,15 @@ fun SearchScreen(
                         )
                     )
                 },
+                onPlaylistClick = { playlist ->
+                    val type = if (playlist.isOfficial) "OFFICIAL" else "USER_CREATED"
+                    searchNavController.navigate(
+                        com.example.remusic.navigation.SearchRoute.createRoute(
+                            id = playlist.id,
+                            type = type
+                        )
+                    )
+                },
                 onRequestSongClick = {
                     searchNavController.navigate("request_song") { launchSingleTop = true }
                 }
@@ -163,6 +172,7 @@ fun SearchMainScreen(
     onSearchActiveChange: (Boolean) -> Unit = {},
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> },
     onArtistClick: (String) -> Unit = {},
+    onPlaylistClick: (com.example.remusic.data.model.Playlist) -> Unit = {},
     onRequestSongClick: () -> Unit = {}
 ) {
     // Local state for emptiness check only
@@ -237,6 +247,13 @@ fun SearchMainScreen(
                         RecentlyPlayedSection(
                             title = "Baru Saja Ditambahkan",
                             songs = mappedSongs,
+                            onSongClick = { song2 ->
+                                val original = recentSongs.find { it.song.title == song2.title }
+                                original?.let {
+                                    searchViewModel.onSongPlayed(it)
+                                    onSongClick(it, "Baru Saja Ditambahkan")
+                                }
+                            },
                             onMoreOptionsClick = { song2 ->
                                 val original = recentSongs.find { it.song.title == song2.title }
                                 original?.let { 
@@ -419,7 +436,7 @@ fun SearchMainScreen(
                             androidx.compose.material3.Button(
                                 onClick = onRequestSongClick,
                                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF755D8D)
+                                    containerColor = Color(0xFFB71C1C)
                                 ),
                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                                 modifier = Modifier
@@ -594,7 +611,7 @@ fun SearchMainScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { /* TODO: Go to Playlist */ }
+                                .clickable { onPlaylistClick(playlist) }
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

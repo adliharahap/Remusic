@@ -54,7 +54,7 @@ fun HomeHeader(
     onSearchClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onRequestSongClick: () -> Unit = {},
-    dominantColor: Color = Color(0xFF755D8D) // Default purple
+    dominantColor: Color = Color(0xFFB71C1C) // Default maroon
 ) {
     Box(
         modifier = Modifier
@@ -227,7 +227,7 @@ fun HomeHeader(
 }
 
 @Composable
-private fun AnimatedBlobs(dominantColor: Color = Color(0xFF755D8D)) {
+private fun AnimatedBlobs(dominantColor: Color = Color(0xFFB71C1C)) {
     val infiniteTransition = rememberInfiniteTransition(label = "blobs")
 
     // Blob 1 - Moving diagonally

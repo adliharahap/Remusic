@@ -44,7 +44,8 @@ fun QueueScreen(
     onAddToQueue: (SongWithArtist) -> Unit = {},
     onPlayNext: (SongWithArtist) -> Unit = {},
     onAddToPlaylist: (SongWithArtist) -> Unit = {},
-    onAddToLiked: (SongWithArtist) -> Unit = {}
+    onAddToLiked: (SongWithArtist) -> Unit = {},
+    onRemoveFromQueue: (SongWithArtist) -> Unit = {}
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
     val currentlyPlayingId = songWithArtist?.song?.id
@@ -139,6 +140,7 @@ fun QueueScreen(
     }
 
     if (showQueueOptions && selectedSongForOptions != null) {
+        val context = androidx.compose.ui.platform.LocalContext.current
         QueueOptionsBottomSheet(
             sheetState = queueSheetState,
             songWithArtist = selectedSongForOptions,
@@ -157,6 +159,15 @@ fun QueueScreen(
             },
             onAddToLiked = {
                 onAddToLiked(selectedSongForOptions!!)
+                showQueueOptions = false
+            },
+            showRemoveFromQueue = true,
+            onRemoveFromQueue = {
+                if (playlistQueue.size <= 1) {
+                    android.widget.Toast.makeText(context, "Tidak dapat menghapus lagu terakhir di antrean", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onRemoveFromQueue(selectedSongForOptions!!)
+                }
                 showQueueOptions = false
             }
         )

@@ -64,6 +64,15 @@ object UserManager {
         Log.d(TAG, "🗑️ [UserManager] Cache user dibersihkan.")
     }
 
+    /**
+     * Memperbarui data pengguna lokal di memori dan cache tanpa perlu fetch ulang.
+     */
+    fun updateLocalUser(user: User) {
+        currentUser = user
+        saveToCache(user)
+        Log.d(TAG, "♻️ [UserManager] Profil lokal diperbarui: ${user.displayName}")
+    }
+
     // ──────────────────────────────────────────────────
     // Network operations
     // ──────────────────────────────────────────────────

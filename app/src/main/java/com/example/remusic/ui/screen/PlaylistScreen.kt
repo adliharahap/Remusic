@@ -116,10 +116,10 @@ fun PlaylistScreen(
             PlaylistMainContent(
                 onCreatePlaylistClick = onCreatePlaylistClick,
                 viewModel = playlistViewModel,
-                onItemClick = { id, type ->
-                    val routeType = if (type == FilterType.PLAYLIST) "USER_CREATED" else "ARTIST"
+                onItemClick = { id, type, title ->
+                    val routeType = if (id == "LIKED_SONGS") "AUTO" else if (type == FilterType.PLAYLIST) "USER_CREATED" else "ARTIST"
                     playlistNavController.navigate(
-                        PlaylistRoute.createRoute(id = id, type = routeType)
+                        PlaylistRoute.createRoute(id = id, type = routeType, name = title)
                     )
                 }
             )
@@ -128,11 +128,15 @@ fun PlaylistScreen(
             route = PlaylistRoute.PLAYLIST_DETAIL,
             arguments = listOf(
                 navArgument(PlaylistRoute.ARGS_ID) { type = NavType.StringType },
-                navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" }
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" },
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_NAME) { type = NavType.StringType; nullable = true }
             )
         ) { backStackEntry ->
             val id = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_ID) ?: ""
             val typeString = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            val rawName = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_NAME)
+            val name = rawName?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: "Artist"
+
             val playlistType = try {
                 PlaylistType.valueOf(typeString)
             } catch (e: Exception) {
@@ -140,7 +144,7 @@ fun PlaylistScreen(
             }
             PlaylistDetailScreen(
                 songs = emptyList(),
-                playlistName = "Artist",
+                playlistName = name,
                 playlistCoverUrl = "",
                 playlistType = playlistType,
                 playlistId = id,
@@ -162,7 +166,7 @@ fun PlaylistScreen(
 fun PlaylistMainContent(
     onCreatePlaylistClick: () -> Unit,
     viewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel,
-    onItemClick: (String, FilterType) -> Unit
+    onItemClick: (String, FilterType, String) -> Unit
 ) {
     var isVisible by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
@@ -334,12 +338,16 @@ fun PlaylistMainContent(
                         if (viewMode == ViewMode.GRID) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OfflineMusicCard(viewMode)
-                                LikedSongsCard()
+                                LikedSongsCard(
+                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs") }
+                                )
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OfflineMusicCard(viewMode)
-                                LikedSongsListItem()
+                                LikedSongsListItem(
+                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs") }
+                                )
                             }
                         }
                     }
@@ -353,14 +361,14 @@ fun PlaylistMainContent(
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
                                     privacy = item.privacy,
-                                    onClick = { onItemClick(item.id, item.type) }
+                                    onClick = { onItemClick(item.id, item.type, item.title) }
                                 )
                             } else {
                                 ArtistGridItem(
                                     name = item.title,
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
-                                    onClick = { onItemClick(item.id, item.type) }
+                                    onClick = { onItemClick(item.id, item.type, item.title) }
                                 )
                             }
                         } else {
@@ -370,14 +378,14 @@ fun PlaylistMainContent(
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
                                     privacy = item.privacy,
-                                    onClick = { onItemClick(item.id, item.type) }
+                                    onClick = { onItemClick(item.id, item.type, item.title) }
                                 )
                             } else {
                                 ArtistListItem(
                                     name = item.title,
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
-                                    onClick = { onItemClick(item.id, item.type) }
+                                    onClick = { onItemClick(item.id, item.type, item.title) }
                                 )
                             }
                         }
@@ -393,12 +401,12 @@ fun PlaylistMainContent(
 }
 
 @Composable
-fun LikedSongsCard() {
+fun LikedSongsCard(onClick: () -> Unit = {}) {
     Card(
         modifier = Modifier
             .height(180.dp) // Matched to PlaylistGridItem (Reduced from 200)
             .fillMaxWidth()
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -446,12 +454,12 @@ fun LikedSongsCard() {
 }
 
 @Composable
-fun LikedSongsListItem() {
+fun LikedSongsListItem(onClick: () -> Unit = {}) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(90.dp) // Matched (Reduced from 100)
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {

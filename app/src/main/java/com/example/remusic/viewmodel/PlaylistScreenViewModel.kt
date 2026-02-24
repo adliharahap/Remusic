@@ -170,7 +170,10 @@ class PlaylistScreenViewModel(application: Application) : AndroidViewModel(appli
             val remotePlaylists = SupabaseManager.client
                 .from("playlists")
                 .select {
-                    filter { eq("owner_user_id", userId) }
+                    filter { 
+                        eq("owner_user_id", userId) 
+                        eq("is_official", false)
+                    }
                 }
                 .decodeList<Playlist>()
             

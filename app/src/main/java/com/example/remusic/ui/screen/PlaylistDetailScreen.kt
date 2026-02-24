@@ -61,6 +61,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.example.remusic.data.SupabaseManager
 // import com.example.remusic.ui.theme.AppFont // Saya nonaktifkan ini agar preview jalan
 import java.util.concurrent.TimeUnit
 
@@ -84,6 +85,7 @@ import com.example.remusic.ui.components.playlist.ArtistPlaylistHeader
 import com.example.remusic.ui.components.playlist.UserPlaylistHeader
 import com.example.remusic.ui.components.playlist.OfficialPlaylistHeader
 import com.example.remusic.ui.components.skeletons.PlaylistDetailSkeleton
+import io.github.jan.supabase.auth.auth
 
 // --- REVISI: Enum dengan Ikon ---
 enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
@@ -131,8 +133,16 @@ fun PlaylistDetailScreen(
     // --- Dynamic Gradient State ---
     var headersColors by remember { mutableStateOf(listOf(Color(0xFF202020), Color(0xFF000000))) }
 
+    // --- Pagination Logic (Artist/User Playlist) ---
+    // For Artist, User, Liked Songs (AUTO), & Official playlists, we use fetched data from ViewModel
+    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL) {
+        uiState?.artistSongs ?: emptyList()
+    } else {
+        songs
+    }
+
     // Update Gradient based on playlist type
-    LaunchedEffect(playlistType, uiState?.artistDetails, uiState?.currentPlaylistDetails, songs) {
+    LaunchedEffect(playlistType, uiState?.artistDetails, uiState?.currentPlaylistDetails, effectiveSongs) {
         when (playlistType) {
             PlaylistType.ARTIST -> {
                 // For artist playlists, use artist photo
@@ -142,27 +152,27 @@ fun PlaylistDetailScreen(
                     Log.d("PlaylistDetailScreen", "Artist Headers Colors: $headersColors")
                 }
             }
-            PlaylistType.USER_CREATED -> {
-                 // For User playlists, prioritize playlist custom cover
+            PlaylistType.USER_CREATED, PlaylistType.AUTO, PlaylistType.OFFICIAL -> {
+                 // For User, Auto, and Official playlists, prioritize playlist custom cover
                  val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() } ?: playlistCoverUrl
                  when {
                      customCoverUrl.isNotBlank() -> {
                          headersColors = extractGradientColorsFromImageUrl(context, customCoverUrl)
-                         Log.d("PlaylistDetailScreen", "User Playlist Custom Cover Colors: $headersColors")
+                         Log.d("PlaylistDetailScreen", "Playlist Custom Cover Colors: $headersColors")
                      }
-                     songs.isNotEmpty() -> {
-                         val songCoverUrl = songs[0].song.coverUrl
+                     effectiveSongs.isNotEmpty() -> {
+                         val songCoverUrl = effectiveSongs[0].song.coverUrl
                          if (!songCoverUrl.isNullOrBlank()) {
                              headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
-                             Log.d("PlaylistDetailScreen", "User Playlist First Song Cover Colors: $headersColors")
+                             Log.d("PlaylistDetailScreen", "Playlist First Song Cover Colors: $headersColors")
                          }
                      }
                  }
             }
             else -> {
                 // For other playlists, use first song's cover
-                if (songs.isNotEmpty()) {
-                    val coverUrl = songs[0].song.coverUrl
+                if (effectiveSongs.isNotEmpty()) {
+                    val coverUrl = effectiveSongs[0].song.coverUrl
                     if (!coverUrl.isNullOrBlank()) {
                         headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
                         Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
@@ -175,26 +185,18 @@ fun PlaylistDetailScreen(
         }
     }
 
-    // --- Pagination Logic (Artist/User Playlist) ---
-    // For Artist & User playlists, we use fetched data from ViewModel
-    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED) {
-        uiState?.artistSongs ?: emptyList()
-    } else {
-        songs
-    }
-
     // Initial Fetch for Artist or User Playlist
     LaunchedEffect(playlistType, playlistId) {
         if (playlistType == PlaylistType.ARTIST && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchArtistSongs(playlistId)
-        } else if (playlistType == PlaylistType.USER_CREATED && !playlistId.isNullOrBlank()) {
+        } else if ((playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL) && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchPlaylistDetails(playlistId)
         }
     }
 
     // --- Loading State Logic ---
     // Show skeleton until BOTH artist details AND songs are loaded
-    val isInitialLoading = remember(playlistType, uiState, effectiveSongs) {
+    val isInitialLoading = remember(playlistType, playlistId, uiState, effectiveSongs) {
         when (playlistType) {
             PlaylistType.ARTIST -> {
                  val isLoadingSongs = uiState?.isArtistSongsLoading == true
@@ -206,14 +208,19 @@ fun PlaylistDetailScreen(
                  // - Currently loading AND data not ready yet
                  (isLoadingSongs || isLoadingDetails) && (!hasSongs || !hasDetails)
             }
-            PlaylistType.USER_CREATED -> {
-                 // Wait for both playlist details and songs to load
-                 val isLoadingDetails = uiState?.isLoadingArtistDetails == true
-                 val isLoadingSongs = uiState?.isArtistSongsLoading == true
-                 val hasDetails = uiState?.currentPlaylistDetails != null
-                 val hasSongs = effectiveSongs.isNotEmpty()
-                 
-                 (isLoadingDetails || isLoadingSongs) && (!hasDetails || !hasSongs)
+            PlaylistType.USER_CREATED, PlaylistType.AUTO, PlaylistType.OFFICIAL -> {
+                 if (playlistType == PlaylistType.AUTO && playlistId != "LIKED_SONGS") {
+                     // For non-fetching AUTO playlists (like Home Top Hits), no skeleton loading needed
+                     false
+                 } else {
+                     // Wait for both playlist details and songs to load (or just songs for AUTO LIKED_SONGS)
+                     val isLoadingDetails = uiState?.isLoadingArtistDetails == true
+                     val isLoadingSongs = uiState?.isArtistSongsLoading == true
+                     val hasDetails = if (playlistType == PlaylistType.AUTO) true else uiState?.currentPlaylistDetails != null
+                     val hasSongs = effectiveSongs.isNotEmpty()
+                     
+                     (isLoadingDetails || isLoadingSongs) && (!hasDetails || !hasSongs)
+                 }
             }
             else -> false 
         }
@@ -722,7 +729,16 @@ fun PlaylistDetailContent(
                             }
                         },
                         onMoreClick = {
-                             playMusicViewModel?.showQueueOptions(songWithArtist)
+                             val currentUserId = SupabaseManager.client.auth.currentUserOrNull()?.id
+                             val isUserPlaylist = playlistType == PlaylistType.USER_CREATED
+                             val isOwner = uiState?.currentPlaylistDetails?.ownerUserId == currentUserId
+                             val isOfficial = uiState?.currentPlaylistDetails?.isOfficial == true
+                             
+                             val removePlaylistId = if (isUserPlaylist && isOwner && !isOfficial) {
+                                 playlistId
+                             } else null
+                             
+                             playMusicViewModel?.showQueueOptions(songWithArtist, removePlaylistId)
                         }
                     )
                 }

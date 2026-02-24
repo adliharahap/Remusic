@@ -710,7 +710,7 @@ fun DeezerSongCard(
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isRequested) Color(0xFF4CAF50).copy(alpha = 0.2f) else Color.Transparent
             ),
-            border = if (isRequested) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF755D8D)),
+            border = if (isRequested) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB71C1C)),
             shape = RoundedCornerShape(20.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
             modifier = Modifier.height(36.dp)

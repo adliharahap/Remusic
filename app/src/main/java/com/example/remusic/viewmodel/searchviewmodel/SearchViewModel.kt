@@ -111,6 +111,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     .select {
                         filter {
                             ilike("title", "%$query%")
+                            or {
+                                eq("visibility", "public")
+                                eq("is_official", true)
+                            }
                         }
                         limit(20)
                     }

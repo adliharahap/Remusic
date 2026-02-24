@@ -30,9 +30,9 @@ object SupabaseManager {
             install(Storage)
             httpConfig {
                 install(HttpTimeout) {
-                    requestTimeoutMillis = 60000 // 60 Detik (1 Menit)
-                    connectTimeoutMillis = 60000 // 60 Detik
-                    socketTimeoutMillis = 60000  // 60 Detik
+                    requestTimeoutMillis = 25000 // 25 Detik
+                    connectTimeoutMillis = 25000 // 25 Detik
+                    socketTimeoutMillis = 25000  // 25 Detik
                 }
             }
         }

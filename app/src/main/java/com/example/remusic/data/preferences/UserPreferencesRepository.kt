@@ -57,10 +57,10 @@ class UserPreferencesRepository(private val context: Context) {
                     try {
                         Color(android.graphics.Color.parseColor(colorString))
                     } catch (e: Exception) {
-                        Color(0xFF755D8D) // Default purple on parse error
+                        Color(0xFFB71C1C) // Default maroon on parse error
                     }
                 } else {
-                    Color(0xFF755D8D) // Default purple
+                    Color(0xFFB71C1C) // Default maroon
                 }
             }
 

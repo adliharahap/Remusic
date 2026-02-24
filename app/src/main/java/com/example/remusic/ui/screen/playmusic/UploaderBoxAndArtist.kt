@@ -406,47 +406,47 @@ fun UploaderBoxAndArtist(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    // Spacer(modifier = Modifier.height(24.dp))
 
-                    // BUTTON BELOW UPLOADER (PROFESSIONAL OUTLINED)
-                    val infiniteTransition = rememberInfiniteTransition(label = "ArrowAnimation")
-                    val arrowTranslation by infiniteTransition.animateFloat(
-                        initialValue = -2f,
-                        targetValue = 6f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(1000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "ArrowSlide"
-                    )
+                    // // BUTTON BELOW UPLOADER (PROFESSIONAL OUTLINED)
+                    // val infiniteTransition = rememberInfiniteTransition(label = "ArrowAnimation")
+                    // val arrowTranslation by infiniteTransition.animateFloat(
+                    //     initialValue = -2f,
+                    //     targetValue = 6f,
+                    //     animationSpec = infiniteRepeatable(
+                    //         animation = tween(1000, easing = LinearEasing),
+                    //         repeatMode = RepeatMode.Reverse
+                    //     ),
+                    //     label = "ArrowSlide"
+                    // )
 
-                    OutlinedButton(
-                        onClick = onSemuaLaguClick,
-                        border = BorderStroke(1.5.dp, roleColor.copy(alpha = 0.4f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = roleColor),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                    ) {
-                        Text(
-                            "Semua Lagu", 
-                            color = Color.White,
-                            fontSize = 16.sp, 
-                            fontWeight = FontWeight.ExtraBold,
-                            fontFamily = AppFont.Helvetica
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                            tint = Color.White,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(26.dp)
-                                .graphicsLayer(translationX = arrowTranslation)
-                        )
-                    }
+                    // OutlinedButton(
+                    //     onClick = onSemuaLaguClick,
+                    //     border = BorderStroke(1.5.dp, roleColor.copy(alpha = 0.4f)),
+                    //     colors = ButtonDefaults.outlinedButtonColors(contentColor = roleColor),
+                    //     shape = RoundedCornerShape(16.dp),
+                    //     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                    //     modifier = Modifier
+                    //         .fillMaxWidth()
+                    //         .height(50.dp)
+                    // ) {
+                    //     Text(
+                    //         "Semua Lagu", 
+                    //         color = Color.White,
+                    //         fontSize = 16.sp, 
+                    //         fontWeight = FontWeight.ExtraBold,
+                    //         fontFamily = AppFont.Helvetica
+                    //     )
+                    //     Spacer(modifier = Modifier.width(12.dp))
+                    //     Icon(
+                    //         imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                    //         tint = Color.White,
+                    //         contentDescription = null,
+                    //         modifier = Modifier
+                    //             .size(26.dp)
+                    //             .graphicsLayer(translationX = arrowTranslation)
+                    //     )
+                    // }
                 }
             }
         }

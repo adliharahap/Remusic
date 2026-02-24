@@ -97,6 +97,10 @@ class MusicRepository(private val musicDao: MusicDao) {
     private val memoryArtistCache = mutableMapOf<String, Artist>()
     private val memoryFollowCache =
             mutableMapOf<String, Boolean>() // Cache untuk status follow artist
+            
+    fun getAllLikedSongs(): kotlinx.coroutines.flow.Flow<List<CachedSong>> {
+        return musicDao.getAllLikedSongs()
+    }
 
     // --- LOGIC 1: RESOLVE URL (DIRECT TELEGRAM WITH RETRY) ---
     suspend fun getPlayableUrl(

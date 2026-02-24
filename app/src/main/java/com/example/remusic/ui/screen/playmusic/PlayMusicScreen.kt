@@ -227,6 +227,9 @@ fun PlayMusicScreen(
                         },
                         onAddToPlaylist = { song ->
                             playMusicViewModel.showAddToPlaylistSheet(song)
+                        },
+                        onRemoveFromQueue = { song ->
+                            playMusicViewModel.removeFromQueue(song)
                         }
                     )
                 }
@@ -464,7 +467,8 @@ fun PlayMusicScreen(
             },
             onCreateNewPlaylistClick = {
                 playMusicViewModel.dismissAddToPlaylistSheet()
-                navController.navigate("create_playlist") { launchSingleTop = true }
+                navController.popBackStack()
+                playMusicViewModel.requestNavigateToCreatePlaylist()
             }
         )
     }

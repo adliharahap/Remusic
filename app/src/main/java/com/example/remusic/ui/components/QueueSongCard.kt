@@ -1,6 +1,7 @@
 package com.example.remusic.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,11 +52,15 @@ fun QueueSongCard(
         Color.Transparent
     }
 
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     Card(
-        onClick = { onClickListener(index) },
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = { onClickListener(index) },
+                onLongClick = { onMoreClick() }
+            ),
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
         ),

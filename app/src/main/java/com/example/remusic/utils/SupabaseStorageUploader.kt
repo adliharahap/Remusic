@@ -34,6 +34,16 @@ object SupabaseStorageUploader {
     }
 
     /**
+     * Upload gambar profil pengguna
+     */
+    suspend fun uploadProfileImage(imageFile: File, userId: String): UploadResult {
+        return uploadFile(
+            file = imageFile,
+            path = "profiles/$userId/avatar_${System.currentTimeMillis()}.${imageFile.extension}"
+        )
+    }
+
+    /**
      * Upload poster musik
      */
     suspend fun uploadMusicPosterImage(imageFile: File, musicId: String, musicName: String): UploadResult {

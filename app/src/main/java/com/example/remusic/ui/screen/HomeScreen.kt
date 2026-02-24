@@ -66,8 +66,17 @@ import com.example.remusic.utils.GreetingUtils
 import com.example.remusic.viewmodel.homeviewmodel.HomeUiState
 import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import com.example.remusic.viewmodel.AppUpdateViewModel
 import com.example.remusic.ui.screen.NotificationScreen
 import com.example.remusic.ui.screen.RequestSongScreen
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BrowserUpdated
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 fun HomeScreen(
@@ -79,7 +88,8 @@ fun HomeScreen(
     onRequestSongClick: () -> Unit = {},
     onAtHomeRoot: (Boolean) -> Unit = {}, // Callback to notify if at root
     homeResetTrigger: Int = 0,            // Increments to reset nested nav to root
-    connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available
+    connectivityStatus: ConnectivityObserver.Status = ConnectivityObserver.Status.Available,
+    appUpdateViewModel: AppUpdateViewModel = viewModel()
 ) {
     // Listen to connectivity changes and trigger refresh
     LaunchedEffect(connectivityStatus) {
@@ -98,6 +108,15 @@ fun HomeScreen(
     // Notify parent about root status
     LaunchedEffect(isAtRoot) {
         onAtHomeRoot(isAtRoot)
+    }
+
+    // --- Cek Update Aplikasi (Hanya di Root Home) ---
+    val updateAvailable by appUpdateViewModel.updateAvailable.collectAsState()
+    
+    LaunchedEffect(isAtRoot) {
+        if (isAtRoot && updateAvailable == null) {
+            appUpdateViewModel.checkForUpdates()
+        }
     }
 
     // --- Consume pending artist navigation from PlayMusic "Lihat Playlist" via SharedFlow ---
@@ -123,6 +142,53 @@ fun HomeScreen(
     }
 
     // HomeViewModel akan dibagikan ke semua layar di dalam nested NavHost ini
+
+    // Dialog Update Aplikasi
+    updateAvailable?.let { update ->
+        val context = LocalContext.current
+        AlertDialog(
+            onDismissRequest = { 
+                if (!update.isMandatory) appUpdateViewModel.dismissUpdate() 
+            },
+            icon = {
+                Icon(Icons.Rounded.BrowserUpdated, contentDescription = "Update Available", tint = Color(0xFFE91E63))
+            },
+            title = {
+                Text(text = "Versi Baru Tersedia!", fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Column {
+                    Text("ReMusic ${update.versionName} kini tersedia.", color = Color.White.copy(0.8f))
+                    if (!update.releaseNotes.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Apa yang baru:\n${update.releaseNotes}",
+                            color = Color.White.copy(0.6f),
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
+                    context.startActivity(intent)
+                }) {
+                    Text("Update Sekarang", color = Color(0xFFE91E63), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                if (!update.isMandatory) {
+                    TextButton(onClick = { appUpdateViewModel.dismissUpdate() }) {
+                        Text("Nanti", color = Color.Gray)
+                    }
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            titleContentColor = Color.White,
+            textContentColor = Color.White
+        )
+    }
 
     NavHost(
         navController = homeNavController,
@@ -181,8 +247,8 @@ fun HomeScreen(
                         com.example.remusic.ui.screen.PlaylistType.AUTO -> {
                             // Map ID to Data
                             when (id) {
-                                "recently_played" -> {
-                                    playlistTitle = "Sering Kamu Putar"
+                                "baru_saja_ditambahkan" -> {
+                                    playlistTitle = "Baru Saja Ditambahkan"
                                     songs = state.recentlyPlayed
                                 }
                                 "top_trending" -> {
@@ -200,6 +266,13 @@ fun HomeScreen(
                                 }
                             }
                             playlistCoverUrl = songs.firstOrNull()?.song?.coverUrl ?: ""
+                        }
+                        PlaylistType.OFFICIAL -> {
+                            // Sama seperti ARTIST, biarkan Viewmodel di PlaylistDetailScreen yang fetch lagu-lagunya
+                            songs = emptyList()
+                            val officialPlaylist = state.officialPlaylists.find { it.id == id }
+                            playlistTitle = officialPlaylist?.title ?: "Official Playlist"
+                            playlistCoverUrl = officialPlaylist?.coverUrl ?: ""
                         }
                         else -> {
                             // Handle other types later
@@ -251,7 +324,7 @@ private fun HomeMainScreen(
     // Get saved color from preferences
     val context = LocalContext.current
     val userPreferencesRepository = remember { UserPreferencesRepository(context) }
-    val savedColor by userPreferencesRepository.lastSongColorFlow.collectAsState(initial = Color(0xFF755D8D))
+    val savedColor by userPreferencesRepository.lastSongColorFlow.collectAsState(initial = Color(0xFFB71C1C))
     
     // Animate color transitions smoothly
     val lastSongColor by animateColorAsState(
@@ -375,14 +448,12 @@ private fun HomeMainScreen(
                                 dominantColor = lastSongColor
                             )
 
-                            // Quick Pick Carousel - Use persisted data from ViewModel
                             QuickPickCarousel(
-                                songs = state.quickPickSongs,
+                                songs = state.quickPickSongs.take(10),
                                 onSongClick = { index ->
                                     val song = state.quickPickSongs.getOrNull(index)
                                     if (song != null) {
-                                        playMusicViewModel.playSongWithSmartQueue(song)
-                                        playMusicViewModel.playingMusicFromPlaylist("Pilihan Cepat")
+                                        playMusicViewModel.playSongWithSmartQueue(song, "Pilihan Cepat")
                                     }
                                 },
                                 onMoreClick = { song ->
@@ -397,13 +468,13 @@ private fun HomeMainScreen(
                     // 2. Sering Kamu Putar (Recently Played)
                     if (state.recentlyPlayed.isNotEmpty()) {
                         SongSection(
-                            title = "Sering Kamu Putar",
-                            displayItems = state.recentlyPlayed,
+                            title = "Baru Saja Ditambahkan",
+                            displayItems = state.recentlyPlayed.take(10),
                             playMusicViewModel = playMusicViewModel,
                             
                             onSeeAllClick = {
                                 homeNavController.navigate(
-                                    HomeRoute.createRoute("recently_played", "AUTO")
+                                    HomeRoute.createRoute("baru_saja_ditambahkan", "AUTO")
                                 )
                             },
                             onLongClick = { song ->
@@ -417,7 +488,7 @@ private fun HomeMainScreen(
                     if (state.mostLoved.isNotEmpty()) {
                         SongSection(
                             title = "Lagu Paling Banyak Disukai",
-                            displayItems = state.mostLoved,
+                            displayItems = state.mostLoved.take(10),
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
                                 homeNavController.navigate(
@@ -435,7 +506,7 @@ private fun HomeMainScreen(
                     if (state.topTrending.isNotEmpty()) {
                         SongSection(
                             title = "Top Trending",
-                            displayItems = state.topTrending,
+                            displayItems = state.topTrending.take(10),
                             playMusicViewModel = playMusicViewModel,
                             onSeeAllClick = {
                                 homeNavController.navigate(
@@ -454,7 +525,12 @@ private fun HomeMainScreen(
                         OfficialPlaylistSection(
                             playlists = state.officialPlaylists,
                             onPlaylistClick = { playlist ->
-                                // TODO: Navigate to playlist detail
+                                homeNavController.navigate(
+                                    HomeRoute.createRoute(
+                                        id = playlist.id,
+                                        type = "OFFICIAL"
+                                    )
+                                )
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
@@ -562,7 +638,7 @@ fun ScrollAnimatedBlobs(scrollOffset: Int) {
             .background(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFF3F51B5).copy(alpha = 0.3f),
+                        Color(0xFFE91E63).copy(alpha = 0.3f),
                         Color.Transparent
                     )
                 )

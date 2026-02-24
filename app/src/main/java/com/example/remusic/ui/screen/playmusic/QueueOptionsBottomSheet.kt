@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
@@ -61,7 +62,11 @@ fun QueueOptionsBottomSheet(
     onAddToLiked: () -> Unit = {},
     onDownload: () -> Unit = {},
     onAddToQueue: () -> Unit = {}, // Add to end of queue
-    onPlayNext: () -> Unit = {}    // Add after current song
+    onPlayNext: () -> Unit = {},   // Add after current song
+    showRemoveFromPlaylist: Boolean = false,
+    onRemoveFromPlaylist: () -> Unit = {},
+    showRemoveFromQueue: Boolean = false,
+    onRemoveFromQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -171,6 +176,24 @@ fun QueueOptionsBottomSheet(
                 icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
                 onClick = onAddToPlaylist
             )
+
+            // 3.5 Remove from Playlist (Conditional)
+            if (showRemoveFromPlaylist) {
+                QueueMenuOptionItem(
+                    title = "Hapus dari playlist",
+                    icon = Icons.Outlined.Delete,
+                    onClick = onRemoveFromPlaylist
+                )
+            }
+
+            // 3.6 Remove from Queue (Conditional)
+            if (showRemoveFromQueue) {
+                QueueMenuOptionItem(
+                    title = "Hapus dari antrean",
+                    icon = Icons.Outlined.Delete, // Or another icon
+                    onClick = onRemoveFromQueue
+                )
+            }
 
             // 4. Add to Liked
             QueueMenuOptionItem(

@@ -94,11 +94,6 @@ private fun ArtistCircle(
                     spotColor = Color.White.copy(alpha = 0.2f)
                 )
                 .clip(CircleShape)
-                .border(
-                    width = 1.5.dp,
-                    color = Color.White,
-                    shape = CircleShape
-                )
         )
 
         Spacer(modifier = Modifier.height(8.dp))

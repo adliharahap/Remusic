@@ -17,6 +17,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.UserManager
 import com.example.remusic.data.local.MusicDatabase
 import com.example.remusic.data.model.Artist
 import com.example.remusic.data.model.ArtistDetails
@@ -96,6 +97,7 @@ data class PlayerUiState(
 
         // Global Queue Options State
         val selectedSongForQueueOptions: SongWithArtist? = null,
+        val playlistIdToRemoveFromQueueOptions: String? = null,
 
         // Snackbar State for Queue Info
         val showQueueInfoSnackbar: Boolean = false,
@@ -111,6 +113,7 @@ data class PlayerUiState(
         // --- Tab Tracking for "Lihat Playlist" Navigation ---
         val previousTab: String = "home", // Default to Home tab route
         val navigateToArtistEvent: String? = null, // One-shot event: artistId to navigate to
+        val navigateToCreatePlaylistEvent: Boolean = false, // One-shot event: to create playlist
         val pendingArtistNavigation: String? = null, // Pending artistId for tab screens to consume
         val gradientStyle: com.example.remusic.data.preferences.GradientStyle = com.example.remusic.data.preferences.GradientStyle.PRIMARY,
         val gradientTopColorIndex: Int = 0,
@@ -203,6 +206,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             getApplication(), url, gradientStyle = style
                         )
                         _uiState.update { it.copy(dominantColors = colors) }
+                        if (colors.isNotEmpty()) {
+                            userPreferencesRepository.saveLastSongColor(colors.first())
+                        }
                     }
                 }
             }
@@ -1106,12 +1112,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // --- FITUR BARU: PLAY WITH SMART QUEUE (UNTUK HOME SCREEN QUICK PICK) ---
-    fun playSongWithSmartQueue(seedSong: SongWithArtist) {
-        Log.d("PlayMusicViewModel", "🚀 START SMART QUEUE for: ${seedSong.song.title}")
+    fun playSongWithSmartQueue(seedSong: SongWithArtist, playlistName: String = "Unknown Playlist") {
+        Log.d("PlayMusicViewModel", "🚀 START SMART QUEUE for: ${seedSong.song.title} in $playlistName")
 
         // 1. Play lagu yang diklik DULUAN (Single Item Playlist)
-        // Set startIndex = 0 karena cuma ada 1 lagu
-        val playJob = setPlaylist(listOf(seedSong), 0)
+        // Set startIndex = 0 karena cuma ada 1 lagu, dan sertakan nama playlist
+        val playJob = setPlaylist(listOf(seedSong), 0, playlistName)
 
         // 2. Fetch Smart Queue di background jangan ganggu UI/Playback
         viewModelScope.launch(Dispatchers.IO) {
@@ -1146,12 +1152,38 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             )
                         }
 
+                // --- LOGGING UNTUK ANALISIS USER ---
+                Log.d(
+                        "PlayMusicViewModel",
+                        "=== 📋 SMART QUEUE RESULT (${queueWithArtists.size} Songs) ==="
+                )
+                queueWithArtists.forEachIndexed { index, item ->
+                    // Log format: [No] Judul - Artist | Lang: .. | Moods: ..
+                    val moodsStr = item.song.moods.joinToString(", ")
+                    Log.d(
+                            "PlayMusicViewModel",
+                            "Queue [#${index + 1}]: ${item.song.title} - ${item.artist?.name ?: "Unknown"} | Lang: ${item.song.language} | Moods: [$moodsStr]"
+                    )
+                }
+                Log.d(
+                        "PlayMusicViewModel",
+                        "==========================================================="
+                )
+
                 // 5. Append ke Playlist saat ini
                 val currentPlaylist = _uiState.value.playlist.toMutableList()
-                currentPlaylist.addAll(queueWithArtists)
+                
+                // Cek duplikasi (jangan add kalau sudah ada)
+                val existingIds = currentPlaylist.map { it.song.id }.toSet()
+                val uniqueNewSongs = queueWithArtists.filter { !existingIds.contains(it.song.id) }
+                
+                currentPlaylist.addAll(uniqueNewSongs)
 
                 // Simpan total playlist baru
                 val finalPlaylist = currentPlaylist.toList()
+
+                // FIX: Update Player Queue Persistance to SQLite
+                repository.savePlaybackQueue(finalPlaylist, playlistName)
 
                 // Update UI State (Queue terlihat oleh user)
                 _uiState.update { it.copy(playlist = finalPlaylist) }
@@ -1164,7 +1196,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     // kita addMediaItems ke akhir queue.
 
                     val newMediaItems =
-                            queueWithArtists.map { createMediaItem(it, it.song.audioUrl ?: "") }
+                            uniqueNewSongs.map { createMediaItem(it, it.song.audioUrl ?: "") }
                     controller.addMediaItems(newMediaItems)
 
                     Log.d(
@@ -2106,6 +2138,16 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(navigateToArtistEvent = null) }
     }
 
+    /** Called by PlayMusicScreen when user clicks "Buat Playlist Baru" */
+    fun requestNavigateToCreatePlaylist() {
+        _uiState.update { it.copy(navigateToCreatePlaylistEvent = true) }
+    }
+
+    /** Called by MainScreen after consuming the create playlist navigation event */
+    fun consumeNavigateToCreatePlaylistEvent() {
+        _uiState.update { it.copy(navigateToCreatePlaylistEvent = false) }
+    }
+
     /** Set pending artist navigation - also emits to SharedFlow for reliable delivery */
     fun setPendingArtistNavigation(artistId: String) {
         _uiState.update { it.copy(pendingArtistNavigation = artistId) }
@@ -2168,12 +2210,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // --- Global Queue Options Helpers ---
-    fun showQueueOptions(song: SongWithArtist) {
-        _uiState.update { it.copy(selectedSongForQueueOptions = song) }
+    fun showQueueOptions(song: SongWithArtist, playlistIdToRemoveFrom: String? = null) {
+        _uiState.update { it.copy(
+            selectedSongForQueueOptions = song,
+            playlistIdToRemoveFromQueueOptions = playlistIdToRemoveFrom
+        ) }
     }
 
     fun dismissQueueOptions() {
-        _uiState.update { it.copy(selectedSongForQueueOptions = null) }
+        _uiState.update { it.copy(
+            selectedSongForQueueOptions = null,
+            playlistIdToRemoveFromQueueOptions = null
+        ) }
     }
 
     fun dismissQueueInfoSnackbar() {
@@ -2274,31 +2322,116 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 ) 
             }
             try {
+                if (playlistId == "LIKED_SONGS") {
+                    val userId = UserManager.currentUser?.uid
+                    if (userId == null) {
+                        Log.e("PlayMusicViewModel", "Error: User ID is null when fetching Liked Songs")
+                        _uiState.update { it.copy(isLoadingArtistDetails = false, isArtistSongsLoading = false) }
+                        return@launch
+                    }
+
+                    try {
+                        Log.d("PlayMusicViewModel", "Fetching Liked Songs for user: $userId")
+                        // Fetch Liked Songs directly from Supabase to ensure accuracy
+                        val likedSongsRel = SupabaseManager.client.from("user_song_likes")
+                            .select { filter { eq("user_id", userId) } }
+                            .decodeList<PlaylistSongRelation>()
+
+                        Log.d("PlayMusicViewModel", "Found ${likedSongsRel.size} liked songs relations")
+
+                        val likedSongIds = likedSongsRel.map { it.songId }
+                        if (likedSongIds.isEmpty()) {
+                            Log.d("PlayMusicViewModel", "Liked songs relation is empty.")
+                            _uiState.update {
+                                it.copy(
+                                    currentPlaylistDetails = null,
+                                    playlistOwner = null,
+                                    isLoadingArtistDetails = false,
+                                    artistSongs = emptyList(),
+                                    isArtistSongsLoading = false,
+                                    artistSongsEndReached = true
+                                )
+                            }
+                            return@launch
+                        }
+
+                        Log.d("PlayMusicViewModel", "Fetching song details for IDs: $likedSongIds")
+                        // Request real songs from Supabase based on ID
+                        val songs = SupabaseManager.client.from("songs")
+                            .select { filter { isIn("id", likedSongIds) } }
+                            .decodeList<Song>()
+                            
+                        Log.d("PlayMusicViewModel", "Found ${songs.size} actual songs")
+
+                        val artistIds = songs.mapNotNull { it.artistId }.distinct()
+                        Log.d("PlayMusicViewModel", "Fetching ${artistIds.size} distinct artists")
+                        val artistsData = if (artistIds.isNotEmpty()) {
+                            SupabaseManager.client.from("artists")
+                                .select { filter { isIn("id", artistIds) } }
+                                .decodeList<Artist>().associateBy { it.id }
+                        } else emptyMap()
+
+                        // Match songs to artist and preserve order from user_song_likes if possible
+                        val songMap = songs.associateBy { it.id }
+                        val finalSongsWithArtist = likedSongsRel.mapNotNull { rel ->
+                            val song = songMap[rel.songId]
+                            if (song != null) {
+                                SongWithArtist(song = song, artist = song.artistId?.let { artistsData[it] })
+                            } else null
+                        }
+
+                        Log.d("PlayMusicViewModel", "Successfully constructed ${finalSongsWithArtist.size} SongWithArtist objects")
+
+                        _uiState.update {
+                            it.copy(
+                                currentPlaylistDetails = null, // No playlist details for Liked Songs
+                                playlistOwner = null,
+                                isLoadingArtistDetails = false,
+                                artistSongs = finalSongsWithArtist,
+                                isArtistSongsLoading = false,
+                                artistSongsEndReached = true
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PlayMusicViewModel", "Error fetching liked songs: ${e.message}", e)
+                        _uiState.update {
+                            it.copy(
+                                currentPlaylistDetails = null,
+                                playlistOwner = null,
+                                isLoadingArtistDetails = false,
+                                artistSongs = emptyList(),
+                                isArtistSongsLoading = false,
+                                artistSongsEndReached = true
+                            )
+                        }
+                    }
+                    return@launch
+                }
+
+                // Normal Playlist Fetching
                 // Fetch Playlist
                 val playlist = SupabaseManager.client.from("playlists")
-                    .select {
-                        filter {
+                    .select { 
+                        filter { 
                             eq("id", playlistId)
-                        }
-                    }.decodeSingleOrNull<com.example.remusic.data.model.Playlist>()
+                            // If we want to strictly enforce it's public (though for owner it shouldn't matter, but official is public)
+                        } 
+                    }
+                    .decodeSingleOrNull<com.example.remusic.data.model.Playlist>()
 
                 // Fetch Owner if exists
                 var owner: User? = null
                 val ownerId = playlist?.ownerUserId
                 if (ownerId != null) {
                     owner = SupabaseManager.client.from("users")
-                        .select {
-                            filter {
-                                eq("id", ownerId)
-                            }
-                        }.decodeSingleOrNull<User>()
+                        .select { filter { eq("id", ownerId) } }
+                        .decodeSingleOrNull<User>()
                 }
 
                 // Fetch User Playlist Songs
                 val playlistSongsRelation = SupabaseManager.client.from("playlist_songs")
-                    .select {
-                        filter { eq("playlist_id", playlistId) }
-                    }.decodeList<PlaylistSongRelation>()
+                    .select { filter { eq("playlist_id", playlistId) } }
+                    .decodeList<PlaylistSongRelation>()
 
                 val songIds = playlistSongsRelation.map { it.songId }.distinct()
                 var finalSongsWithArtist: List<SongWithArtist> = emptyList()
@@ -2519,6 +2652,66 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun removeFromQueue(songToRemove: SongWithArtist) {
+        val currentPlaylist = _uiState.value.playlist.toMutableList()
+        val indexToRemove = currentPlaylist.indexOfFirst { it.song.id == songToRemove.song.id }
+        
+        if (indexToRemove != -1) {
+            // Remove from state
+            currentPlaylist.removeAt(indexToRemove)
+            
+            // Adjust current song index if needed
+            var newCurrentIndex = _uiState.value.currentSongIndex
+            if (indexToRemove < newCurrentIndex) {
+                 newCurrentIndex -= 1
+            } else if (indexToRemove == newCurrentIndex) {
+                 // The currrently playing song was removed.
+                 // We could potentially skip to the next track here,
+                 // but ExoPlayer might handle the jump.
+                 // For now, if it's the last song removed, let it reset.
+            }
+            
+            // Remove from ExoPlayer
+            mediaController?.removeMediaItem(indexToRemove)
+            
+             _uiState.update { 
+                 it.copy(
+                     playlist = currentPlaylist,
+                     currentSongIndex = newCurrentIndex
+                 )
+             }
+             
+             // Save updated queue to SQLite
+             viewModelScope.launch(Dispatchers.IO) {
+                 repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+             }
+             
+             Log.d("PlayMusicViewModel", "✅ Removed '${songToRemove.song.title}' from queue at index $indexToRemove.")
+        }
+    }
+
+    // Dipanggil saat Log Out
+    fun stopPlaybackOnLogout() {
+        Log.d("PlayMusicViewModel", "🛑 stopPlaybackOnLogout: Membersihkan state & player...")
+        
+        // 1. Matikan ExoPlayer
+        mediaController?.stop()
+        mediaController?.clearMediaItems()
+        
+        // 2. Clear UI State
+        _uiState.update { 
+            PlayerUiState() // Reset to default state
+        }
+        
+        // 3. Clear Room/SQLite and Preferences
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.savePlaybackQueue(emptyList(), "Unknown Playlist")
+            userPreferencesRepository.saveLastSongId("")
+            userPreferencesRepository.saveLastPosition(0L)
+            userPreferencesRepository.saveLastPlaylistName("")
+        }
+    }
+
     // --- PLAYBACK PERSISTENCE LOGIC ---
     // Dipanggil saat inisialisasi ViewModel
     private suspend fun restorePlaybackState() {
@@ -2697,6 +2890,32 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("PlayMusicViewModel", "Error adding song to playlist: ${e.message}", e)
                 withContext(Dispatchers.Main) { onResult(false, "Gagal menambahkan lagu: ${e.message}") }
+            }
+        }
+    }
+
+    fun removeSongFromPlaylist(playlistId: String, songId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val userId = SupabaseManager.client.auth.currentUserOrNull()?.id ?: return@launch
+                
+                SupabaseManager.client.from("playlist_songs")
+                    .delete {
+                        filter {
+                            eq("playlist_id", playlistId)
+                            eq("song_id", songId)
+                        }
+                    }
+                
+                // Update State Secara Optimistic/Local
+                val currentSongs = _uiState.value.artistSongs
+                val updatedSongs = currentSongs.filter { it.song.id != songId }
+                _uiState.update { it.copy(artistSongs = updatedSongs) }
+
+                withContext(Dispatchers.Main) { onResult(true, "Lagu dihapus dari playlist") }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "Error removing song from playlist: ${e.message}", e)
+                withContext(Dispatchers.Main) { onResult(false, "Gagal menghapus lagu: ${e.message}") }
             }
         }
     }

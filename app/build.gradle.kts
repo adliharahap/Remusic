@@ -170,6 +170,4 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion") // Wajib buat Coroutines/Flow
     ksp("androidx.room:room-compiler:$roomVersion") // Pakai ksp, bukan kapt/annotationProcessor
-
-    implementation("com.github.commandiron:WheelPickerCompose:1.1.11")
 }
