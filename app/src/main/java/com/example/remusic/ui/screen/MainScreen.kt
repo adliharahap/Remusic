@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.example.remusic.ui.components.CreatePlaylistBottomSheet
+import com.example.remusic.ui.components.AddToPlaylistBottomSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -210,6 +211,11 @@ fun BottomNavGraph(
         composable("request_song") {
             RequestSongScreen(navController = navController, playMusicViewModel = playMusicViewModel)
         }
+        composable("create_playlist") {
+            com.example.remusic.ui.screen.CreatePlaylistScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }
 
@@ -338,8 +344,7 @@ fun MainScreen(
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         if (!sheetState.isVisible) {
                             showCreatePlaylistSheet = false
-                            // Navigate to actual create playlist screen if needed
-                            // navController.navigate("create_playlist") 
+                            navController.navigate("create_playlist") { launchSingleTop = true }
                         }
                     }
                 },
@@ -347,13 +352,7 @@ fun MainScreen(
                      scope.launch { sheetState.hide() }.invokeOnCompletion {
                         if (!sheetState.isVisible) {
                             showCreatePlaylistSheet = false
-                        }
-                    }
-                },
-                onCreatePublicPlaylistClick = {
-                     scope.launch { sheetState.hide() }.invokeOnCompletion {
-                        if (!sheetState.isVisible) {
-                            showCreatePlaylistSheet = false
+                            navController.navigate("create_playlist") { launchSingleTop = true }
                         }
                     }
                 },
@@ -396,10 +395,37 @@ fun MainScreen(
                     playMusicViewModel.dismissQueueOptions()
                 },
                 onAddToPlaylist = {
-                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
+                    playMusicViewModel.showAddToPlaylistSheet(selectedSong)
+                    playMusicViewModel.dismissQueueOptions()
                 },
                 onAddToLiked = {
                     playMusicViewModel.toggleLike(selectedSong.song.id)
+                }
+            )
+        }
+
+        // --- Global Add To Playlist Bottom Sheet ---
+        val songToAdd = playerUiState.selectedSongForAddToPlaylist
+        if (songToAdd != null) {
+            val addToPlaylistSheetState = rememberModalBottomSheetState()
+            val context = LocalContext.current
+
+            AddToPlaylistBottomSheet(
+                sheetState = addToPlaylistSheetState,
+                onDismissRequest = { playMusicViewModel.dismissAddToPlaylistSheet() },
+                playlists = playerUiState.userPlaylists,
+                isLoading = playerUiState.isFetchingUserPlaylists,
+                onPlaylistSelected = { playlist ->
+                    playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id) { success, message ->
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        if (success) {
+                            playMusicViewModel.dismissAddToPlaylistSheet()
+                        }
+                    }
+                },
+                onCreateNewPlaylistClick = {
+                    playMusicViewModel.dismissAddToPlaylistSheet()
+                    navController.navigate("create_playlist") { launchSingleTop = true }
                 }
             )
         }

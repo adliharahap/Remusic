@@ -58,6 +58,16 @@ object SupabaseStorageUploader {
     }
 
     /**
+     * Upload cover playlist
+     */
+    suspend fun uploadPlaylistImage(imageFile: File, playlistId: String): UploadResult {
+        return uploadFile(
+            file = imageFile,
+            path = "playlists/$playlistId/cover_${System.currentTimeMillis()}.${imageFile.extension}"
+        )
+    }
+
+    /**
      * Fungsi umum untuk upload ke Supabase
      */
     private suspend fun uploadFile(file: File, path: String): UploadResult {

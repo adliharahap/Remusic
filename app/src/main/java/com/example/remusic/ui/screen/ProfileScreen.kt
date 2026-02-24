@@ -121,6 +121,11 @@ fun ProfileScreen(
         composable("request_song") {
             com.example.remusic.ui.screen.RequestSongScreen(navController = profileNavController, playMusicViewModel = playMusicViewModel)
         }
+        composable(ProfileRoute.CREATE_PLAYLIST) {
+            CreatePlaylistScreen(
+                onNavigateBack = { profileNavController.popBackStack() }
+            )
+        }
     }
 }
 

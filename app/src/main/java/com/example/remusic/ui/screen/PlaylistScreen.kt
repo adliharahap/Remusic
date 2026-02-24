@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import com.example.remusic.ui.components.shimmerEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,7 +78,7 @@ enum class PlaylistPrivacy { PUBLIC, FRIENDS, PRIVATE }
 data class PlaylistItem(
     val id: String,
     val title: String,
-    val songCount: Int,
+    val subtitle: String,
     val imageUrl: String,
     val type: FilterType,
     val privacy: PlaylistPrivacy = PlaylistPrivacy.PRIVATE // Default
@@ -111,7 +112,17 @@ fun PlaylistScreen(
         modifier = Modifier.fillMaxSize()
     ) {
         composable(PlaylistRoute.MAIN) {
-            PlaylistMainContent(onCreatePlaylistClick = onCreatePlaylistClick)
+            val playlistViewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            PlaylistMainContent(
+                onCreatePlaylistClick = onCreatePlaylistClick,
+                viewModel = playlistViewModel,
+                onItemClick = { id, type ->
+                    val routeType = if (type == FilterType.PLAYLIST) "USER_CREATED" else "ARTIST"
+                    playlistNavController.navigate(
+                        PlaylistRoute.createRoute(id = id, type = routeType)
+                    )
+                }
+            )
         }
         composable(
             route = PlaylistRoute.PLAYLIST_DETAIL,
@@ -139,11 +150,20 @@ fun PlaylistScreen(
         composable("request_song") {
             com.example.remusic.ui.screen.RequestSongScreen(navController = playlistNavController, playMusicViewModel = playMusicViewModel)
         }
+        composable(PlaylistRoute.CREATE_PLAYLIST) {
+            CreatePlaylistScreen(
+                onNavigateBack = { playlistNavController.popBackStack() }
+            )
+        }
     }
 }
 
 @Composable
-fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
+fun PlaylistMainContent(
+    onCreatePlaylistClick: () -> Unit,
+    viewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel,
+    onItemClick: (String, FilterType) -> Unit
+) {
     var isVisible by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
     var filterType by remember { mutableStateOf<FilterType?>(null) } // Default null (All)
@@ -151,30 +171,17 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
 
     val user = UserManager.currentUser
 
-    // Dummy data with sample images
-    val allItems = remember {
-        listOf(
-            // Playlists with square images
-            PlaylistItem("p1", "Chill Vibes", 25, "https://picsum.photos/seed/playlist1/400", FilterType.PLAYLIST, PlaylistPrivacy.PUBLIC),
-            PlaylistItem("p2", "Workout Mix", 30, "https://picsum.photos/seed/playlist2/400", FilterType.PLAYLIST, PlaylistPrivacy.PRIVATE),
-            PlaylistItem("p3", "Study Focus", 18, "https://picsum.photos/seed/playlist3/400", FilterType.PLAYLIST, PlaylistPrivacy.FRIENDS),
-            PlaylistItem("p4", "Party Hits", 42, "https://picsum.photos/seed/playlist4/400", FilterType.PLAYLIST, PlaylistPrivacy.PUBLIC),
-            PlaylistItem("p5", "Road Trip", 35, "https://picsum.photos/seed/playlist5/400", FilterType.PLAYLIST, PlaylistPrivacy.FRIENDS),
-            PlaylistItem("p6", "Sleep Sounds", 20, "https://picsum.photos/seed/playlist6/400", FilterType.PLAYLIST, PlaylistPrivacy.PRIVATE),
-            
-            // Artists with circular images (Privacy not applicable, default PRIVATE or ignore)
-            PlaylistItem("a1", "Taylor Swift", 45, "https://i.pravatar.cc/400?img=1", FilterType.ARTIST),
-            PlaylistItem("a2", "Ed Sheeran", 38, "https://i.pravatar.cc/400?img=2", FilterType.ARTIST),
-            PlaylistItem("a3", "Billie Eilish", 32, "https://i.pravatar.cc/400?img=3", FilterType.ARTIST),
-            PlaylistItem("a4", "The Weeknd", 50, "https://i.pravatar.cc/400?img=4", FilterType.ARTIST),
-            PlaylistItem("a5", "Ariana Grande", 41, "https://i.pravatar.cc/400?img=5", FilterType.ARTIST),
-            PlaylistItem("a6", "Drake", 55, "https://i.pravatar.cc/400?img=6", FilterType.ARTIST)
-        )
+    val allItems by viewModel.playlistsAndArtists.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
     }
 
     // Filter and sort logic
-    val displayItems = remember(filterType, sortType) {
-        val filtered = if (filterType == null) allItems else allItems.filter { it.type == filterType }
+    val displayItems = remember(allItems, filterType, sortType) {
+        val filtered =
+            if (filterType == null) allItems else allItems.filter { it.type == filterType }
         when (sortType) {
             SortType.RECENT -> filtered
             SortType.A_Z -> filtered.sortedBy { it.title }
@@ -194,7 +201,7 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(50.dp))
-        
+
         // Header with Profile Picture
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -216,9 +223,9 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
                 Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White)
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // Filter and View Controls
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -228,7 +235,10 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = filterType == FilterType.PLAYLIST,
-                    onClick = { filterType = if (filterType == FilterType.PLAYLIST) null else FilterType.PLAYLIST },
+                    onClick = {
+                        filterType =
+                            if (filterType == FilterType.PLAYLIST) null else FilterType.PLAYLIST
+                    },
                     label = { Text("Playlists", fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color.White.copy(0.2f),
@@ -239,7 +249,10 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
                 )
                 FilterChip(
                     selected = filterType == FilterType.ARTIST,
-                    onClick = { filterType = if (filterType == FilterType.ARTIST) null else FilterType.ARTIST },
+                    onClick = {
+                        filterType =
+                            if (filterType == FilterType.ARTIST) null else FilterType.ARTIST
+                    },
                     label = { Text("Artists", fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color.White.copy(0.2f),
@@ -250,16 +263,16 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
                 )
                 FilterChip(
                     selected = sortType != SortType.RECENT,
-                    onClick = { 
-                        sortType = when(sortType) {
+                    onClick = {
+                        sortType = when (sortType) {
                             SortType.RECENT -> SortType.A_Z
                             SortType.A_Z -> SortType.Z_A
                             SortType.Z_A -> SortType.RECENT
                         }
                     },
-                    label = { 
+                    label = {
                         Text(
-                            when(sortType) {
+                            when (sortType) {
                                 SortType.RECENT -> "Recent"
                                 SortType.A_Z -> "A-Z"
                                 SortType.Z_A -> "Z-A"
@@ -275,9 +288,9 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
                     )
                 )
             }
-            
-            IconButton(onClick = { 
-                viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST 
+
+            IconButton(onClick = {
+                viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
             }) {
                 Icon(
                     if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList,
@@ -286,72 +299,93 @@ fun PlaylistMainContent(onCreatePlaylistClick: () -> Unit) {
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // Content
         AnimatedVisibility(
             visible = isVisible,
             enter = fadeIn() + slideInVertically(initialOffsetY = { 50 })
         ) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                // Liked Songs (always first)
-                item {
-                    if (viewMode == ViewMode.GRID) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                             OfflineMusicCard(viewMode)
-                             LikedSongsCard()
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                             OfflineMusicCard(viewMode)
-                             LikedSongsListItem()
+            if (isLoading && allItems.isEmpty()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    items(12) {
+                        if (viewMode == ViewMode.GRID) {
+                            PlaylistGridSkeleton()
+                        } else {
+                            PlaylistListSkeleton()
                         }
                     }
                 }
-                
-                // Display filtered and sorted items
-                items(displayItems) { item ->
-                    if (viewMode == ViewMode.GRID) {
-                        if (item.type == FilterType.PLAYLIST) {
-                            PlaylistGridItem(
-                                title = item.title,
-                                songCount = item.songCount,
-                                imageUrl = item.imageUrl,
-                                privacy = item.privacy
-                            )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    // Liked Songs (always first)
+                    item {
+                        if (viewMode == ViewMode.GRID) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OfflineMusicCard(viewMode)
+                                LikedSongsCard()
+                            }
                         } else {
-                            ArtistGridItem(
-                                name = item.title,
-                                songCount = item.songCount,
-                                imageUrl = item.imageUrl
-                            )
-                        }
-                    } else {
-                        if (item.type == FilterType.PLAYLIST) {
-                            PlaylistListItem(
-                                title = item.title,
-                                songCount = item.songCount,
-                                imageUrl = item.imageUrl,
-                                privacy = item.privacy
-                            )
-                        } else {
-                            ArtistListItem(
-                                name = item.title,
-                                songCount = item.songCount,
-                                imageUrl = item.imageUrl
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OfflineMusicCard(viewMode)
+                                LikedSongsListItem()
+                            }
                         }
                     }
-                }
 
-                item {
-                    Spacer(modifier = Modifier.height(120.dp).fillMaxWidth())
+                    // Display filtered and sorted items
+                    items(displayItems) { item ->
+                        if (viewMode == ViewMode.GRID) {
+                            if (item.type == FilterType.PLAYLIST) {
+                                PlaylistGridItem(
+                                    title = item.title,
+                                    subtitle = item.subtitle,
+                                    imageUrl = item.imageUrl,
+                                    privacy = item.privacy,
+                                    onClick = { onItemClick(item.id, item.type) }
+                                )
+                            } else {
+                                ArtistGridItem(
+                                    name = item.title,
+                                    subtitle = item.subtitle,
+                                    imageUrl = item.imageUrl,
+                                    onClick = { onItemClick(item.id, item.type) }
+                                )
+                            }
+                        } else {
+                            if (item.type == FilterType.PLAYLIST) {
+                                PlaylistListItem(
+                                    title = item.title,
+                                    subtitle = item.subtitle,
+                                    imageUrl = item.imageUrl,
+                                    privacy = item.privacy,
+                                    onClick = { onItemClick(item.id, item.type) }
+                                )
+                            } else {
+                                ArtistListItem(
+                                    name = item.title,
+                                    subtitle = item.subtitle,
+                                    imageUrl = item.imageUrl,
+                                    onClick = { onItemClick(item.id, item.type) }
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(120.dp).fillMaxWidth())
+                    }
                 }
             }
         }
@@ -401,7 +435,7 @@ fun LikedSongsCard() {
                     fontSize = 14.sp
                 )
                 Text(
-                    text = "120 songs",
+                    text = "Playlist • ${UserManager.currentUser?.displayName ?: "You"}",
                     color = Color.White.copy(alpha = 0.7f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 11.sp
@@ -438,20 +472,20 @@ fun LikedSongsListItem() {
                     Icons.Default.Favorite,
                     contentDescription = "Liked",
                     tint = Color.White,
-                    modifier = Modifier.size(35.dp) // Adjusted size
+                    modifier = Modifier.size(35.dp) // Adjusted
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     text = "Liked Songs",
                     color = Color.White,
                     fontFamily = AppFont.Helvetica,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 16.sp // Slightly larger for list view
                 )
                 Text(
-                    text = "120 songs",
+                    text = "Playlist • ${UserManager.currentUser?.displayName ?: "You"}",
                     color = Color.White.copy(alpha = 0.7f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 12.sp
@@ -461,19 +495,84 @@ fun LikedSongsListItem() {
     }
 }
 
+@Composable
+fun PlaylistGridSkeleton() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(110.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .shimmerEffect()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .width(80.dp)
+                .height(14.dp)
+                .shimmerEffect()
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .width(50.dp)
+                .height(10.dp)
+                .shimmerEffect()
+        )
+    }
+}
+
+@Composable
+fun PlaylistListSkeleton() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .shimmerEffect()
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column {
+            Box(
+                modifier = Modifier
+                    .width(120.dp)
+                    .height(14.dp)
+                    .shimmerEffect()
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .width(80.dp)
+                    .height(10.dp)
+                    .shimmerEffect()
+            )
+        }
+    }
+}
+
 // PLAYLIST COMPONENTS (Square Images)
 @Composable
 fun PlaylistGridItem(
     title: String,
-    songCount: Int,
+    subtitle: String,
     imageUrl: String,
-    privacy: PlaylistPrivacy
+    privacy: PlaylistPrivacy,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .height(180.dp) // Adjusted height (Reduced from 200)
             .fillMaxWidth()
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -521,7 +620,7 @@ fun PlaylistGridItem(
                     maxLines = 1
                 )
                 Text(
-                    text = "$songCount songs",
+                    text = subtitle,
                     color = Color.White.copy(alpha = 0.6f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 11.sp
@@ -534,15 +633,16 @@ fun PlaylistGridItem(
 @Composable
 fun PlaylistListItem(
     title: String,
-    songCount: Int,
+    subtitle: String,
     imageUrl: String,
-    privacy: PlaylistPrivacy
+    privacy: PlaylistPrivacy,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(90.dp) // Adjusted height (Reduced from 100)
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -591,7 +691,7 @@ fun PlaylistListItem(
                     maxLines = 1
                 )
                 Text(
-                    text = "$songCount songs",
+                    text = subtitle,
                     color = Color.White.copy(alpha = 0.6f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 12.sp
@@ -605,14 +705,15 @@ fun PlaylistListItem(
 @Composable
 fun ArtistGridItem(
     name: String,
-    songCount: Int,
-    imageUrl: String
+    subtitle: String,
+    imageUrl: String,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .height(180.dp) // Matched to PlaylistGridItem
             .fillMaxWidth()
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(percent = 50), // Full Rounded
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -643,7 +744,7 @@ fun ArtistGridItem(
                     maxLines = 1
                 )
                 Text(
-                    text = "$songCount songs",
+                    text = subtitle,
                     color = Color.White.copy(alpha = 0.6f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 10.sp
@@ -656,14 +757,15 @@ fun ArtistGridItem(
 @Composable
 fun ArtistListItem(
     name: String,
-    songCount: Int,
-    imageUrl: String
+    subtitle: String,
+    imageUrl: String,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(90.dp) // Matched to PlaylistListItem (up from 80)
-            .clickable { /* TODO */ },
+            .clickable { onClick() },
         shape = RoundedCornerShape(percent = 50), // Full Rounded
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -693,7 +795,7 @@ fun ArtistListItem(
                     maxLines = 1
                 )
                 Text(
-                    text = "$songCount songs",
+                    text = subtitle,
                     color = Color.White.copy(alpha = 0.6f),
                     fontFamily = AppFont.Helvetica,
                     fontSize = 12.sp
@@ -806,6 +908,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
                     )
                 }
             }
-        }
+          }
     }
 }
+

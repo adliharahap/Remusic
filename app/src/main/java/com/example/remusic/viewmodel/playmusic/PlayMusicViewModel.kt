@@ -98,8 +98,11 @@ data class PlayerUiState(
         val selectedSongForQueueOptions: SongWithArtist? = null,
 
         // Snackbar State for Queue Info
-        // Snackbar State for Queue Info
         val showQueueInfoSnackbar: Boolean = false,
+
+        // Playlist Details State (For Playlist Header)
+        val currentPlaylistDetails: com.example.remusic.data.model.Playlist? = null,
+        val playlistOwner: User? = null,
 
         // Artist Details State (For Playlist Header)
         val artistDetails: ArtistDetails? = null,
@@ -114,7 +117,12 @@ data class PlayerUiState(
         val gradientBottomColorIndex: Int = 1,
         
         // Data Saver
-        val isDataSaverModeEnabled: Boolean = false
+        val isDataSaverModeEnabled: Boolean = false,
+
+        // Add to Playlist State
+        val selectedSongForAddToPlaylist: SongWithArtist? = null,
+        val userPlaylists: List<com.example.remusic.data.model.Playlist> = emptyList(),
+        val isFetchingUserPlaylists: Boolean = false
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -1627,6 +1635,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         "==========================================================="
                 )
 
+
                 // Update ViewModel State
                 // HATI-HATI: Playlist mungkin sudah berubah jika user ganti lagu cepat-cepat.
                 // Kita append ke current playlist jika seed song masih ada di sana.
@@ -2244,6 +2253,109 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     // --- Artist Songs Pagination Logic ---
 
+    // =========================================================================
+    //                            PLAYLIST FETCHING
+    // =========================================================================
+
+    @kotlinx.serialization.Serializable
+    private data class PlaylistSongRelation(
+        @kotlinx.serialization.SerialName("song_id") val songId: String,
+        @kotlinx.serialization.SerialName("added_at") val addedAt: String? = null
+    )
+    fun fetchPlaylistDetails(playlistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { 
+                it.copy(
+                    isLoadingArtistDetails = true,
+                    isArtistSongsLoading = true, // Set to true here to trigger skeleton
+                    currentPlaylistDetails = null,
+                    playlistOwner = null,
+                    artistSongs = emptyList() // clear previous songs
+                ) 
+            }
+            try {
+                // Fetch Playlist
+                val playlist = SupabaseManager.client.from("playlists")
+                    .select {
+                        filter {
+                            eq("id", playlistId)
+                        }
+                    }.decodeSingleOrNull<com.example.remusic.data.model.Playlist>()
+
+                // Fetch Owner if exists
+                var owner: User? = null
+                val ownerId = playlist?.ownerUserId
+                if (ownerId != null) {
+                    owner = SupabaseManager.client.from("users")
+                        .select {
+                            filter {
+                                eq("id", ownerId)
+                            }
+                        }.decodeSingleOrNull<User>()
+                }
+
+                // Fetch User Playlist Songs
+                val playlistSongsRelation = SupabaseManager.client.from("playlist_songs")
+                    .select {
+                        filter { eq("playlist_id", playlistId) }
+                    }.decodeList<PlaylistSongRelation>()
+
+                val songIds = playlistSongsRelation.map { it.songId }.distinct()
+                var finalSongsWithArtist: List<SongWithArtist> = emptyList()
+
+                if (songIds.isNotEmpty()) {
+                    // Fetch real songs
+                    val songsData = SupabaseManager.client.from("songs")
+                        .select {
+                            filter { isIn("id", songIds) }
+                        }.decodeList<Song>()
+
+                    // Fetch associated artists
+                    val artistIds = songsData.mapNotNull { it.artistId }.distinct()
+                    val artistsData = if (artistIds.isNotEmpty()) {
+                        SupabaseManager.client.from("artists")
+                            .select {
+                                filter { isIn("id", artistIds) }
+                            }.decodeList<Artist>().associateBy { it.id }
+                    } else {
+                        emptyMap()
+                    }
+
+                    // Map songs into SongWithArtist and maintain playlist order (or added_at order)
+                    // We'll preserve the order from `playlistSongsRelation`
+                    val songMap = songsData.associateBy { it.id }
+                    finalSongsWithArtist = playlistSongsRelation.mapNotNull { rel ->
+                        val song = songMap[rel.songId]
+                        if (song != null) {
+                            SongWithArtist(song = song, artist = song.artistId?.let { artistsData[it] })
+                        } else null
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        currentPlaylistDetails = playlist,
+                        playlistOwner = owner,
+                        isLoadingArtistDetails = false,
+                        artistSongs = finalSongsWithArtist,
+                        isArtistSongsLoading = false,
+                        artistSongsEndReached = true // Pagination not supported yet for user playlists
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "Error fetching playlist details: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        currentPlaylistDetails = null,
+                        playlistOwner = null,
+                        isLoadingArtistDetails = false,
+                        isArtistSongsLoading = false
+                    )
+                }
+            }
+        }
+    }
+
     fun fetchArtistSongs(artistId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             // Reset State for new artist
@@ -2503,6 +2615,88 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             viewModelScope.launch(Dispatchers.IO) {
                 userPreferencesRepository.saveLastSongId(currentSong.id)
                 userPreferencesRepository.saveLastPosition(currentPosition)
+            }
+        }
+    }
+
+    // =========================================================================
+    //                      ADD SONG TO PLAYLIST (GLOBAL)
+    // =========================================================================
+
+    fun showAddToPlaylistSheet(song: SongWithArtist) {
+        _uiState.update { it.copy(selectedSongForAddToPlaylist = song) }
+        fetchUserPlaylists()
+    }
+
+    fun dismissAddToPlaylistSheet() {
+        _uiState.update { it.copy(selectedSongForAddToPlaylist = null) }
+    }
+
+    private fun fetchUserPlaylists() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isFetchingUserPlaylists = true) }
+            try {
+                val userId = SupabaseManager.client
+                    .auth
+                    .currentUserOrNull()?.id ?: return@launch
+                val playlists = SupabaseManager.client.from("playlists")
+                    .select {
+                        filter {
+                            eq("owner_user_id", userId)
+                        }
+                    }.decodeList<com.example.remusic.data.model.Playlist>()
+                
+                _uiState.update { 
+                    it.copy(
+                        userPlaylists = playlists,
+                        isFetchingUserPlaylists = false
+                    ) 
+                }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "Error fetching user playlists: ${e.message}")
+                _uiState.update { it.copy(isFetchingUserPlaylists = false) }
+            }
+        }
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class PlaylistSongInsertReq(
+        @kotlinx.serialization.SerialName("playlist_id") val playlistId: String,
+        @kotlinx.serialization.SerialName("song_id") val songId: String,
+        @kotlinx.serialization.SerialName("added_by") val addedBy: String
+    )
+
+    fun addSongToPlaylist(playlistId: String, songId: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val userId = SupabaseManager.client
+                    .auth
+                    .currentUserOrNull()?.id ?: return@launch
+                // Cek apakah lagu sudah ada di playlist
+                val existing = SupabaseManager.client.from("playlist_songs")
+                    .select {
+                        filter {
+                            eq("playlist_id", playlistId)
+                            eq("song_id", songId)
+                        }
+                    }.decodeList<kotlinx.serialization.json.JsonObject>()
+                    
+                if (existing.isNotEmpty()) {
+                    withContext(Dispatchers.Main) { onResult(false, "Lagu sudah ada di playlist ini") }
+                    return@launch
+                }
+                
+                // Tambahkan lagu
+                val insertData = PlaylistSongInsertReq(
+                    playlistId = playlistId,
+                    songId = songId,
+                    addedBy = userId
+                )
+                SupabaseManager.client.from("playlist_songs").insert(insertData)
+                withContext(Dispatchers.Main) { onResult(true, "Berhasil menambahkan lagu ke playlist") }
+            } catch (e: Exception) {
+                Log.e("PlayMusicViewModel", "Error adding song to playlist: ${e.message}", e)
+                withContext(Dispatchers.Main) { onResult(false, "Gagal menambahkan lagu: ${e.message}") }
             }
         }
     }

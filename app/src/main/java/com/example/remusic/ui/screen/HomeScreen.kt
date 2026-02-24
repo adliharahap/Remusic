@@ -225,6 +225,11 @@ fun HomeScreen(
         composable("request_song") {
             RequestSongScreen(navController = homeNavController, playMusicViewModel = playMusicViewModel)
         }
+        composable(HomeRoute.CREATE_PLAYLIST) {
+            CreatePlaylistScreen(
+                onNavigateBack = { homeNavController.popBackStack() }
+            )
+        }
     }
 }
 

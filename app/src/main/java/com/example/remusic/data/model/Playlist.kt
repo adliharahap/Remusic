@@ -21,9 +21,11 @@ data class Playlist(
     
     @SerialName("owner_user_id")
     val ownerUserId: String? = null,
-    
     @SerialName("is_official")
     val isOfficial: Boolean = false,
+    
+    @SerialName("visibility")
+    val visibility: String? = null,
     
     @SerialName("created_at")
     val createdAt: String? = null

@@ -80,6 +80,9 @@ interface MusicDao {
     @Query("DELETE FROM cached_followed_artists WHERE artistId = :artistId")
     suspend fun deleteFollowedArtist(artistId: String)
 
+    @Query("DELETE FROM cached_followed_artists")
+    suspend fun clearFollowedArtists()
+
     @Query("SELECT EXISTS(SELECT 1 FROM cached_followed_artists WHERE artistId = :artistId)")
     fun isArtistFollowed(artistId: String): Flow<Boolean>
 
@@ -108,4 +111,14 @@ interface MusicDao {
 
     @Query("SELECT * FROM playback_queue ORDER BY listOrder ASC")
     suspend fun getPlaybackQueue(): List<PlaybackQueueEntity>
+
+    // --- USER PLAYLISTS CACHE ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlaylists(playlists: List<com.example.remusic.data.local.entity.CachedPlaylist>)
+
+    @Query("SELECT * FROM cached_playlists WHERE ownerUserId = :userId ORDER BY cachedAt DESC")
+    fun getUserPlaylists(userId: String): Flow<List<com.example.remusic.data.local.entity.CachedPlaylist>>
+
+    @Query("DELETE FROM cached_playlists WHERE ownerUserId = :userId")
+    suspend fun clearUserPlaylists(userId: String)
 }

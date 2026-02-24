@@ -56,6 +56,7 @@ import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.LockScreenOrientationPortrait
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import com.example.remusic.ui.components.AddToPlaylistBottomSheet
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -222,26 +223,10 @@ fun PlayMusicScreen(
                             }
                         },
                         onAddToLiked = { song ->
-                            // TODO: Implement toggleLike specific for song argument in VM context if needed.
-                            // Currently toggleLike uses currentSong. We might need a specific one or just act on current if it matches?
-                            // For now, let's assume we want to like the Selected song.
-                            // Limit: playMusicViewModel.toggleLike() likely acts on CURRENT song.
-                            // We need toggleLike(songId).
-                            // Wait, the requirement was just "tambahkan ke lagu yang disukai".
-                            // If viewModel doesn't have toggleLike(id), we should add it or use repository directly?
-                            // Let's check VM... it has toggleLike() without args.
-                            // I will add a TODO or implemented check.
-                            // Actually, let's just use the VM's toggleLike if it supports ID or add it.
-                            // Checking VM content...
-                            // VM has `toggleLike()` which uses `currentSong`.
-                            // I need to add `toggleLike(song: SongWithArtist)` to VM or use repository.
-                            // For safety, I'll temporarily disable or just show Toast if not current.
-                            // BUT user asked for it. I should update VM to support liking specific song.
-                            // I will do that in next step. For now, I'll put a placeholder or call a new function I WILL add.
-                            playMusicViewModel.toggleLike(song.song.id) // I need to add this overload
+                            playMusicViewModel.toggleLike(song.song.id)
                         },
-                        onAddToPlaylist = {
-                            // TODO
+                        onAddToPlaylist = { song ->
+                            playMusicViewModel.showAddToPlaylistSheet(song)
                         }
                     )
                 }
@@ -431,7 +416,12 @@ fun PlayMusicScreen(
             songWithArtist = uiState.currentSong,
             onDismiss = { showMoreOptionsSheet = false },
             onShare = { /* TODO: Implement Share */ },
-            onAddToPlaylist = { /* TODO: Implement Add to Playlist */ },
+            onAddToPlaylist = {
+                uiState.currentSong?.let { song ->
+                    playMusicViewModel.showAddToPlaylistSheet(song)
+                }
+                showMoreOptionsSheet = false
+            },
             onAddToLiked = {
                 playMusicViewModel.toggleLike()
                 showMoreOptionsSheet = false
@@ -450,6 +440,32 @@ fun PlayMusicScreen(
             onGradientBottomColorIndexChange = { playMusicViewModel.setGradientBottomColorIndex(it) },
             isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
             onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) }
+        )
+    }
+
+    // --- Global Add To Playlist Bottom Sheet ---
+    val songToAdd = uiState.selectedSongForAddToPlaylist
+    if (songToAdd != null) {
+        val addToPlaylistSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+        val context = LocalContext.current
+
+        AddToPlaylistBottomSheet(
+            sheetState = addToPlaylistSheetState,
+            onDismissRequest = { playMusicViewModel.dismissAddToPlaylistSheet() },
+            playlists = uiState.userPlaylists,
+            isLoading = uiState.isFetchingUserPlaylists,
+            onPlaylistSelected = { playlist ->
+                playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id) { success, message ->
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    if (success) {
+                        playMusicViewModel.dismissAddToPlaylistSheet()
+                    }
+                }
+            },
+            onCreateNewPlaylistClick = {
+                playMusicViewModel.dismissAddToPlaylistSheet()
+                navController.navigate("create_playlist") { launchSingleTop = true }
+            }
         )
     }
 }

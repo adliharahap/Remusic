@@ -22,8 +22,9 @@ import com.example.remusic.data.local.entity.SearchHistoryEntity
                         LikedSong::class,
                         SearchHistoryEntity::class,
                         CachedFollowedArtist::class,
-                        PlaybackQueueEntity::class],
-        version = 11,
+                        PlaybackQueueEntity::class,
+                        com.example.remusic.data.local.entity.CachedPlaylist::class],
+        version = 12,
         exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
@@ -137,6 +138,15 @@ abstract class MusicDatabase : RoomDatabase() {
                     }
                 }
 
+        val MIGRATION_11_12 =
+                object : Migration(11, 12) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                                "CREATE TABLE IF NOT EXISTS `cached_playlists` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT, `coverUrl` TEXT, `ownerUserId` TEXT, `isOfficial` INTEGER NOT NULL, `visibility` TEXT, `createdAt` TEXT, `cachedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                        )
+                    }
+                }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE
                     ?: synchronized(this) {
@@ -155,7 +165,8 @@ abstract class MusicDatabase : RoomDatabase() {
                                                 MIGRATION_7_8,
                                                 MIGRATION_8_9,
                                                 MIGRATION_9_10,
-                                                MIGRATION_10_11
+                                                MIGRATION_10_11,
+                                                MIGRATION_11_12
                                         )
                                         .fallbackToDestructiveMigration(true)
                                         .build()

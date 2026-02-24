@@ -13,6 +13,7 @@ import com.example.remusic.data.model.ArtistDetails
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.User
+import com.example.remusic.data.model.Playlist
 import com.example.remusic.data.network.TelegramRetrofit
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -21,6 +22,7 @@ import io.github.jan.supabase.postgrest.query.Order
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -346,9 +348,6 @@ class MusicRepository(private val musicDao: MusicDao) {
         // 1. Cek di SQLite dulu
         val cached = musicDao.getSongById(songId)
 
-        // ----------------------------------------------------
-        // 🔥 LOGIC SINKRONISASI LIRIK (VERSIONING CHECK) 🔥
-        // ----------------------------------------------------
         // Kita tidak langsung percaya cache. Kita cek dulu ke Supabase:
         // "Apakah lirik di server lebih baru dari yang saya punya?"
 
@@ -407,10 +406,6 @@ class MusicRepository(private val musicDao: MusicDao) {
         if (!shouldFetchFullDetails && cached != null && !cached.lyrics.isNullOrBlank()) {
             return cached
         }
-
-        // ----------------------------------------------------
-        // END LOGIC SINKRONISASI
-        // ----------------------------------------------------
 
         // 2. Fetch Full Data dari Supabase (Jika Perlu)
         Log.d(TAG, "☁️ [SUPABASE] Mengambil Data Lengkap (Lirik & Metadata)...")
@@ -505,7 +500,6 @@ class MusicRepository(private val musicDao: MusicDao) {
         return cached // Return apa adanya (mungkin null atau data parsial)
     }
 
-    // --- LOGIC 3: LIKE / UNLIKE SONG ---
     // --- LOGIC 3: LIKE / UNLIKE SONG (OFFLINE FIRST) ---
     suspend fun isSongLiked(songId: String, userId: String): Boolean {
         // "Single Source of Truth" adalah Local DB
@@ -762,7 +756,6 @@ class MusicRepository(private val musicDao: MusicDao) {
         }
     }
 
-    // --- LOGIC 7: FOLLOW ARTIST (WITH CACHE) ---
     // --- LOGIC 7: FOLLOW ARTIST (OFFLINE FIRST) ---
     suspend fun isArtistFollowed(userId: String, artistId: String): Boolean {
         // "Single Source of Truth" adalah Local DB
@@ -988,6 +981,8 @@ class MusicRepository(private val musicDao: MusicDao) {
         }
     }
 
+
+
     private fun CachedSong.toSong(): Song {
         return Song(
                 id = this.id,
@@ -1005,4 +1000,6 @@ class MusicRepository(private val musicDao: MusicDao) {
                 featuredArtists = this.featuredArtists
         )
     }
+
+
 }

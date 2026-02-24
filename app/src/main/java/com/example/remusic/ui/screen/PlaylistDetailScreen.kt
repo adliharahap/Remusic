@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
@@ -131,7 +132,7 @@ fun PlaylistDetailScreen(
     var headersColors by remember { mutableStateOf(listOf(Color(0xFF202020), Color(0xFF000000))) }
 
     // Update Gradient based on playlist type
-    LaunchedEffect(playlistType, uiState?.artistDetails, songs) {
+    LaunchedEffect(playlistType, uiState?.artistDetails, uiState?.currentPlaylistDetails, songs) {
         when (playlistType) {
             PlaylistType.ARTIST -> {
                 // For artist playlists, use artist photo
@@ -140,6 +141,23 @@ fun PlaylistDetailScreen(
                     headersColors = extractGradientColorsFromImageUrl(context, artistPhotoUrl)
                     Log.d("PlaylistDetailScreen", "Artist Headers Colors: $headersColors")
                 }
+            }
+            PlaylistType.USER_CREATED -> {
+                 // For User playlists, prioritize playlist custom cover
+                 val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() } ?: playlistCoverUrl
+                 when {
+                     customCoverUrl.isNotBlank() -> {
+                         headersColors = extractGradientColorsFromImageUrl(context, customCoverUrl)
+                         Log.d("PlaylistDetailScreen", "User Playlist Custom Cover Colors: $headersColors")
+                     }
+                     songs.isNotEmpty() -> {
+                         val songCoverUrl = songs[0].song.coverUrl
+                         if (!songCoverUrl.isNullOrBlank()) {
+                             headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
+                             Log.d("PlaylistDetailScreen", "User Playlist First Song Cover Colors: $headersColors")
+                         }
+                     }
+                 }
             }
             else -> {
                 // For other playlists, use first song's cover
@@ -157,18 +175,20 @@ fun PlaylistDetailScreen(
         }
     }
 
-    // --- Pagination Logic (Artist) ---
-    // For Artist playlists, always use paginated data from ViewModel
-    val effectiveSongs = if (playlistType == PlaylistType.ARTIST) {
+    // --- Pagination Logic (Artist/User Playlist) ---
+    // For Artist & User playlists, we use fetched data from ViewModel
+    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED) {
         uiState?.artistSongs ?: emptyList()
     } else {
         songs
     }
 
-    // Initial Fetch for Artist
+    // Initial Fetch for Artist or User Playlist
     LaunchedEffect(playlistType, playlistId) {
         if (playlistType == PlaylistType.ARTIST && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchArtistSongs(playlistId)
+        } else if (playlistType == PlaylistType.USER_CREATED && !playlistId.isNullOrBlank()) {
+             playMusicViewModel?.fetchPlaylistDetails(playlistId)
         }
     }
 
@@ -185,6 +205,15 @@ fun PlaylistDetailScreen(
                  // Show skeleton ONLY if:
                  // - Currently loading AND data not ready yet
                  (isLoadingSongs || isLoadingDetails) && (!hasSongs || !hasDetails)
+            }
+            PlaylistType.USER_CREATED -> {
+                 // Wait for both playlist details and songs to load
+                 val isLoadingDetails = uiState?.isLoadingArtistDetails == true
+                 val isLoadingSongs = uiState?.isArtistSongsLoading == true
+                 val hasDetails = uiState?.currentPlaylistDetails != null
+                 val hasSongs = effectiveSongs.isNotEmpty()
+                 
+                 (isLoadingDetails || isLoadingSongs) && (!hasDetails || !hasSongs)
             }
             else -> false 
         }
@@ -292,7 +321,8 @@ fun PlaylistDetailScreen(
             filteredAndSortedSongs = filteredAndSortedSongs,
             searchScale = searchScale,
             showSortMenu = showSortMenu,
-            onShowSortMenuChange = { showSortMenu = it }
+            onShowSortMenuChange = { showSortMenu = it },
+            isInitialLoading = isInitialLoading
         )
     }
 }
@@ -323,7 +353,8 @@ fun PlaylistDetailContent(
     filteredAndSortedSongs: List<SongWithArtist>,
     searchScale: Float,
     showSortMenu: Boolean,
-    onShowSortMenuChange: (Boolean) -> Unit
+    onShowSortMenuChange: (Boolean) -> Unit,
+    isInitialLoading: Boolean
 ) {
 
     // We want to start at Index 1 (Header), hiding Index 0 (Search)
@@ -544,7 +575,7 @@ fun PlaylistDetailContent(
                             when (playlistType) {
                                 PlaylistType.AUTO -> {
                                     AutoPlaylistHeader(
-                                        songs = songs,
+                                        songs = effectiveSongs,
                                         playlistName = playlistName,
                                         playlistCoverUrl = playlistCoverUrl,
                                         formattedTotalDuration = formattedTotalDuration,
@@ -565,7 +596,7 @@ fun PlaylistDetailContent(
                                 }
                                 PlaylistType.ARTIST -> {
                                     ArtistPlaylistHeader(
-                                        songs = songs,
+                                        songs = effectiveSongs,
                                         playlistName = playlistName,
                                         playlistCoverUrl = playlistCoverUrl,
                                         formattedTotalDuration = formattedTotalDuration,
@@ -587,7 +618,7 @@ fun PlaylistDetailContent(
                                 }
                                 PlaylistType.USER_CREATED -> {
                                      UserPlaylistHeader(
-                                        songs = songs,
+                                        songs = effectiveSongs,
                                         playlistName = playlistName,
                                         playlistCoverUrl = playlistCoverUrl,
                                         formattedTotalDuration = formattedTotalDuration,
@@ -603,12 +634,13 @@ fun PlaylistDetailContent(
                                         playMusicViewModel = playMusicViewModel,
                                         uiState = uiState,
                                         sortedSongs = sortedSongs,
-                                        filteredAndSortedSongs = filteredAndSortedSongs
+                                        filteredAndSortedSongs = filteredAndSortedSongs,
+                                        playlistId = playlistId // Pass to access DB data
                                     )
                                 }
                                 PlaylistType.OFFICIAL -> {
                                      OfficialPlaylistHeader(
-                                        songs = songs,
+                                        songs = effectiveSongs,
                                         playlistName = playlistName,
                                         playlistCoverUrl = playlistCoverUrl,
                                         formattedTotalDuration = formattedTotalDuration,
@@ -632,11 +664,38 @@ fun PlaylistDetailContent(
                     }
                 }
 
-                // --- Daftar Lagu (Items 2+) ---
-                itemsIndexed(
-                    items = filteredAndSortedSongs,
-                    key = { _, item -> item.song.id }
-                ) { index, songWithArtist ->
+                // --- Empty State ---
+                if (filteredAndSortedSongs.isEmpty() && !isInitialLoading) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp), // Beri ruang vertikal agar icon & text bisa center
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Kosong",
+                                tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Belum ada lagu di playlist ini",
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 16.sp,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                } else {
+                    // --- Daftar Lagu (Items 2+) ---
+                    itemsIndexed(
+                        items = filteredAndSortedSongs,
+                        key = { _, item -> item.song.id }
+                    ) { index, songWithArtist ->
                     val isPlaying = uiState?.currentSong?.song?.id == songWithArtist.song.id
 
                     QueueSongCard(
@@ -667,6 +726,7 @@ fun PlaylistDetailContent(
                         }
                     )
                 }
+            }
 
                 // --- Pagination Trigger (No Loading Indicator) ---
                 item {
@@ -683,7 +743,7 @@ fun PlaylistDetailContent(
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(130.dp)) // Padding bawah cukup besar
+                    Spacer(modifier = Modifier.height(300.dp)) // Padding bawah yg besar agar minimal height scroll terpenuhi
                 }
             }
         }

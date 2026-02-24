@@ -146,6 +146,11 @@ fun SearchScreen(
         composable("request_song") {
             RequestSongScreen(navController = searchNavController, playMusicViewModel = playMusicViewModel)
         }
+        composable(com.example.remusic.navigation.SearchRoute.CREATE_PLAYLIST) {
+            CreatePlaylistScreen(
+                onNavigateBack = { searchNavController.popBackStack() }
+            )
+        }
     }
 }
 

@@ -40,7 +40,6 @@ fun CreatePlaylistBottomSheet(
     onDismissRequest: () -> Unit,
     onCreatePlaylistClick: () -> Unit,
     onCreatePlaylistWithFriendClick: () -> Unit,
-    onCreatePublicPlaylistClick: () -> Unit,
     onRequestSongClick: () -> Unit
 ) {
     ModalBottomSheet(
@@ -87,15 +86,7 @@ fun CreatePlaylistBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            PlaylistItemCard(
-                icon = Icons.Default.Public,
-                title = "Public Playlist",
-                subtitle = "Share your music taste with everyone",
-                onClick = onCreatePublicPlaylistClick,
-                color = Color(0xFFF39C12) // Orange
-            )
 
-            Spacer(modifier = Modifier.height(16.dp))
 
             PlaylistItemCard(
                 icon = Icons.Default.LibraryAdd, // Using LibraryAdd or Add icon
