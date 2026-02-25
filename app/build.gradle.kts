@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.gms.google-services")
     id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin") version "2.0.1"
     id("kotlin-parcelize")
     kotlin("plugin.serialization") version "2.1.0"
@@ -40,8 +39,8 @@ android {
         applicationId = "com.example.remusic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -59,9 +58,25 @@ android {
         buildConfigField("String", "TELEGRAM_TOKEN_BOT", "\"$telegramTokenBot\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("/home/adliharahap/keystore/remusic_keystore")
+            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+        }
+        getByName("debug") {
+            storeFile = file("/home/adliharahap/keystore/remusic_keystore")
+            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -69,15 +84,13 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             // Biasanya proguardFiles tidak diperlukan untuk debug
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-    kotlinOptions {
-        jvmTarget = "11"
     }
     buildFeatures {
         compose = true
@@ -115,10 +128,10 @@ dependencies {
     // UI komponen player khusus Jetpack Compose (progress bar, tombol, dsb)
     implementation(libs.androidx.media3.ui.compose)
     // untuk canvas video
-    implementation("androidx.media3:media3-ui:1.9.0")
-    implementation("androidx.media3:media3-common:1.9.0")
+    implementation("androidx.media3:media3-ui:1.9.2")
+    implementation("androidx.media3:media3-common:1.9.2")
     // Untuk streaming audio/video dari internet (via HTTP/HTTPS)
-    implementation("androidx.media3:media3-datasource-okhttp:1.9.0")
+    implementation("androidx.media3:media3-datasource-okhttp:1.9.2")
     // Menyimpan data lokal seperti setting, tema, atau last played (pengganti SharedPreferences)
     implementation("androidx.datastore:datastore-preferences:1.2.0")
     // Mengelola state global (seperti player state) dengan ViewModel di Jetpack Compose
@@ -127,19 +140,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     //ambil gambar dari http
     implementation("io.coil-kt:coil-compose:2.7.0")
-    // Firebase BoM
-    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
-    // (Opsional) Firebase Analytics
-     implementation("com.google.firebase:firebase-analytics")
-    // Dependensi untuk Firebase Authentication
-    implementation("com.google.firebase:firebase-auth")
-    // Dependensi untuk Firebase Firestore Database
-    implementation("com.google.firebase:firebase-firestore")
-
     // --- GOOGLE CREDENTIAL MANAGER (Wajib untuk Google Sign In) ---
     implementation("androidx.credentials:credentials:1.5.0") // Gunakan versi stabil/terbaru jika ada
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
 
     // Tambahkan Supabase BOM (Bill of Materials)
     implementation(platform("io.github.jan-tennert.supabase:bom:3.3.0"))
@@ -151,9 +155,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.13.2")
 
     implementation("com.github.yalantis:ucrop:2.2.10")
-    implementation("io.ktor:ktor-client-okhttp:3.3.3")
+    implementation("io.ktor:ktor-client-okhttp:3.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
 
     implementation("androidx.palette:palette:1.0.0")
     implementation("androidx.mediarouter:mediarouter:1.8.1")
@@ -170,4 +174,10 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion") // Wajib buat Coroutines/Flow
     ksp("androidx.room:room-compiler:$roomVersion") // Pakai ksp, bukan kapt/annotationProcessor
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }

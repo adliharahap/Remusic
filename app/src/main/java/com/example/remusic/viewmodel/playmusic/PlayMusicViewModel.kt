@@ -2308,7 +2308,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     @kotlinx.serialization.Serializable
     private data class PlaylistSongRelation(
         @kotlinx.serialization.SerialName("song_id") val songId: String,
-        @kotlinx.serialization.SerialName("added_at") val addedAt: String? = null
+        @kotlinx.serialization.SerialName("added_at") val addedAt: String? = null,
+        @kotlinx.serialization.SerialName("created_at") val createdAt: String? = null
     )
     fun fetchPlaylistDetails(playlistId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -2376,7 +2377,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         val finalSongsWithArtist = likedSongsRel.mapNotNull { rel ->
                             val song = songMap[rel.songId]
                             if (song != null) {
-                                SongWithArtist(song = song, artist = song.artistId?.let { artistsData[it] })
+                                SongWithArtist(
+                                    song = song,
+                                    artist = song.artistId?.let { artistsData[it] },
+                                    addedAt = rel.createdAt ?: rel.addedAt ?: song.createdAt
+                                )
                             } else null
                         }
 
@@ -2455,12 +2460,15 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     // Map songs into SongWithArtist and maintain playlist order (or added_at order)
-                    // We'll preserve the order from `playlistSongsRelation`
                     val songMap = songsData.associateBy { it.id }
                     finalSongsWithArtist = playlistSongsRelation.mapNotNull { rel ->
                         val song = songMap[rel.songId]
                         if (song != null) {
-                            SongWithArtist(song = song, artist = song.artistId?.let { artistsData[it] })
+                            SongWithArtist(
+                                song = song,
+                                artist = song.artistId?.let { artistsData[it] },
+                                addedAt = rel.addedAt ?: rel.createdAt ?: song.createdAt
+                            )
                         } else null
                     }
                 }

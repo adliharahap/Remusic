@@ -70,7 +70,6 @@ import com.example.remusic.BuildConfig
 import com.example.remusic.data.UserManager
 import com.example.remusic.navigation.ProfileRoute
 import com.example.remusic.ui.theme.AppFont
-import com.example.remusic.utils.handleLogout
 import com.example.remusic.viewmodel.StorageCacheViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
@@ -462,7 +461,7 @@ fun ProfileMainContent(
                                 .fillMaxWidth()
                                 .clickable {
                                     playMusicViewModel.stopPlaybackOnLogout()
-                                    handleLogout(navController)
+                                    com.example.remusic.utils.AuthUtils.logout(context, navController)
                                 },
                             shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)) // Warna card sedikit lebih terang dari background

@@ -282,7 +282,7 @@ fun AboutScreen(
                         Column(modifier = Modifier.padding(20.dp)) {
                             TechStackRow("Jetpack Compose", "UI Framework")
                             TechStackRow("Media3 (ExoPlayer)", "Audio Engine")
-                            TechStackRow("Supabase & Firebase", "Backend & Auth")
+                            TechStackRow("Supabase", "Backend & Auth")
                             TechStackRow("Room (SQLite)", "Local Database")
                             TechStackRow("Retrofit & Ktor", "Networking")
                             TechStackRow("Coil", "Image Loading")

@@ -95,7 +95,10 @@ fun QueueSongCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             AsyncImage(
-                model = posterUri,
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(posterUri)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = "Poster Music",
                 modifier = Modifier
                     .size(48.dp)

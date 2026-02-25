@@ -72,6 +72,8 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     // Hapus variable auth: FirebaseAuth
@@ -108,6 +110,72 @@ class MainActivity : ComponentActivity() {
         credentialManager = CredentialManager.create(this)
         NotificationUtils.createNotificationChannel(this)
         val notificationRoute = intent.getStringExtra("destination_route")
+
+        // --- COIL GLOBAL IMAGE LOADER CONFIGURATION ---
+        val imageLoader = coil.ImageLoader.Builder(this)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(this.cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
+            }
+            // Tambahkan interceptor untuk Retry 10x dengan jeda bertahap (1s, 2s, 3s, 4s, max 5s)
+            .components {
+                add(coil.intercept.Interceptor { chain ->
+                    var response: coil.request.ImageResult? = null
+                    var attempt = 0
+                    val maxRetries = 5
+
+                    // Retry loop
+                    while (attempt < maxRetries) {
+                        attempt++
+                        try {
+                            // Coba jalankan request
+                            response = chain.proceed(chain.request)
+                            // Jika sukses (SuccessResult), keluar loop
+                            if (response is coil.request.SuccessResult) {
+                                break
+                            } else if (response is coil.request.ErrorResult) {
+                                // Jika error, lempar exception untuk ditangkap dan di-retry
+                                throw response.throwable
+                            }
+                        } catch (e: Exception) {
+                            Log.e("CoilRetry", "Attempt $attempt/$maxRetries failed for ${chain.request.data}: ${e.message}")
+                            if (attempt >= maxRetries) {
+                                // Jika sudah maksimal, kembalikan ErrorResult
+                                response = coil.request.ErrorResult(
+                                    drawable = chain.request.error,
+                                    request = chain.request,
+                                    throwable = e
+                                )
+                            }
+                        }
+                        // Jika belum sukses dan masih ada sisa attempt, tunggu dengan jeda bertahap
+                        if (response == null || response is coil.request.ErrorResult) {
+                            if (attempt < maxRetries) {
+                                // Jeda: 1 detik, 2 detik, ..., maks 5 detik
+                                val delaySeconds = if (attempt <= 5) attempt else 5
+                                val retryDelayMillis = delaySeconds * 1000L
+                                delay(retryDelayMillis) // Suspend properly without blocking the thread
+                            }
+                        }
+                    }
+                    response ?: coil.request.ErrorResult(
+                        drawable = chain.request.error,
+                        request = chain.request,
+                        throwable = IllegalStateException("Unknown Error after $maxRetries attempts")
+                    )
+                })
+            }
+            .respectCacheHeaders(false) // Paksa pakai cache lokal kita meski server bilang jangan
+            .build()
+        coil.Coil.setImageLoader(imageLoader)
+        // ----------------------------------------------
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         enableEdgeToEdge(

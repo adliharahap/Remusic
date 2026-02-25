@@ -64,7 +64,7 @@ fun UserPlaylistHeader(
     ) {
         // 1. Artwork (ANIMATED)
         val imageUrl = playlist?.coverUrl?.takeIf { it.isNotBlank() }
-            ?: playlistCoverUrl.ifBlank { if (songs.isNotEmpty()) songs[0].song.coverUrl else "" }
+            ?: playlistCoverUrl.ifBlank { if (sortedSongs.isNotEmpty()) sortedSongs[0].song.coverUrl else "" }
         AsyncImage(
             model = imageUrl,
             contentDescription = "Playlist Poster",

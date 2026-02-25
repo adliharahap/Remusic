@@ -25,7 +25,6 @@ data class User(
     val role: String = "listener",
 
     // Ubah Date ke String. Supabase mengirim format: "2025-12-25T10:00:00+00:00"
-    // Hapus @ServerTimestamp (itu punya Firebase)
     @SerialName("created_at")
     val createdAt: String? = null
 )

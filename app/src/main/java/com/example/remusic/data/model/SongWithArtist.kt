@@ -8,7 +8,8 @@ import kotlinx.serialization.Serializable
 @Parcelize
 data class SongWithArtist(
     val song: Song,
-    val artist: Artist? // Bisa null kalau data artis tidak ditemukan
+    val artist: Artist?, // Bisa null kalau data artis tidak ditemukan
+    val addedAt: String? = null // Timestamp when added to playlist/likes
 ): Parcelable
 
 val SongWithArtist.displayArtistName: String

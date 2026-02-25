@@ -124,7 +124,15 @@ fun PlaylistDetailScreen(
     // --- State Management ---
     val uiState = playMusicViewModel?.uiState?.collectAsState()?.value
 
-    var currentSort by remember { mutableStateOf(SortOrder.DEFAULT) }
+    var currentSort by remember(playlistType, playlistId) { 
+        mutableStateOf(
+            if (playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS")) {
+                SortOrder.NEWEST_FIRST
+            } else {
+                SortOrder.DEFAULT
+            }
+        ) 
+    }
     var showSortMenu by remember { mutableStateOf(false) }
 
     var isSearching by remember { mutableStateOf(false) }
@@ -275,8 +283,8 @@ fun PlaylistDetailScreen(
     val sortedSongs = remember(effectiveSongs, currentSort) {
         when (currentSort) {
             SortOrder.DEFAULT -> effectiveSongs // Return original order
-            SortOrder.NEWEST_FIRST -> effectiveSongs.sortedByDescending { it.song.createdAt }
-            SortOrder.OLDEST_FIRST -> effectiveSongs.sortedBy { it.song.createdAt }
+            SortOrder.NEWEST_FIRST -> effectiveSongs.sortedByDescending { it.addedAt ?: it.song.createdAt }
+            SortOrder.OLDEST_FIRST -> effectiveSongs.sortedBy { it.addedAt ?: it.song.createdAt }
             SortOrder.TITLE_ASC -> effectiveSongs.sortedBy { it.song.title }
             SortOrder.TITLE_DESC -> effectiveSongs.sortedByDescending { it.song.title }
             SortOrder.ARTIST_ASC -> effectiveSongs.sortedBy { it.artist?.name }

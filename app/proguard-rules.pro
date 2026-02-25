@@ -27,6 +27,10 @@
 # Keep all data models to prevent serialization issues
 -keep class com.example.remusic.data.model.** { *; }
 
+# Keep Deezer network models and interfaces
+-keep class com.example.remusic.data.network.Deezer** { *; }
+-keep interface com.example.remusic.data.network.DeezerApi { *; }
+
 # Keep Kotlinx Serialization annotations and runtime
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
@@ -68,3 +72,27 @@
 # ExoPlayer / Media3
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
+
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+    public static int wtf(...);
+}
+
+# Hapus System.out.println (Print biasa)
+-assumenosideeffects class java.io.PrintStream {
+    public void println(java.lang.Object);
+    public void println(java.lang.String);
+}
+
+# ============================================
+# FIX R8 ERROR (Missing Java Management Classes)
+# ============================================
+# Ktor menggunakan class ini untuk debug check, tapi tidak ada di Android.
+# Kita suruh R8 abaikan saja karena tidak dipakai di Release.
+-dontwarn java.lang.management.**
+-dontwarn java.lang.instrument.**

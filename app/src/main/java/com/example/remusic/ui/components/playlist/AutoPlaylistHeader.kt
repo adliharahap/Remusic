@@ -55,7 +55,7 @@ fun AutoPlaylistHeader(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // 1. Artwork (ANIMATED)
-        val imageUrl = if (songs.isNotEmpty()) songs[0].song.coverUrl else playlistCoverUrl
+        val imageUrl = if (sortedSongs.isNotEmpty()) sortedSongs[0].song.coverUrl else playlistCoverUrl
         AsyncImage(
             model = imageUrl,
             contentDescription = "Playlist Poster",

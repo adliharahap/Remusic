@@ -946,35 +946,69 @@ class MusicRepository(private val musicDao: MusicDao) {
             val songIds = queueEntities.map { it.songId }
 
             // Fetch detail lagu (Coba cache dulu, kalau gak ada fetch dari server)
-            // Kalo mau cepet, kita asumsi lagu di queue pasti pernah diputar/dicache
-            // Jadi kita ambil dari CachedSong di DAO satu-satu atau bulk
-
-            // Optimasi: Bulk Fetch from Cache
             val cachedSongs = songIds.mapNotNull { id -> musicDao.getSongById(id) }
+            val cachedSongMap = cachedSongs.associateBy { it.id }.toMutableMap()
 
-            // Kembalikan sebagai list Song (convert dari CachedSong)
-            // Perhatikan urutannya harus sesuai dengan queueEntities (ORDER BY listOrder)
-            // Jadi kita mapping balik berdasarkan ID
+            val missingSongIds = songIds.filter { !cachedSongMap.containsKey(it) }
 
-            val songMap = cachedSongs.associateBy { it.id }
+            // Jika ada lagu yang belum di-cache, fetch dari Supabase secara bulk
+            if (missingSongIds.isNotEmpty()) {
+                Log.d(TAG, "☁️ [QUEUE] Fetching ${missingSongIds.size} missing songs from Supabase...")
+                try {
+                    val remoteSongs = SupabaseManager.client.from("songs")
+                        .select { filter { isIn("id", missingSongIds) } }
+                        .decodeList<Song>()
+
+                    val newCacheEntries = remoteSongs.map { song ->
+                        CachedSong(
+                            id = song.id,
+                            title = song.title,
+                            uploaderUserId = song.uploaderUserId,
+                            artistName = "Unknown",
+                            coverUrl = song.coverUrl,
+                            canvasUrl = song.canvasUrl,
+                            lyrics = song.lyrics,
+                            lyricsUpdatedAt = song.lyricsUpdatedAt,
+                            telegramFileId = song.telegramFileId,
+                            telegramDirectUrl = null,
+                            language = song.language,
+                            moods = song.moods,
+                            artistId = song.artistId
+                        )
+                    }
+
+                    // Insert ke cache HANYA DARI DISPATCHER IO
+                    newCacheEntries.forEach { musicDao.insertSong(it) }
+                    
+                    // Tambahkan ke map
+                    newCacheEntries.forEach { cachedSongMap[it.id] = it }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ [QUEUE] Failed to fetch missing songs: ${e.message}")
+                }
+            }
 
             val restoredSongs =
                     queueEntities.mapNotNull { entity ->
-                        val song = songMap[entity.songId]?.toSong()
-                        if (song != null) {
-                            val fallbackArtist =
-                                    Artist(
-                                            id = song.artistId ?: "",
-                                            name = entity.artistName,
-                                            photoUrl = null,
-                                            description = null,
-                                            normalizedName = null,
-                                            createdBy = null,
-                                            createdAt = null,
-                                            updatedAt = null
-                                    )
-                            SongWithArtist(song, fallbackArtist)
-                        } else null
+                        val song = cachedSongMap[entity.songId]?.toSong() ?: Song(
+                            id = entity.songId,
+                            title = "Unknown Song",
+                            audioUrl = null,
+                            coverUrl = null,
+                            lyrics = null
+                        ) // FALLBACK: tetap kembalikan dummy agar jumlah queue tidak berkurang meski gagal fetch
+                        
+                        val fallbackArtist =
+                                Artist(
+                                        id = song.artistId ?: "",
+                                        name = entity.artistName,
+                                        photoUrl = null,
+                                        description = null,
+                                        normalizedName = null,
+                                        createdBy = null,
+                                        createdAt = null,
+                                        updatedAt = null
+                                )
+                        SongWithArtist(song, fallbackArtist)
                     }
 
             Log.d(TAG, "♻️ [QUEUE] Restored ${restoredSongs.size} songs from playback queue.")

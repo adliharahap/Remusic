@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.LaunchedEffect
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.model.displayArtistName
@@ -263,6 +264,10 @@ fun SearchMainScreen(
                         )
                     }
                 }
+
+                item {
+                    Spacer(modifier = Modifier.height(150.dp))
+                }
             }
         }
     } else {
@@ -312,6 +317,17 @@ fun SearchMainScreen(
                     keyboardOptions = KeyboardOptions(
                         imeAction = ImeAction.Search
                     ),
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchViewModel.onSearchQueryChanged("") }) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = Color.Gray
+                                )
+                            }
+                        }
+                    },
                     colors = OutlinedTextFieldDefaults.colors(
                         cursorColor = Color.White,
                         focusedBorderColor = Color.Transparent,
@@ -669,6 +685,10 @@ fun SearchMainScreen(
                             playMusicViewModel.showQueueOptions(song)
                         }
                     )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(150.dp))
                 }
             }
         }

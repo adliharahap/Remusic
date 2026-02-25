@@ -238,7 +238,10 @@ fun NowPlaying(
                                     .heightIn(max = 50.dp),
                             ) {
                                 AsyncImage(
-                                    model = songWithArtist.song.coverUrl,
+                                    model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                        .data(songWithArtist.song.coverUrl)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = "Cover Album",
                                     modifier = Modifier.padding(end = 10.dp)
                                         .width(50.dp)
@@ -569,7 +572,10 @@ fun NowPlaying(
                         ) { targetvalue ->
                             val isRunning by remember { derivedStateOf { transition.isRunning } }
                             AsyncImage(
-                                model = songWithArtist?.song?.coverUrl,
+                                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                    .data(songWithArtist?.song?.coverUrl)
+                                    .crossfade(true)
+                                    .build(),
                                 contentDescription = "Cover Album $targetvalue",
                                 modifier = Modifier
                                     .fillMaxWidth(0.9f)

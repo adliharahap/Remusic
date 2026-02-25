@@ -116,10 +116,10 @@ fun PlaylistScreen(
             PlaylistMainContent(
                 onCreatePlaylistClick = onCreatePlaylistClick,
                 viewModel = playlistViewModel,
-                onItemClick = { id, type, title ->
+                onItemClick = { id, type, title, imageUrl ->
                     val routeType = if (id == "LIKED_SONGS") "AUTO" else if (type == FilterType.PLAYLIST) "USER_CREATED" else "ARTIST"
                     playlistNavController.navigate(
-                        PlaylistRoute.createRoute(id = id, type = routeType, name = title)
+                        PlaylistRoute.createRoute(id = id, type = routeType, name = title, coverUrl = imageUrl)
                     )
                 }
             )
@@ -129,13 +129,16 @@ fun PlaylistScreen(
             arguments = listOf(
                 navArgument(PlaylistRoute.ARGS_ID) { type = NavType.StringType },
                 navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" },
-                navArgument(PlaylistRoute.ARGS_PLAYLIST_NAME) { type = NavType.StringType; nullable = true }
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_NAME) { type = NavType.StringType; nullable = true },
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_COVER) { type = NavType.StringType; nullable = true }
             )
         ) { backStackEntry ->
             val id = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_ID) ?: ""
             val typeString = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
             val rawName = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_NAME)
             val name = rawName?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: "Artist"
+            val rawCover = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_COVER)
+            val decodedCover = rawCover?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: ""
 
             val playlistType = try {
                 PlaylistType.valueOf(typeString)
@@ -145,7 +148,7 @@ fun PlaylistScreen(
             PlaylistDetailScreen(
                 songs = emptyList(),
                 playlistName = name,
-                playlistCoverUrl = "",
+                playlistCoverUrl = decodedCover,
                 playlistType = playlistType,
                 playlistId = id,
                 playMusicViewModel = playMusicViewModel
@@ -166,7 +169,7 @@ fun PlaylistScreen(
 fun PlaylistMainContent(
     onCreatePlaylistClick: () -> Unit,
     viewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel,
-    onItemClick: (String, FilterType, String) -> Unit
+    onItemClick: (String, FilterType, String, String) -> Unit
 ) {
     var isVisible by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
@@ -339,14 +342,14 @@ fun PlaylistMainContent(
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OfflineMusicCard(viewMode)
                                 LikedSongsCard(
-                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs") }
+                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
                                 )
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OfflineMusicCard(viewMode)
                                 LikedSongsListItem(
-                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs") }
+                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
                                 )
                             }
                         }
@@ -361,14 +364,14 @@ fun PlaylistMainContent(
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
                                     privacy = item.privacy,
-                                    onClick = { onItemClick(item.id, item.type, item.title) }
+                                    onClick = { onItemClick(item.id, item.type, item.title, item.imageUrl) }
                                 )
                             } else {
                                 ArtistGridItem(
                                     name = item.title,
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
-                                    onClick = { onItemClick(item.id, item.type, item.title) }
+                                    onClick = { onItemClick(item.id, item.type, item.title, item.imageUrl) }
                                 )
                             }
                         } else {
@@ -378,14 +381,14 @@ fun PlaylistMainContent(
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
                                     privacy = item.privacy,
-                                    onClick = { onItemClick(item.id, item.type, item.title) }
+                                    onClick = { onItemClick(item.id, item.type, item.title, item.imageUrl) }
                                 )
                             } else {
                                 ArtistListItem(
                                     name = item.title,
                                     subtitle = item.subtitle,
                                     imageUrl = item.imageUrl,
-                                    onClick = { onItemClick(item.id, item.type, item.title) }
+                                    onClick = { onItemClick(item.id, item.type, item.title, item.imageUrl) }
                                 )
                             }
                         }

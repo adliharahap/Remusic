@@ -166,7 +166,10 @@ fun UploaderBoxAndArtist(
                     ) {
                         // Gambar Artist
                         AsyncImage(
-                            model = artistPhoto,
+                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                .data(artistPhoto)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = "Artist Image",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -352,7 +355,10 @@ fun UploaderBoxAndArtist(
                                 .clip(CircleShape)
                         ) {
                             AsyncImage(
-                                model = uploaderPhoto,
+                                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                                    .data(uploaderPhoto)
+                                    .crossfade(true)
+                                    .build(),
                                 contentDescription = "Uploader Image",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

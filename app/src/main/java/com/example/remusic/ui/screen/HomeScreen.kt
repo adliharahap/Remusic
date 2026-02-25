@@ -449,7 +449,7 @@ private fun HomeMainScreen(
                             )
 
                             QuickPickCarousel(
-                                songs = state.quickPickSongs.take(10),
+                                songs = state.quickPickSongs.take(20),
                                 onSongClick = { index ->
                                     val song = state.quickPickSongs.getOrNull(index)
                                     if (song != null) {
