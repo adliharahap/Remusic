@@ -17,6 +17,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import io.ktor.client.*
+import io.ktor.client.engine.okhttp.*
+import io.ktor.client.request.*
+import io.ktor.http.*
+import org.json.JSONObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -27,6 +32,9 @@ import kotlinx.coroutines.Dispatchers
 class RequestSongViewModel(application: Application) : AndroidViewModel(application) {
     
     private val exoPlayer = ExoPlayer.Builder(application).build()
+    
+    // HTTP Client untuk webhook telegram
+    private val httpClient = HttpClient(OkHttp)
     
     private val _searchResults = MutableStateFlow<List<DeezerTrack>>(emptyList())
     val searchResults = _searchResults.asStateFlow()
@@ -234,6 +242,28 @@ class RequestSongViewModel(application: Application) : AndroidViewModel(applicat
                 _requestedTrackIds.update { it + track.id }
                 
                 _requestStatus.value = RequestStatus.Success("Berhasil request lagu ${track.title}!")
+
+                // 4. Notify Next.js Admin Backend (Webhook)
+                launch(Dispatchers.IO) {
+                    try {
+                        val jsonBody = JSONObject().apply {
+                            put("requester_name", user.displayName ?: "User Anonim")
+                            put("song_title", track.title)
+                            put("artist_name", track.artist.name)
+                            put("cover_url", track.album.coverMedium)
+                            put("preview_url", track.preview)
+                        }
+                        
+                        httpClient.post("https://remusic-admin.vercel.app/api/telegram/request-song") {
+                            contentType(ContentType.Application.Json)
+                            setBody(jsonBody.toString())
+                        }
+                        android.util.Log.d("Webhook", "Berhasil kirim notifikasi request ke admin.")
+                    } catch (e: Exception) {
+                        android.util.Log.e("Webhook", "Gagal kirim notifikasi webhook", e)
+                    }
+                }
+                
             } catch (e: Exception) {
                 _requestStatus.value = RequestStatus.Error("Gagal request lagu: ${e.message}")
             }
@@ -281,6 +311,26 @@ class RequestSongViewModel(application: Application) : AndroidViewModel(applicat
                 SupabaseManager.client.from("song_requests").insert(insertData)
                 
                 _requestStatus.value = RequestStatus.Success("Berhasil request lagu $title secara manual!")
+
+                // Notify Next.js Admin Backend (Webhook)
+                launch(Dispatchers.IO) {
+                    try {
+                        val jsonBody = JSONObject().apply {
+                            put("requester_name", user.displayName ?: "User Anonim")
+                            put("song_title", title)
+                            put("artist_name", artist)
+                            // Manual request tidak ada cover/preview
+                        }
+                        
+                        httpClient.post("https://remusic-admin.vercel.app/api/telegram/request-song") {
+                            contentType(ContentType.Application.Json)
+                            setBody(jsonBody.toString())
+                        }
+                        android.util.Log.d("Webhook", "Berhasil kirim notifikasi manual request ke admin.")
+                    } catch (e: Exception) {
+                        android.util.Log.e("Webhook", "Gagal kirim notifikasi webhook manual", e)
+                    }
+                }
                 
                 // Refresh list so it shows up in "Status Request" tab
                 fetchMyRequests()
@@ -379,6 +429,7 @@ class RequestSongViewModel(application: Application) : AndroidViewModel(applicat
     override fun onCleared() {
         super.onCleared()
         exoPlayer.release()
+        httpClient.close()
         stopProgressTracker()
     }
 }

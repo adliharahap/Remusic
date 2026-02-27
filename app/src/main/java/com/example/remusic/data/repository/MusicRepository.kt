@@ -890,7 +890,8 @@ class MusicRepository(private val musicDao: MusicDao) {
                                                     "lyrics",
                                                     "lyrics_updated_at",
                                                     "telegram_audio_file_id",
-                                                    "canvas_url"
+                                                    "canvas_url",
+                                                    "featured_artists"
                                             )
                             ) {
                                 filter { eq("artist_id", artistId) }

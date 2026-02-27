@@ -2,6 +2,7 @@ package com.example.remusic.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -86,13 +87,13 @@ fun QueueSongCard(
                 Text(
                     text = (index + 1).toString(),
                     color = Color.White.copy(0.8f),
-                    fontFamily = AppFont.Coolvetica,
+                    fontFamily = AppFont.RobotoMedium,
                     fontSize = 15.sp,
                     modifier = Modifier.width(20.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             AsyncImage(
                 model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
@@ -115,7 +116,6 @@ fun QueueSongCard(
                 Text(
                     text = songTitle,
                     color = if (isCurrentlyPlaying) Color.White else Color.White.copy(0.9f),
-                    fontFamily = AppFont.Coolvetica,
                     fontSize = 16.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -123,7 +123,7 @@ fun QueueSongCard(
                 )
                 Text(
                     text = artistName,
-                    color = Color.White.copy(0.7f),
+                    color = Color.White.copy(0.8f),
                     fontFamily = AppFont.Helvetica,
                     fontWeight = FontWeight.Normal,
                     fontSize = 14.sp,

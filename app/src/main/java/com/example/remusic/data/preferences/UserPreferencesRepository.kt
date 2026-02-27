@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.Player
 import kotlinx.coroutines.flow.Flow
@@ -98,6 +99,8 @@ class UserPreferencesRepository(private val context: Context) {
     private val LYRICS_SCALE_FACTOR_KEY = intPreferencesKey("lyrics_scale_factor")
     private val LYRICS_MARK_PASSED_KEY = booleanPreferencesKey("lyrics_mark_passed")
     private val LYRICS_TRANSLATE_FONT_SIZE_KEY = floatPreferencesKey("lyrics_translate_font_size")
+    private val LYRICS_TRANSLATE_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_translate_font_weight")
+    private val LYRICS_MAIN_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_main_font_weight")
 
     val lyricsConfigFlow: Flow<com.example.remusic.ui.screen.playmusic.LyricsConfig> =
             context.dataStore.data.map { preferences ->
@@ -113,6 +116,8 @@ class UserPreferencesRepository(private val context: Context) {
                 val scaleFactor = preferences[LYRICS_SCALE_FACTOR_KEY] ?: 1
                 val markPassed = preferences[LYRICS_MARK_PASSED_KEY] ?: false
                 val translateFontSize = preferences[LYRICS_TRANSLATE_FONT_SIZE_KEY] ?: 15.5f
+                val translateFontWeightName = preferences[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR.name
+                val mainFontWeightName = preferences[LYRICS_MAIN_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD.name
 
                 val fontFamily =
                         try {
@@ -130,6 +135,18 @@ class UserPreferencesRepository(private val context: Context) {
                             com.example.remusic.ui.screen.playmusic.LyricsAlign.LEFT
                         }
 
+                val fontWeight = try {
+                    com.example.remusic.ui.screen.playmusic.LyricsFontWeight.valueOf(translateFontWeightName)
+                } catch (e: IllegalArgumentException) {
+                    com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR
+                }
+                
+                val mainWeight = try {
+                    com.example.remusic.ui.screen.playmusic.LyricsFontWeight.valueOf(mainFontWeightName)
+                } catch (e: IllegalArgumentException) {
+                    com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD
+                }
+
                 com.example.remusic.ui.screen.playmusic.LyricsConfig(
                         fontFamily = fontFamily,
                         fontSize = fontSize,
@@ -137,7 +154,9 @@ class UserPreferencesRepository(private val context: Context) {
                         autoScaleIfNoTranslation = autoScale,
                         scaleFactor = scaleFactor,
                         markPassedLyrics = markPassed,
-                        translateFontSize = translateFontSize
+                        translateFontSize = translateFontSize,
+                        translationFontWeight = fontWeight,
+                        mainFontWeight = mainWeight
                 )
             }
 
@@ -150,6 +169,8 @@ class UserPreferencesRepository(private val context: Context) {
             settings[LYRICS_SCALE_FACTOR_KEY] = config.scaleFactor
             settings[LYRICS_MARK_PASSED_KEY] = config.markPassedLyrics
             settings[LYRICS_TRANSLATE_FONT_SIZE_KEY] = config.translateFontSize
+            settings[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] = config.translationFontWeight.name
+            settings[LYRICS_MAIN_FONT_WEIGHT_KEY] = config.mainFontWeight.name
         }
     }
 
@@ -210,5 +231,40 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun saveLastPlaylistName(playlistName: String) {
         context.dataStore.edit { settings -> settings[LAST_PLAYLIST_NAME_KEY] = playlistName }
+    }
+
+    // --- PLAYLIST VIEW & SORT PERSISTENCE ---
+    private val PLAYLIST_VIEW_GRID_KEY = booleanPreferencesKey("playlist_view_grid")
+    private val PLAYLIST_SORT_OPTION_KEY = stringPreferencesKey("playlist_sort_option")
+
+    val playlistViewGridFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences -> preferences[PLAYLIST_VIEW_GRID_KEY] ?: false }
+
+    suspend fun savePlaylistViewGrid(isGrid: Boolean) {
+        context.dataStore.edit { settings -> settings[PLAYLIST_VIEW_GRID_KEY] = isGrid }
+    }
+
+    val playlistSortOptionFlow: Flow<String> =
+        context.dataStore.data.map { preferences ->
+            preferences[PLAYLIST_SORT_OPTION_KEY] ?: "RECENT"
+        }
+
+    suspend fun savePlaylistSortOption(sortOption: String) {
+        context.dataStore.edit { settings -> settings[PLAYLIST_SORT_OPTION_KEY] = sortOption }
+    }
+
+    // --- NOTIFICATION PERSISTENCE ---
+    private val READ_GLOBAL_NOTIFICATIONS_KEY = stringSetPreferencesKey("read_global_notifications")
+
+    val readGlobalNotificationsFlow: Flow<Set<String>> =
+        context.dataStore.data.map { preferences ->
+            preferences[READ_GLOBAL_NOTIFICATIONS_KEY] ?: emptySet()
+        }
+
+    suspend fun addReadGlobalNotification(notificationId: String) {
+        context.dataStore.edit { settings ->
+            val currentSet = settings[READ_GLOBAL_NOTIFICATIONS_KEY] ?: emptySet()
+            settings[READ_GLOBAL_NOTIFICATIONS_KEY] = currentSet + notificationId
+        }
     }
 }

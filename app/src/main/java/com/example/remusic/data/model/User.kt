@@ -26,5 +26,14 @@ data class User(
 
     // Ubah Date ke String. Supabase mengirim format: "2025-12-25T10:00:00+00:00"
     @SerialName("created_at")
-    val createdAt: String? = null
+    val createdAt: String? = null,
+
+    @SerialName("banned_until")
+    val bannedUntil: String? = null,
+
+    @SerialName("ban_reason")
+    val banReason: String? = null,
+
+    @SerialName("fcm_token")
+    val fcmToken: String? = null
 )

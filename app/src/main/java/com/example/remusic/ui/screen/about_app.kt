@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import androidx.compose.ui.layout.ContentScale
+import com.example.remusic.BuildConfig
 
 @Composable
 fun AboutScreen(
@@ -142,7 +143,7 @@ fun AboutScreen(
                     )
 
                     Text(
-                        text = "Versi 1.0.0 (Build 1)",
+                        text = "Versi ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 14.sp,
                         fontFamily = AppFont.Helvetica
@@ -196,7 +197,8 @@ fun AboutScreen(
                                         .fillMaxSize()
                                         .clip(CircleShape)
                                         .border(2.dp, Color(0xFF161616), CircleShape),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    alignment = Alignment.TopCenter
                                 )
                             }
 
@@ -211,13 +213,12 @@ fun AboutScreen(
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = "Android Developer",
+                                text = "Web & Android Developer",
                                 color = Color(0xFFE91E63),
                                 fontSize = 13.sp,
                                 fontFamily = AppFont.Helvetica,
                                 fontWeight = FontWeight.Medium
                             )
-
                             Spacer(modifier = Modifier.height(24.dp))
 
                             // Social Links Grid
@@ -282,10 +283,16 @@ fun AboutScreen(
                         Column(modifier = Modifier.padding(20.dp)) {
                             TechStackRow("Jetpack Compose", "UI Framework")
                             TechStackRow("Media3 (ExoPlayer)", "Audio Engine")
-                            TechStackRow("Supabase", "Backend & Auth")
+                            TechStackRow("Supabase", "Database & Auth")
                             TechStackRow("Room (SQLite)", "Local Database")
                             TechStackRow("Retrofit & Ktor", "Networking")
                             TechStackRow("Coil", "Image Loading")
+                            TechStackRow("Firebase", "Notifications")
+                            TechStackRow("Next.js Website for Admin", "Backend & Upload Music")
+                            TechStackRow("Navigation Compose", "Routing")
+                            TechStackRow("DataStore", "Preferences")
+                            TechStackRow("Telegram", "Bot API & Music Cloud Storage")
+
                         }
                     }
                 }
@@ -337,7 +344,7 @@ fun AboutScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(140.dp))
         }
     }
 }

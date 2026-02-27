@@ -114,7 +114,9 @@ fun NowPlaying(
     isArtistFollowed: Boolean = false,
     onToggleFollowArtist: () -> Unit = {},
     onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
-    isDataSaverModeEnabled: Boolean = false
+    isDataSaverModeEnabled: Boolean = false,
+    topPlayerColor: Color = Color.Transparent,
+    headerHeight: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     val context = LocalContext.current
     val nestedScrollConnection = remember {
@@ -155,6 +157,10 @@ fun NowPlaying(
     // Jika buffering atau loading data, tampilkan skeleton loading
     val isBusy = isBuffering || isLoadingData
 
+    // Tentukan State apakah Canvas Aktif atau Tidak (Ditambah cek Mode Hemat Data)
+    val isCanvasMode = !isDataSaverModeEnabled && !songWithArtist?.song?.canvasUrl.isNullOrBlank()
+
+
     // 1. Gunakan BoxWithConstraints untuk mendapatkan tinggi layar (viewport)
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
@@ -169,10 +175,6 @@ fun NowPlaying(
                 .nestedScroll(nestedScrollConnection),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // 1. Tentukan State apakah Canvas Aktif atau Tidak (Ditambah cek Mode Hemat Data)
-            val isCanvasMode = !isDataSaverModeEnabled && !songWithArtist?.song?.canvasUrl.isNullOrBlank()
-
             // ==========================================
             // COLUMN 1: PLAYER CONTROL (FULL SCREEN 100%)
             // ==========================================
@@ -900,5 +902,44 @@ fun NowPlaying(
                 Spacer(modifier = Modifier.height(100.dp))
             }
         }
+
+        // 1. Hitung titik Start dan End (Pakai remember biar nggak dihitung ulang terus-terusan)
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val startFadePx = remember(isCanvasMode, density) {
+            with(density) { if (isCanvasMode) 500.dp.toPx() else 400.dp.toPx() }
+        }
+        val endFadePx = remember(isCanvasMode, density) {
+            with(density) { if (isCanvasMode) 600.dp.toPx() else 500.dp.toPx() }
+        }
+
+        // 2. Tentukan warna dasar biar kodingan Brush nggak dobel
+        val gradientBaseColor = if (isCanvasMode) Color.Black else topPlayerColor
+
+        // Nggak perlu pakai "if (alpha > 0)" di luar, biarkan graphicsLayer yang atur visibilitasnya
+        // biar UI tree-nya nggak bongkar-pasang pas lagi asik nge-scroll.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(headerHeight + 40.dp)
+                .heightIn(min = 100.dp, max = 200.dp)
+                .align(Alignment.TopCenter)
+                // 3. RAHASIA PERFORMA: Hitung alpha di dalam tahap "Drawing", bukan "Composition"
+                .graphicsLayer {
+                    val scrollPx = scrollState.value.toFloat()
+                    alpha = ((scrollPx - startFadePx) / (endFadePx - startFadePx)).coerceIn(0f, 1f)
+                }
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to gradientBaseColor,
+                            0.5f to gradientBaseColor,
+                            0.6f to gradientBaseColor.copy(alpha = 0.8f),
+                            0.8f to gradientBaseColor.copy(alpha = 0.5f),
+                            1.0f to Color.Transparent
+                        )
+                    )
+                )
+        )
+
     }
 }

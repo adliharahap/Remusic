@@ -80,8 +80,19 @@ data class LyricsConfig(
     val autoScaleIfNoTranslation: Boolean = false,
     val scaleFactor: Int = 1, // +1, +2, +3
     val markPassedLyrics: Boolean = false,
-    val translateFontSize: Float = 15.5f
+    val translateFontSize: Float = 15.5f,
+    val translationFontWeight: LyricsFontWeight = LyricsFontWeight.REGULAR,
+    val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD
 )
+
+enum class LyricsFontWeight(val displayName: String, val weight: FontWeight) {
+    LIGHT("Light", FontWeight.Light),
+    REGULAR("Regular", FontWeight.Normal),
+    MEDIUM("Medium", FontWeight.Medium),
+    SEMIBOLD("SemiBold", FontWeight.SemiBold),
+    BOLD("Bold", FontWeight.Bold),
+    BLACK("Black", FontWeight.Black)
+}
 
 enum class LyricsFontFamily(val displayName: String) {
     POPPINS("Poppins"),
@@ -169,7 +180,7 @@ fun MoreOptionsBottomSheet(
                     Text(
                         text = songWithArtist?.song?.title ?: "Unknown Title",
                         color = Color.White,
-                        fontFamily = AppFont.Coolvetica,
+                        fontFamily = AppFont.Poppins,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -443,7 +454,7 @@ fun MoreOptionsBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    "Font Config",
+                    "Pilih font lirik",
                     modifier = Modifier.weight(1f),
                     color = Color.White,
                     fontSize = 16.sp,
@@ -600,6 +611,92 @@ fun MoreOptionsBottomSheet(
                     inactiveTrackColor = Color.DarkGray
                 )
             )
+
+            // 5.1. Ketebalan Font Lirik Asli
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Ketebalan Lirik Asli",
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = AppFont.Helvetica
+                )
+
+                var mainWeightMenuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(
+                        onClick = { mainWeightMenuExpanded = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text(lyricsConfig.mainFontWeight.displayName)
+                    }
+                    DropdownMenu(
+                        expanded = mainWeightMenuExpanded,
+                        onDismissRequest = { mainWeightMenuExpanded = false },
+                        modifier = Modifier.background(Color(0xFF2A2A2A))
+                    ) {
+                        LyricsFontWeight.values().forEach { weight ->
+                            DropdownMenuItem(
+                                text = { Text(weight.displayName, color = Color.White) },
+                                onClick = {
+                                    onLyricsConfigChange(lyricsConfig.copy(mainFontWeight = weight))
+                                    mainWeightMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 5.5. Ketebalan Font Terjemahan
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Ketebalan Terjemahan",
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = AppFont.Helvetica
+                )
+
+                var weightMenuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(
+                        onClick = { weightMenuExpanded = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text(lyricsConfig.translationFontWeight.displayName)
+                    }
+                    DropdownMenu(
+                        expanded = weightMenuExpanded,
+                        onDismissRequest = { weightMenuExpanded = false },
+                        modifier = Modifier.background(Color(0xFF2A2A2A))
+                    ) {
+                        LyricsFontWeight.values().forEach { weight ->
+                            DropdownMenuItem(
+                                text = { Text(weight.displayName, color = Color.White) },
+                                onClick = {
+                                    onLyricsConfigChange(lyricsConfig.copy(translationFontWeight = weight))
+                                    weightMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             // 6. Mark Passed Lyrics
             Row(

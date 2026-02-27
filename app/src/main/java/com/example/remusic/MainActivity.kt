@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import com.google.firebase.messaging.FirebaseMessaging
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
@@ -48,6 +49,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.time.ZoneId
+import java.util.Locale
 import androidx.core.view.WindowCompat
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -69,11 +81,13 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 
 class MainActivity : ComponentActivity() {
     // Hapus variable auth: FirebaseAuth
@@ -252,6 +266,7 @@ class MainActivity : ComponentActivity() {
                                         // Cek apakah berhasil
                                         if (UserManager.currentUser != null) {
                                             Log.d(TAG, "✅ [MainActivity] User data berhasil dimuat: ${UserManager.currentUser?.displayName}")
+                                            updateFcmToken()
                                             startDestination = "splash" // Langsung masuk splash/main
                                         } else {
                                             Log.w(TAG, "⚠️ [MainActivity] User data null setelah fetch. Masuk sebagai User tanpa profil lengkap.")
@@ -326,6 +341,18 @@ class MainActivity : ComponentActivity() {
                                             onDismiss = { showDialog = false }
                                         )
                                     }
+
+                                    // 4. Banned Modal
+                                    val currentUser = UserManager.currentUser
+                                    if (currentUser?.bannedUntil != null) {
+                                        BannedUserDialog(
+                                            bannedUntil = currentUser.bannedUntil,
+                                            banReason = currentUser.banReason,
+                                            onLogoutClick = {
+                                                com.example.remusic.utils.AuthUtils.logout(this@MainActivity, navController)
+                                            }
+                                        )
+                                    }
                                 }
 
                                 // 2. Layer Bawah: Notifikasi Offline (Termakan Sedikit Layar)
@@ -387,6 +414,7 @@ class MainActivity : ComponentActivity() {
                 if (userId != null) {
                     // Refresh data user di UserManager
                     UserManager.fetchCurrentUser(userId)
+                    updateFcmToken()
                 }
 
                 Toast.makeText(this@MainActivity, "Login Berhasil!", Toast.LENGTH_SHORT).show()
@@ -421,6 +449,45 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             )
+        }
+    }
+
+    private fun updateFcmToken() {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w("FCM_TEST", "Gagal dapat token FCM", task.exception)
+                return@addOnCompleteListener
+            }
+            val token = task.result
+            
+            // CEK CACHE LOKAL DULU:
+            val cachedToken = com.example.remusic.data.UserManager.getCachedFcmToken()
+            if (cachedToken == token) {
+                Log.d("FCM_TEST", "Token FCM tidak berubah, skip update ke database.")
+                return@addOnCompleteListener
+            }
+
+            val user = SupabaseManager.client.auth.currentUserOrNull()
+            if (user != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        SupabaseManager.client.from("users").update(
+                            {
+                                set("fcm_token", token)
+                            }
+                        ) {
+                            filter { eq("id", user.id) }
+                        }
+                        // Jika berhasil update DB, simpan ke cache lokal
+                        com.example.remusic.data.UserManager.saveCachedFcmToken(token)
+                        Log.d("FCM_TEST", "Berhasil update FCM Token ke DB: $token")
+                    } catch (e: Exception) {
+                        Log.e("FCM_TEST", "Gagal update FCM Token ke DB", e)
+                    }
+                }
+            } else {
+                Log.w("FCM_TEST", "User belum login, token tidak di-update: $token")
+            }
         }
     }
 }
@@ -471,6 +538,147 @@ fun OfflineBanner(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun BannedUserDialog(
+    bannedUntil: String,
+    banReason: String?,
+    onLogoutClick: () -> Unit
+) {
+    val formattedDate = remember(bannedUntil) {
+        try {
+            val zdt = ZonedDateTime.parse(bannedUntil)
+            val localZdt = zdt.withZoneSameInstant(ZoneId.systemDefault())
+            val formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
+                .withLocale(Locale("id", "ID"))
+            localZdt.format(formatter)
+        } catch (e: Exception) {
+            bannedUntil
+        }
+    }
+
+    Dialog(
+        onDismissRequest = { },
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .width(340.dp)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header Icon
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(Color(0xFFB00020).copy(alpha = 0.1f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Block,
+                        contentDescription = "Banned",
+                        tint = Color(0xFFB00020),
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Akun Ditangguhkan",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Akses Anda ke aplikasi untuk sementara waktu dibatasi karena melanggar ketentuan layanan kami.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Info Box
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "Alasan Penangguhan",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = banReason ?: "Pelanggaran pedoman komunitas atau aktivitas mencurigakan.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = "Estimasi Berakhir",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = formattedDate,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Button(
+                    onClick = onLogoutClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(50),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFB00020)
+                    )
+                ) {
+                    Text(
+                        text = "Keluar / Logout",
+                        modifier = Modifier.padding(vertical = 6.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }

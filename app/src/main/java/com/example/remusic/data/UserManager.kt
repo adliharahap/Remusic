@@ -9,10 +9,14 @@ import androidx.compose.runtime.setValue
 import com.example.remusic.data.model.User
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.delay
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 object UserManager {
 
@@ -21,6 +25,7 @@ object UserManager {
 
     private const val PREFS_NAME = "remusic_user_cache"
     private const val KEY_USER = "cached_user"
+    private const val KEY_FCM_TOKEN = "cached_fcm_token"
 
     private var prefs: SharedPreferences? = null
 
@@ -64,6 +69,22 @@ object UserManager {
         Log.d(TAG, "🗑️ [UserManager] Cache user dibersihkan.")
     }
 
+    // ──────────────────────────────────────────────────
+    // FCM Token Local Cache
+    // ──────────────────────────────────────────────────
+
+    fun getCachedFcmToken(): String? {
+        return prefs?.getString(KEY_FCM_TOKEN, null)
+    }
+
+    fun saveCachedFcmToken(token: String?) {
+        if (token == null) {
+            prefs?.edit()?.remove(KEY_FCM_TOKEN)?.apply()
+        } else {
+            prefs?.edit()?.putString(KEY_FCM_TOKEN, token)?.apply()
+        }
+    }
+
     /**
      * Memperbarui data pengguna lokal di memori dan cache tanpa perlu fetch ulang.
      */
@@ -92,6 +113,17 @@ object UserManager {
             try {
                 if (attempt > 1) Log.d(TAG, "🔄 [UserManager] RETRY USER: Percobaan ke-$attempt...")
 
+                // 1. Panggil RPC untuk cek & sweep status ban (membersihkan banned_until di database jika sudah lewat)
+                try {
+                    SupabaseManager.client.postgrest.rpc(
+                        function = "check_user_ban_status",
+                        parameters = buildJsonObject { put("p_user_id", uid) }
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ [UserManager] Gagal memanggil RPC check_user_ban_status: ${e.message}")
+                }
+
+                // 2. Ambil data user yang terbaru (setelah di-sweep jika memang sudah tidak banned)
                 val user = SupabaseManager.client
                     .from("users")
                     .select(columns = Columns.ALL) {

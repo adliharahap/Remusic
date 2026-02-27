@@ -69,6 +69,7 @@ import java.util.concurrent.TimeUnit
 import com.example.remusic.data.model.Artist
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
+import com.example.remusic.data.model.displayArtistName
 
 // --- Impor untuk Composable Anda ---
 import com.example.remusic.ui.components.QueueSongCard
@@ -149,8 +150,23 @@ fun PlaylistDetailScreen(
         songs
     }
 
+    // --- Logika Sorting ---
+    val sortedSongs = remember(effectiveSongs, currentSort) {
+        when (currentSort) {
+            SortOrder.DEFAULT -> effectiveSongs // Return original order
+            SortOrder.NEWEST_FIRST -> effectiveSongs.sortedByDescending { it.addedAt ?: it.song.createdAt }
+            SortOrder.OLDEST_FIRST -> effectiveSongs.sortedBy { it.addedAt ?: it.song.createdAt }
+            SortOrder.TITLE_ASC -> effectiveSongs.sortedBy { it.song.title }
+            SortOrder.TITLE_DESC -> effectiveSongs.sortedByDescending { it.song.title }
+            SortOrder.ARTIST_ASC -> effectiveSongs.sortedBy { it.artist?.name }
+            SortOrder.ARTIST_DESC -> effectiveSongs.sortedByDescending { it.artist?.name }
+            SortOrder.DURATION_ASC -> effectiveSongs.sortedBy { it.song.durationMs }
+            SortOrder.DURATION_DESC -> effectiveSongs.sortedByDescending { it.song.durationMs }
+        }
+    }
+
     // Update Gradient based on playlist type
-    LaunchedEffect(playlistType, uiState?.artistDetails, uiState?.currentPlaylistDetails, effectiveSongs) {
+    LaunchedEffect(playlistType, uiState?.artistDetails, uiState?.currentPlaylistDetails, sortedSongs) {
         when (playlistType) {
             PlaylistType.ARTIST -> {
                 // For artist playlists, use artist photo
@@ -160,16 +176,16 @@ fun PlaylistDetailScreen(
                     Log.d("PlaylistDetailScreen", "Artist Headers Colors: $headersColors")
                 }
             }
-            PlaylistType.USER_CREATED, PlaylistType.AUTO, PlaylistType.OFFICIAL -> {
-                 // For User, Auto, and Official playlists, prioritize playlist custom cover
+            PlaylistType.USER_CREATED, PlaylistType.OFFICIAL -> {
+                 // For User and Official playlists, prioritize playlist custom cover
                  val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() } ?: playlistCoverUrl
                  when {
                      customCoverUrl.isNotBlank() -> {
                          headersColors = extractGradientColorsFromImageUrl(context, customCoverUrl)
                          Log.d("PlaylistDetailScreen", "Playlist Custom Cover Colors: $headersColors")
                      }
-                     effectiveSongs.isNotEmpty() -> {
-                         val songCoverUrl = effectiveSongs[0].song.coverUrl
+                     sortedSongs.isNotEmpty() -> {
+                         val songCoverUrl = sortedSongs[0].song.coverUrl
                          if (!songCoverUrl.isNullOrBlank()) {
                              headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
                              Log.d("PlaylistDetailScreen", "Playlist First Song Cover Colors: $headersColors")
@@ -177,10 +193,22 @@ fun PlaylistDetailScreen(
                      }
                  }
             }
+            PlaylistType.AUTO -> {
+                 if (sortedSongs.isNotEmpty()) {
+                     val songCoverUrl = sortedSongs[0].song.coverUrl
+                     if (!songCoverUrl.isNullOrBlank()) {
+                         headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
+                         Log.d("PlaylistDetailScreen", "Auto Playlist First Song Colors: $headersColors")
+                     }
+                 } else if (playlistCoverUrl.isNotBlank()) {
+                     headersColors = extractGradientColorsFromImageUrl(context, playlistCoverUrl)
+                     Log.d("PlaylistDetailScreen", "Auto Playlist Fallback Colors: $headersColors")
+                 }
+            }
             else -> {
                 // For other playlists, use first song's cover
-                if (effectiveSongs.isNotEmpty()) {
-                    val coverUrl = effectiveSongs[0].song.coverUrl
+                if (sortedSongs.isNotEmpty()) {
+                    val coverUrl = sortedSongs[0].song.coverUrl
                     if (!coverUrl.isNullOrBlank()) {
                         headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
                         Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
@@ -279,20 +307,7 @@ fun PlaylistDetailScreen(
         formatDuration(totalDurationMs)
     }
 
-    // --- Logika Sorting ---
-    val sortedSongs = remember(effectiveSongs, currentSort) {
-        when (currentSort) {
-            SortOrder.DEFAULT -> effectiveSongs // Return original order
-            SortOrder.NEWEST_FIRST -> effectiveSongs.sortedByDescending { it.addedAt ?: it.song.createdAt }
-            SortOrder.OLDEST_FIRST -> effectiveSongs.sortedBy { it.addedAt ?: it.song.createdAt }
-            SortOrder.TITLE_ASC -> effectiveSongs.sortedBy { it.song.title }
-            SortOrder.TITLE_DESC -> effectiveSongs.sortedByDescending { it.song.title }
-            SortOrder.ARTIST_ASC -> effectiveSongs.sortedBy { it.artist?.name }
-            SortOrder.ARTIST_DESC -> effectiveSongs.sortedByDescending { it.artist?.name }
-            SortOrder.DURATION_ASC -> effectiveSongs.sortedBy { it.song.durationMs }
-            SortOrder.DURATION_DESC -> effectiveSongs.sortedByDescending { it.song.durationMs }
-        }
-    }
+    // --- Logika Sorting dipindahkan ke atas ---
 
     // --- Logika Filtering ---
     val filteredAndSortedSongs = remember(sortedSongs, searchQuery) {
@@ -307,6 +322,16 @@ fun PlaylistDetailScreen(
     }
 
 
+    val animatedColorTop by androidx.compose.animation.animateColorAsState(
+        targetValue = headersColors.firstOrNull() ?: Color(0xFF202020),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 1000)
+    )
+    val animatedColorBottom by androidx.compose.animation.animateColorAsState(
+        targetValue = headersColors.getOrElse(1) { Color(0xFF000000) },
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 1000)
+    )
+    val animatedHeadersColors = listOf(animatedColorTop, animatedColorBottom)
+
     if (isInitialLoading) {
         PlaylistDetailSkeleton()
     } else {
@@ -320,7 +345,7 @@ fun PlaylistDetailScreen(
             playlistId = playlistId,
             playMusicViewModel = playMusicViewModel,
             listState = listState,
-            headersColors = headersColors,
+            headersColors = animatedHeadersColors,
             uiState = uiState,
             context = context,
             density = density,
@@ -716,7 +741,7 @@ fun PlaylistDetailContent(
                     QueueSongCard(
                         index = index,
                         songTitle = songWithArtist.song.title,
-                        artistName = songWithArtist.artist?.name ?: "Unknown Artist",
+                        artistName = songWithArtist.displayArtistName,
                         posterUri = songWithArtist.song.coverUrl ?: "",
                         isCurrentlyPlaying = isPlaying, // Use ViewModel state
                         modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp),

@@ -28,11 +28,16 @@ object AppFont {
     val MontserratRegular = FontFamily(Font(R.font.poppins_regular))
     val MontserratSemiBold = FontFamily(Font(R.font.poppins_semibold))
 
-    // Coolvetica fallback to Poppins
-    val Coolvetica = Poppins
-    val CoolveticaCompressed = FontFamily(Font(R.font.poppins_bold))
-    val CoolveticaCondensed = FontFamily(Font(R.font.poppins_regular))
-    val CoolveticaCrammed = FontFamily(Font(R.font.poppins_regular))
+    // Coolvetica
+    val Coolvetica = FontFamily(
+        Font(R.font.coolvetica_rg, FontWeight.Normal),
+        Font(R.font.coolvetica_condensed_rg, FontWeight.Medium),
+        Font(R.font.coolvetica_compressed_hv, FontWeight.Bold)
+    )
+    val CoolveticaRegular = FontFamily(Font(R.font.coolvetica_rg))
+    val CoolveticaCompressed = FontFamily(Font(R.font.coolvetica_compressed_hv))
+    val CoolveticaCondensed = FontFamily(Font(R.font.coolvetica_condensed_rg))
+    val CoolveticaCrammed = CoolveticaCompressed // Fallback to compressed
 
     // Helvetica
     val Helvetica = FontFamily(

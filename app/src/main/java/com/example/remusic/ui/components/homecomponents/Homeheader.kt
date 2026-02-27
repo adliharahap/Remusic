@@ -51,6 +51,7 @@ fun HomeHeader(
     name: String? = "User",
     greeting: String,
     profileImageUrl: String? = null,
+    unreadCount: Int = 0,
     onSearchClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onRequestSongClick: () -> Unit = {},
@@ -155,13 +156,15 @@ fun HomeHeader(
                             modifier = Modifier.size(20.dp)
                         )
                         // Badge
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .align(Alignment.TopEnd)
-                                .offset(x = (-2).dp, y = 2.dp)
-                                .background(Color(0xFFE91E63), CircleShape)
-                        )
+                        if (unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-2).dp, y = 2.dp)
+                                    .background(Color(0xFFE91E63), CircleShape)
+                            )
+                        }
                     }
                 }
             }

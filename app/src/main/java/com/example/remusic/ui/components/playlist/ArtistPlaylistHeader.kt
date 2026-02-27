@@ -3,7 +3,9 @@ package com.example.remusic.ui.components.playlist
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -55,10 +57,9 @@ fun ArtistPlaylistHeader(
     uiState: PlayerUiState?,
     sortedSongs: List<SongWithArtist>,
     filteredAndSortedSongs: List<SongWithArtist>,
-    artistId: String? = null // NEW: Direct artist ID parameter
+    artistId: String? = null
 ) {
     // 1. Trigger Fetching if needed
-    // Use the passed artistId parameter instead of extracting from songs
     val targetArtistId = artistId ?: songs.firstOrNull()?.artist?.id
 
     LaunchedEffect(targetArtistId) {
@@ -76,11 +77,12 @@ fun ArtistPlaylistHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 50.dp, bottom = 24.dp),
+            .padding(top = 70.dp, bottom = 8.dp), // Margin atas diperbesar agar tidak menabrak status bar
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (isLoading || artistDetails == null) {
-             Box(modifier = Modifier.fillMaxWidth().height(200.dp))
+            // Menggunakan Skeleton Loading
+            ArtistHeaderSkeleton()
         } else {
             // --- REAL CONTENT ---
             
@@ -90,15 +92,16 @@ fun ArtistPlaylistHeader(
                 contentDescription = "Artist Photo",
                 modifier = Modifier
                     .size(180.dp)
-                    .shadow(12.dp, CircleShape)
+                    .shadow(16.dp, CircleShape, spotColor = Color.Black)
                     .clip(CircleShape)
-                    .background(Color.DarkGray),
+                    .border(2.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                    .background(Color(0xFF1E1E1E)),
                 contentScale = ContentScale.Crop,
                 placeholder = painterResource(id = R.drawable.img_placeholder),
                 error = painterResource(id = R.drawable.img_placeholder)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // 2. Artist Name with Verified Badge
             Row(
@@ -109,96 +112,97 @@ fun ArtistPlaylistHeader(
                 Text(
                     text = artistDetails.name,
                     fontFamily = AppFont.Poppins,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 32.sp,
                     color = Color.White,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                // Verified Badge (Green checkmark)
+                Spacer(modifier = Modifier.width(6.dp))
+                // Verified Badge
                 Icon(
                     imageVector = Icons.Filled.Verified,
                     contentDescription = "Verified Artist",
                     tint = Color(0xFF1DB954), // Spotify Green
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .padding(2.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 3. Stats Row (Followers • Songs • Plays)
+            // 3. Stats Row (Dipercantik dengan bentuk Pill / Badge)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
-                StatItem(formatCount(artistDetails.followerCount) + " Followers")
+                StatItem(formatCount(artistDetails.followerCount) + " Pengikut")
                 DotSeparator()
                 StatItem("${artistDetails.totalSongs} Lagu")
             }
-             Spacer(modifier = Modifier.height(4.dp))
-             Text(
-                text = "Total ${formatCount(artistDetails.totalPlays)} Plays",
-                fontFamily = AppFont.Poppins,
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Diputar ${formatCount(artistDetails.totalPlays)} kali",
+                fontFamily = AppFont.Helvetica,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,
-                color = Color.White.copy(0.5f)
+                color = Color.White.copy(0.4f)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // 4. Action Buttons (Follow, Shuffle, Play) - NEW LAYOUT
+            // 4. Action Buttons (Follow, Shuffle, Play)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // FOLLOW BUTTON (Left)
+                // FOLLOW BUTTON (Kiri)
                 val isFollowed = artistDetails.isFollowed
                 Button(
                     onClick = { playMusicViewModel?.toggleFollowFromHeader(artistDetails.id) },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isFollowed) Color.Transparent else Color.White,
-                        contentColor = if (isFollowed) Color.White else Color.Black
+                        containerColor = if (isFollowed) Color.White.copy(alpha = 0.1f) else Color.Transparent,
+                        contentColor = Color.White
                     ),
-                    border = if (isFollowed) androidx.compose.foundation.BorderStroke(1.dp, Color.White) else null,
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 0.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.height(40.dp)
+                    border = if (isFollowed) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.height(36.dp)
                 ) {
                     Icon(
                         imageVector = if (isFollowed) Icons.Filled.Check else Icons.Filled.PersonAdd,
                         contentDescription = if (isFollowed) "Unfollow" else "Follow",
-                        tint = if (isFollowed) Color.White else Color.Black,
-                        modifier = Modifier.size(18.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isFollowed) "Mengikuti" else "Ikuti",
-                        color = if (isFollowed) Color.White else Color.Black,
-                        fontFamily = AppFont.Poppins,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
+                        color = Color.White,
+                        fontFamily = AppFont.Helvetica,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
                     )
                 }
 
-                // Shuffle & Play Buttons (Right)
+                // Shuffle & Play Buttons (Kanan)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Shuffle Button (Medium - 48dp)
+                    // Shuffle Button (Dipertegas dengan background semi-transparan)
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, CircleShape)
+                            .size(44.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(0.15f))
+                            .background(Color.White.copy(alpha = 0.15f)) // Background ditambahkan
                             .clickable {
                                 if (sortedSongs.isNotEmpty()) {
                                     if (uiState?.isShuffleModeEnabled == false) {
@@ -220,16 +224,16 @@ fun ArtistPlaylistHeader(
                         Icon(
                             imageVector = Icons.Filled.Shuffle,
                             contentDescription = "Shuffle",
-                            tint = if (uiState?.isShuffleModeEnabled == true) Color(0xFF1DB954) else Color.White,
-                            modifier = Modifier.size(22.dp)
+                            tint = if (uiState?.isShuffleModeEnabled == true) Color(0xFF1DB954) else Color.White, // Icon putih solid jika tidak aktif
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    // Play Button (Large - 60dp, More Prominent)
+                    // Play Button
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
-                            .shadow(16.dp, CircleShape)
+                            .size(56.dp)
+                            .shadow(12.dp, CircleShape, ambientColor = Color(0xFF1DB954), spotColor = Color(0xFF1DB954))
                             .clip(CircleShape)
                             .background(Color(0xFF1DB954))
                             .clickable {
@@ -249,15 +253,50 @@ fun ArtistPlaylistHeader(
                             imageVector = Icons.Filled.PlayArrow,
                             contentDescription = "Play All",
                             tint = Color.Black,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(32.dp).padding(start = 2.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // 5. Bio (Collapsible Glassmorphism Card) - Dipindah KE ATAS Sorting
+            if (!artistDetails.description.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                var isExpanded by remember { mutableStateOf(false) }
+                
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(0.04f))
+                        .clickable { isExpanded = !isExpanded }
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Tentang Artis",
+                        fontFamily = AppFont.Poppins,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = artistDetails.description,
+                        fontFamily = AppFont.Helvetica,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        color = Color.White.copy(0.6f),
+                        maxLines = if (isExpanded) Int.MAX_VALUE else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
 
-            // 5. Sorting Row (NEW)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 6. Sorting Row - Dipindah KE BAWAH agar langsung menempel dengan daftar lagu
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -265,40 +304,38 @@ fun ArtistPlaylistHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                // Sort Button with Dropdown
                 Box {
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(0.1f))
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(0.08f))
                             .clickable { onSortClick() }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = currentSort.icon,
                             contentDescription = "Sort",
-                            tint = Color.White.copy(0.9f),
-                            modifier = Modifier.size(18.dp)
+                            tint = Color.White.copy(0.8f),
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = currentSort.SdisplayName,
                             color = Color.White.copy(0.9f),
-                            fontFamily = AppFont.Poppins,
+                            fontFamily = AppFont.Helvetica,
                             fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
 
-                    // Sort Menu (filtered for Artist - no ARTIST_ASC/DESC)
+                    // Sort Menu
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = onSortMenuDismiss,
                         modifier = Modifier.background(Color(0xFF282828)),
                         offset = androidx.compose.ui.unit.DpOffset(0.dp, 8.dp)
                     ) {
-                        // Filter out ARTIST sorting options
                         SortOrder.entries.filter { 
                             it != SortOrder.ARTIST_ASC && it != SortOrder.ARTIST_DESC 
                         }.forEach { sortOption ->
@@ -307,7 +344,7 @@ fun ArtistPlaylistHeader(
                                     Text(
                                         sortOption.SdisplayName,
                                         color = Color.White,
-                                        fontFamily = AppFont.Poppins
+                                        fontFamily = AppFont.Helvetica
                                     )
                                 },
                                 leadingIcon = {
@@ -323,40 +360,6 @@ fun ArtistPlaylistHeader(
                     }
                 }
             }
-
-            // 6. Bio (Collapsible)
-            if (!artistDetails.description.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                var isExpanded by remember { mutableStateOf(false) }
-                
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(0.05f))
-                        .clickable { isExpanded = !isExpanded }
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = "Tentang Artis",
-                         fontFamily = AppFont.Poppins,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = artistDetails.description,
-                        fontFamily = AppFont.Poppins,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
-                        color = Color.White.copy(0.7f),
-                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
         }
     }
 }
@@ -365,8 +368,8 @@ fun ArtistPlaylistHeader(
 private fun StatItem(text: String) {
     Text(
         text = text,
-        fontFamily = AppFont.Poppins,
-        fontWeight = FontWeight.Medium,
+        fontFamily = AppFont.Helvetica,
+        fontWeight = FontWeight.Bold, // Dipertebal agar lebih kontras di dalam Badge
         fontSize = 13.sp,
         color = Color.White.copy(0.9f)
     )
@@ -376,8 +379,9 @@ private fun StatItem(text: String) {
 private fun DotSeparator() {
     Text(
         text = " • ",
-        color = Color.White.copy(0.5f),
-        fontSize = 13.sp
+        color = Color.White.copy(0.4f),
+        fontSize = 13.sp,
+        modifier = Modifier.padding(horizontal = 6.dp)
     )
 }
 
@@ -392,54 +396,63 @@ private fun ArtistHeaderSkeleton() {
             modifier = Modifier
                 .size(180.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(0.1f))
+                .background(Color.White.copy(0.05f))
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         
         // Name
         Box(
             modifier = Modifier
-                .width(200.dp)
-                .height(32.dp)
+                .width(220.dp)
+                .height(36.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.White.copy(0.1f))
+                .background(Color.White.copy(0.05f))
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         
         // Stats
         Box(
             modifier = Modifier
-                .width(150.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.White.copy(0.1f))
+                .width(160.dp)
+                .height(28.dp) // Diperbesar menyesuaikan bentuk Pill
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(0.05f))
         )
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
         
-        // Buttons
-        Row {
-             Box(
+        // Buttons Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Follow skeleton
+            Box(
                 modifier = Modifier
-                    .width(100.dp)
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(0.1f))
+                    .width(110.dp)
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White.copy(0.05f))
             )
-             Spacer(modifier = Modifier.width(16.dp))
-              Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(0.1f))
-            )
-             Spacer(modifier = Modifier.width(16.dp))
-              Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(0.1f))
-            )
+            
+            // Play/Shuffle skeleton
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(0.05f))
+                )
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(0.05f))
+                )
+            }
         }
     }
 }

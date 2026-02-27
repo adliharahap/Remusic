@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,7 +40,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -67,16 +64,15 @@ import com.example.remusic.viewmodel.homeviewmodel.HomeUiState
 import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.example.remusic.viewmodel.AppUpdateViewModel
-import com.example.remusic.ui.screen.NotificationScreen
-import com.example.remusic.ui.screen.RequestSongScreen
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrowserUpdated
 import androidx.compose.ui.text.font.FontWeight
+import com.example.remusic.viewmodel.notification.NotificationViewModel
+import androidx.core.net.toUri
 
 @Composable
 fun HomeScreen(
@@ -171,7 +167,7 @@ fun HomeScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
+                    val intent = Intent(Intent.ACTION_VIEW, update.downloadUrl.toUri())
                     context.startActivity(intent)
                 }) {
                     Text("Update Sekarang", color = Color(0xFFE91E63), fontWeight = FontWeight.Bold)
@@ -220,9 +216,9 @@ fun HomeScreen(
             val typeString = backStackEntry.arguments?.getString(HomeRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
             
             val playlistType = try {
-                com.example.remusic.ui.screen.PlaylistType.valueOf(typeString)
+                PlaylistType.valueOf(typeString)
             } catch (e: Exception) {
-                com.example.remusic.ui.screen.PlaylistType.AUTO
+                PlaylistType.AUTO
             }
 
             // Ambil state dari HomeViewModel dan tentukan Data + Title
@@ -235,7 +231,7 @@ fun HomeScreen(
             when (val state = homeState) {
                 is HomeUiState.Success -> {
                     when (playlistType) {
-                        com.example.remusic.ui.screen.PlaylistType.ARTIST -> {
+                        PlaylistType.ARTIST -> {
                             // For ARTIST type, DON'T pass any songs - let pagination handle it
                             songs = emptyList()
                             
@@ -244,7 +240,7 @@ fun HomeScreen(
                             playlistTitle = artist?.name ?: "Unknown Artist"
                             playlistCoverUrl = artist?.photoUrl ?: ""
                         }
-                        com.example.remusic.ui.screen.PlaylistType.AUTO -> {
+                        PlaylistType.AUTO -> {
                             // Map ID to Data
                             when (id) {
                                 "baru_saja_ditambahkan" -> {
@@ -295,6 +291,30 @@ fun HomeScreen(
         composable("notification") {
             NotificationScreen(navController = homeNavController)
         }
+        composable(
+            route = "notification_detail/{notificationJson}",
+            arguments = listOf(navArgument("notificationJson") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val json = backStackEntry.arguments?.getString("notificationJson")
+            val notif = remember(json) {
+                try {
+                    if (json != null) {
+                        kotlinx.serialization.json.Json.decodeFromString<com.example.remusic.data.model.Notification>(android.net.Uri.decode(json))
+                    } else null
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    null
+                }
+            }
+
+            if (notif != null) {
+                NotificationDetailScreen(notification = notif, navController = homeNavController)
+            } else {
+                LaunchedEffect(Unit) {
+                    homeNavController.popBackStack()
+                }
+            }
+        }
         composable("request_song") {
             RequestSongScreen(navController = homeNavController, playMusicViewModel = playMusicViewModel)
         }
@@ -314,10 +334,12 @@ private fun HomeMainScreen(
     homeNavController: NavHostController, // Controller nested
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
-    onRequestSongClick: () -> Unit
+    onRequestSongClick: () -> Unit,
+    notificationViewModel: NotificationViewModel = viewModel()
 ) {
     val user = UserManager.currentUser
     val homeState by homeViewModel.uiState.collectAsState()
+    val unreadCount by notificationViewModel.unreadCount.collectAsState()
     val greeting = GreetingUtils.getGreeting()
     val scrollState = rememberScrollState()
     
@@ -381,6 +403,7 @@ private fun HomeMainScreen(
                                 name = user?.displayName,
                                 greeting = greeting,
                                 profileImageUrl = user?.photoUrl,
+                                unreadCount = unreadCount,
                                 onSearchClick = onSearchClick,
                                 onNotificationClick = { homeNavController.navigate("notification") },
                                 onRequestSongClick = { homeNavController.navigate("request_song") },
@@ -437,6 +460,7 @@ private fun HomeMainScreen(
                                 name = user?.displayName,
                                 greeting = greeting,
                                 profileImageUrl = user?.photoUrl,
+                                unreadCount = unreadCount,
                                 // Use callback to navigate
                                 onSearchClick = onSearchClick,
                                 onNotificationClick = { 

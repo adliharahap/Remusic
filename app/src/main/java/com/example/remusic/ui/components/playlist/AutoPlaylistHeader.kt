@@ -56,8 +56,13 @@ fun AutoPlaylistHeader(
     ) {
         // 1. Artwork (ANIMATED)
         val imageUrl = if (sortedSongs.isNotEmpty()) sortedSongs[0].song.coverUrl else playlistCoverUrl
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val imageModel = coil.request.ImageRequest.Builder(context)
+            .data(imageUrl)
+            .crossfade(1000) // 1000ms crossfade animation
+            .build()
         AsyncImage(
-            model = imageUrl,
+            model = imageModel,
             contentDescription = "Playlist Poster",
             modifier = Modifier
                 .fillMaxWidth(0.75f)

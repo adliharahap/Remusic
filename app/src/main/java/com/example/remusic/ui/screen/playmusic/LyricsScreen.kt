@@ -446,7 +446,7 @@ fun LyricLineItem(
             color = fontColor, // Gunakan warna yang dianimasikan
             fontSize = fontSize.sp, // Gunakan ukuran yang dianimasikan
             fontFamily = fontFamily,
-            fontWeight = FontWeight.Bold,
+            fontWeight = lyricsConfig.mainFontWeight.weight,
             textAlign = textAlign,
             modifier = Modifier.fillMaxWidth() // Ensure text takes width for alignment
         )
@@ -474,9 +474,9 @@ fun LyricLineItem(
                 Text(
                     text = line.translatedText,
                     color = translatedColor, // Gunakan warna yang dianimasikan
-                    fontSize = 15.5.sp, // Ukuran terjemahan bisa tetap atau scaled proporsional? User ga bilang. Keep static.
-                    fontFamily = fontFamily, // Pakai font yang sama? Biasanya ya.
-                    fontWeight = FontWeight.Normal,
+                    fontSize = lyricsConfig.translateFontSize.sp, // Ukuran terjemahan dari config
+                    fontFamily = fontFamily, // Pakai font yang sama
+                    fontWeight = lyricsConfig.translationFontWeight.weight, // Ketebalan terjemahan dari config
                     textAlign = textAlign,
                     modifier = Modifier.fillMaxWidth()
                 )

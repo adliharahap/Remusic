@@ -15,9 +15,13 @@ import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.utils.ConnectivityObserver
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.async
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -205,21 +209,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // --- Modular Fetch Functions ---
 
     private suspend fun fetchQuickPickSongs(): List<Song> {
-        val songs = SupabaseManager.client
-            .from("songs")
-            .select(
-                columns = Columns.list(
-                    "id", "title", "audio_url", "cover_url", "artist_id",
-                    "canvas_url", "duration_ms", "telegram_audio_file_id",
-                    "featured_artists", "play_count", "like_count", "created_at",
-                    "language", "moods"
-                )
-            ) {
-                order(column = "created_at", order = Order.DESCENDING)
-                limit(50)
+        val prefs = getApplication<Application>().getSharedPreferences("remusic_home_cache", android.content.Context.MODE_PRIVATE)
+        val lastFetchTime = prefs.getLong("last_quick_pick_time", 0L)
+        val currentTime = System.currentTimeMillis()
+        val twelveHoursInMillis = 12 * 60 * 60 * 1000L
+
+        // Cek apakah sudah lewat 12 jam
+        if (currentTime - lastFetchTime < twelveHoursInMillis) {
+            val cachedHomeData = HomeCacheManager.load()
+            if (cachedHomeData != null && cachedHomeData.quickPickSongs.isNotEmpty()) {
+                Log.d(TAG, "📦 [CACHE] Memuat Quick Picks lama (belum 12 jam).")
+                return cachedHomeData.quickPickSongs.map { it.song }
             }
-            .decodeList<Song>()
-        return songs.shuffled().take(20)
+        }
+
+        Log.d(TAG, "🌐 [NETWORK] Memuat Quick Picks baru dari RPC...")
+        val songs = SupabaseManager.client.postgrest.rpc(
+            function = "get_random_quick_picks",
+            parameters = buildJsonObject {
+                put("max_limit", 20)
+            }
+        ).decodeList<Song>()
+
+        // Update timestamp setelah berhasil fetch online
+        prefs.edit().putLong("last_quick_pick_time", currentTime).apply()
+        return songs
     }
 
     private suspend fun fetchRecentlyPlayedSongs(): List<Song> {

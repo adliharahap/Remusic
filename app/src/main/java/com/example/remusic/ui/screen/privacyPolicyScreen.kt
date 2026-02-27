@@ -252,7 +252,7 @@ fun PrivacyPolicyScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(140.dp))
         }
     }
 }

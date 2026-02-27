@@ -1,13 +1,16 @@
 package com.example.remusic.ui.screen.playmusic
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -22,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -45,7 +49,9 @@ fun QueueScreen(
     onPlayNext: (SongWithArtist) -> Unit = {},
     onAddToPlaylist: (SongWithArtist) -> Unit = {},
     onAddToLiked: (SongWithArtist) -> Unit = {},
-    onRemoveFromQueue: (SongWithArtist) -> Unit = {}
+    onRemoveFromQueue: (SongWithArtist) -> Unit = {},
+    topPlayerColor: Color = Color.Transparent,
+    headerHeight: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
     val currentlyPlayingId = songWithArtist?.song?.id
@@ -60,13 +66,14 @@ fun QueueScreen(
 
     //untuk memberikan padding top
     val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp.dp
-
-    LazyColumn(
-        state = listState,
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
         modifier = Modifier.fillMaxSize()
-            .padding(top = screenHeight * 0.1f)
-    ) {
+        ) {
+        item {
+            Spacer(modifier = Modifier.height(headerHeight).fillMaxWidth())
+        }
         // Bagian Header
         item {
             Column(
@@ -137,6 +144,27 @@ fun QueueScreen(
         item {
             Spacer(modifier = Modifier.height(60.dp))
         }
+    }
+
+        // 1. Gradient ATAS (Fade dari Warna ke Transparan)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(headerHeight + 40.dp)
+                .heightIn(min = 100.dp, max = 200.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to topPlayerColor,
+                            0.5f to topPlayerColor,
+                            0.6f to topPlayerColor.copy(alpha = 0.8f),
+                            0.8f to topPlayerColor.copy(alpha = 0.5f),
+                            1.0f to topPlayerColor.copy(alpha = 0f)
+                        )
+                    )
+                )
+        )
     }
 
     if (showQueueOptions && selectedSongForOptions != null) {

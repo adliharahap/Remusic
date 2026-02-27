@@ -99,7 +99,7 @@ class PlaylistScreenViewModel(application: Application) : AndroidViewModel(appli
                         id = playlist.id,
                         title = playlist.title,
                         subtitle = "Playlist • $ownerName",
-                        imageUrl = playlist.coverUrl ?: "https://picsum.photos/seed/${playlist.id}/400",
+                        imageUrl = playlist.coverUrl ?: "https://community.spotify.com/t5/image/serverpage/image-id/25294i2836BD1C1A31BDF2?v=v2",
                         type = FilterType.PLAYLIST,
                         privacy = privacy
                     )
@@ -118,7 +118,7 @@ class PlaylistScreenViewModel(application: Application) : AndroidViewModel(appli
                         id = artist.id,
                         title = artist.name,
                         subtitle = "Artist",
-                        imageUrl = artist.photoUrl ?: "https://i.pravatar.cc/400?img=${artist.name.hashCode() % 70 + 1}",
+                        imageUrl = artist.photoUrl ?: "https://community.spotify.com/t5/image/serverpage/image-id/25294i2836BD1C1A31BDF2?v=v2",
                         type = FilterType.ARTIST,
                         privacy = PlaylistPrivacy.PUBLIC
                     )

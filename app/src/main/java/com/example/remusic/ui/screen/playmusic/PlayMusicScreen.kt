@@ -41,6 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -230,7 +235,9 @@ fun PlayMusicScreen(
                         },
                         onRemoveFromQueue = { song ->
                             playMusicViewModel.removeFromQueue(song)
-                        }
+                        },
+                        topPlayerColor = animatedTopColor,
+                        headerHeight = headerHeight
                     )
                 }
                 1 -> NowPlaying(
@@ -270,7 +277,9 @@ fun PlayMusicScreen(
                             onNavigateToArtist(artistId)
                         }
                     },
-                    isDataSaverModeEnabled = uiState.isDataSaverModeEnabled
+                    isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
+                    topPlayerColor = animatedTopColor,
+                    headerHeight = headerHeight
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -317,6 +326,21 @@ fun PlayMusicScreen(
             val tabs = listOf("Queue", "Playing", "Lyrics")
             val coroutineScope = rememberCoroutineScope()
 
+            // Simpan lebar dan offset pos X (lokal ke row) tiap ukuran text tab
+            var tabWidths by remember { mutableStateOf(List(tabs.size) { 0.dp }) }
+            var tabOffsets by remember { mutableStateOf(List(tabs.size) { 0.dp }) }
+
+            val indicatorOffset by animateDpAsState(
+                targetValue = tabOffsets.getOrElse(pagerState.currentPage) { 0.dp },
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                label = "indicatorOffset"
+            )
+            val indicatorWidth by animateDpAsState(
+                targetValue = tabWidths.getOrElse(pagerState.currentPage) { 0.dp },
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                label = "indicatorWidth"
+            )
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -334,44 +358,66 @@ fun PlayMusicScreen(
                 }
 
                 // TABS
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        val isSelected = pagerState.currentPage == index
-                        Column(
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    coroutineScope.launch {
-                                        pagerState.animateScrollToPage(index)
-                                    }
-                                },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = title,
-                                color = if (isSelected) Color.White else Color.White.copy(0.8f),
-                                fontFamily = AppFont.HelveticaRoundedBold,
-                                fontWeight = if(isSelected) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = if (isSelected) 17.sp else 15.sp,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            if (isSelected) {
-                                Box(
+                Box(contentAlignment = Alignment.BottomStart) {
+                    var rowX by remember { mutableStateOf(0f) }
+                    Row(
+                        modifier = Modifier.onGloballyPositioned { rowX = it.positionInWindow().x },
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            val isSelected = pagerState.currentPage == index
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(index)
+                                        }
+                                    },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) Color.White else Color.White.copy(0.8f),
+                                    fontFamily = AppFont.HelveticaRoundedBold,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = if (isSelected) 17.sp else 15.sp,
                                     modifier = Modifier
-                                        .height(2.dp)
-                                        .width(40.dp)
-                                        .background(Color.White, shape = RoundedCornerShape(1.dp))
+                                        .padding(bottom = 6.dp) // Beri ruang untuk garis animasi di bawah
+                                        .onGloballyPositioned { coordinates ->
+                                            val textPositionX = coordinates.positionInWindow().x
+                                            val localX = textPositionX - rowX
+                                            val currentWidth = with(density) { coordinates.size.width.toDp() }
+                                            val currentOffset = with(density) { localX.toDp() }
+
+                                            if (tabWidths[index] != currentWidth || tabOffsets[index] != currentOffset) {
+                                                val newWidths = tabWidths.toMutableList()
+                                                newWidths[index] = currentWidth
+                                                tabWidths = newWidths
+
+                                                val newOffsets = tabOffsets.toMutableList()
+                                                newOffsets[index] = currentOffset
+                                                tabOffsets = newOffsets
+                                            }
+                                        }
                                 )
-                            } else {
-                                Spacer(modifier = Modifier.height(2.dp))
                             }
                         }
+                    }
+
+                    // Garis Animasi (Width mengikuti teks, dan bergeser secara halus)
+                    if (indicatorWidth > 0.dp) {
+                        Box(
+                            modifier = Modifier
+                                .offset(x = indicatorOffset)
+                                .width(indicatorWidth)
+                                .height(2.dp)
+                                .background(Color.White, shape = RoundedCornerShape(1.dp))
+                        )
                     }
                 }
 

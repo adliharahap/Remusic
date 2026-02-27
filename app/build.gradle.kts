@@ -9,6 +9,7 @@ plugins {
     id("kotlin-parcelize")
     kotlin("plugin.serialization") version "2.1.0"
     id("com.google.devtools.ksp") version "2.3.4"
+    id("com.google.gms.google-services")
 }
 
 // 2. LOGIKA MEMBACA FILE LOCAL.PROPERTIES (Wajib Ada!)
@@ -39,8 +40,8 @@ android {
         applicationId = "com.example.remusic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -174,6 +175,10 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion") // Wajib buat Coroutines/Flow
     ksp("androidx.room:room-compiler:$roomVersion") // Pakai ksp, bukan kapt/annotationProcessor
+
+    // --- FIREBASE ---
+    implementation(platform("com.google.firebase:firebase-bom:34.10.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }
 
 kotlin {

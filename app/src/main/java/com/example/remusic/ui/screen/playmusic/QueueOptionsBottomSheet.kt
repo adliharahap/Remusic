@@ -117,7 +117,7 @@ fun QueueOptionsBottomSheet(
                     Text(
                         text = songWithArtist?.song?.title ?: "Unknown Title",
                         color = Color.White,
-                        fontFamily = AppFont.Coolvetica,
+                        fontFamily = AppFont.Poppins,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,

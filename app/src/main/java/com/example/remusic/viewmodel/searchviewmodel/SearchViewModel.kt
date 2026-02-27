@@ -16,6 +16,7 @@ import com.example.remusic.data.UserManager
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -23,6 +24,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import com.example.remusic.data.model.SongWithArtistRpcResult
+import io.github.jan.supabase.postgrest.postgrest
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -136,56 +141,33 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                     .decodeList<User>()
             }
 
-            // 4. Search Songs (By Title OR Lyrics) - Run in Parallel
-            val songsByQueryDeferred = viewModelScope.async {
-                SupabaseManager.client
-                    .from("songs")
-                    .select(
-                        columns = Columns.list(
-                            "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists", "lyrics"
-                        )
-                    ) {
-                        filter {
-                            or {
-                                ilike("title", "%$query%")
-                                ilike("lyrics", "%$query%")
-                            }
+            // 4. Smart Search Songs (RPC Call)
+            val smartSongsDeferred = viewModelScope.async {
+                val cleanQuery = query.trim()
+                android.util.Log.d("SearchVM", "Executing RPC search_songs_smart with query: '$cleanQuery'")
+                try {
+                    val result = SupabaseManager.client.postgrest.rpc(
+                        function = "search_songs_smart",
+                        parameters = buildJsonObject {
+                            put("search_query", cleanQuery)
+                            put("max_limit", 30)
                         }
-                        limit(30)
-                    }
-                    .decodeList<Song>()
+                    ).decodeList<SongWithArtistRpcResult>()
+                    android.util.Log.d("SearchVM", "RPC returned ${result.size} songs")
+                    result
+                } catch (e: Exception) {
+                    android.util.Log.e("SearchVM", "RPC Exception: ${e.message}", e)
+                    emptyList()
+                }
             }
 
             // Await Initial Results
             val foundArtistsList = artistsDeferred.await()
             val foundPlaylistsList = playlistsDeferred.await()
             val foundUsersList = usersDeferred.await()
-            val foundSongsByQueryList = songsByQueryDeferred.await()
-
-            // 5. NEW: Search Songs by Artist ID (from found artists)
-            val artistIds = foundArtistsList.map { it.id }
-            val songsByArtistList = if (artistIds.isNotEmpty()) {
-                SupabaseManager.client
-                    .from("songs")
-                    .select(
-                        columns = Columns.list(
-                            "id", "title", "audio_url", "cover_url", "artist_id", 
-                            "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists", "lyrics"
-                        )
-                    ) {
-                        filter {
-                            isIn("artist_id", artistIds)
-                        }
-                        limit(20) // Limit per artist search
-                    }
-                    .decodeList<Song>()
-            } else {
-                emptyList()
-            }
-
-            // Merge Songs (ByQuery + ByArtist) & Remove Duplicates
-            val uniqueSongs = (songsByArtistList + foundSongsByQueryList).distinctBy { it.id }
+            val rpcResults = smartSongsDeferred.await()
+            
+            android.util.Log.d("SearchVM", "Found Artists: ${foundArtistsList.size}, Playlists: ${foundPlaylistsList.size}, RPC Songs: ${rpcResults.size}")
 
             // Update States
             _foundArtists.value = foundArtistsList
@@ -193,30 +175,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             _foundUsers.value = foundUsersList
             _topArtist.value = foundArtistsList.firstOrNull() // Keep top artist logic if needed for header
 
-            // Process Songs (Fetch Artist Info for ALL unique songs)
-            val allArtistIds = uniqueSongs.mapNotNull { it.artistId }.distinct()
+            // Convert RPC results
+            val songsWithArtists = rpcResults.map { it.toSongWithArtist() }
             
-            // Optimize: Reuse foundArtistsList if possible to reduce fetches
-            val existingArtistsMap = foundArtistsList.associateBy { it.id }
-            val missingArtistIds = allArtistIds.filter { !existingArtistsMap.containsKey(it) }
-
-            val additionalArtistsMap = if (missingArtistIds.isNotEmpty()) {
-                SupabaseManager.client
-                    .from("artists")
-                    .select {
-                        filter { isIn("id", missingArtistIds) }
-                    }
-                    .decodeList<Artist>()
-                    .associateBy { it.id }
-            } else {
-                emptyMap()
-            }
-            
-            val fullArtistsMap = existingArtistsMap + additionalArtistsMap
-
-            val songsWithArtists = uniqueSongs.map { song ->
-                SongWithArtist(song, song.artistId?.let { fullArtistsMap[it] })
-            }
+            android.util.Log.d("SearchVM", "Final Mapped Songs: ${songsWithArtists.size}")
 
             _searchResults.value = songsWithArtists
 

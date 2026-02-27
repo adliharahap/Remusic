@@ -1,8 +1,12 @@
 package com.example.remusic.ui.screen
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GridView
@@ -39,6 +44,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +53,7 @@ import com.example.remusic.ui.components.shimmerEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +65,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,6 +78,7 @@ import com.example.remusic.navigation.PlaylistRoute
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class ViewMode { LIST, GRID }
 enum class FilterType { PLAYLIST, ARTIST }
@@ -171,28 +181,47 @@ fun PlaylistMainContent(
     viewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel,
     onItemClick: (String, FilterType, String, String) -> Unit
 ) {
+    val allItems by viewModel.playlistsAndArtists.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    val context = LocalContext.current
+    val userPreferences = remember { com.example.remusic.data.preferences.UserPreferencesRepository(context) }
+    val coroutineScope = rememberCoroutineScope()
+
+    val initialViewGrid by userPreferences.playlistViewGridFlow.collectAsState(initial = false)
+    val initialSortOption by userPreferences.playlistSortOptionFlow.collectAsState(initial = "RECENT")
+
     var isVisible by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(ViewMode.LIST) }
+    var viewMode by remember { mutableStateOf(if(initialViewGrid) ViewMode.GRID else ViewMode.LIST) }
     var filterType by remember { mutableStateOf<FilterType?>(null) } // Default null (All)
     var sortType by remember { mutableStateOf(SortType.RECENT) }
 
-    val user = UserManager.currentUser
-
-    val allItems by viewModel.playlistsAndArtists.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    // --- SEARCH STATE ---
+    var isSearchVisible by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    // Sinkronize after Initial load
+    LaunchedEffect(initialViewGrid, initialSortOption) {
+        viewMode = if(initialViewGrid) ViewMode.GRID else ViewMode.LIST
+        sortType = try { SortType.valueOf(initialSortOption) } catch (e: Exception) { SortType.RECENT }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadData()
     }
 
     // Filter and sort logic
-    val displayItems = remember(allItems, filterType, sortType) {
-        val filtered =
-            if (filterType == null) allItems else allItems.filter { it.type == filterType }
+    val displayItems = remember(allItems, filterType, sortType, searchQuery) {
+        val filtered = allItems.filter { item ->
+            val matchesFilterType = filterType == null || item.type == filterType
+            val matchesSearch = searchQuery.isBlank() || item.title.contains(searchQuery, ignoreCase = true) || item.subtitle.contains(searchQuery, ignoreCase = true)
+            matchesFilterType && matchesSearch
+        }
+
         when (sortType) {
             SortType.RECENT -> filtered
-            SortType.A_Z -> filtered.sortedBy { it.title }
-            SortType.Z_A -> filtered.sortedByDescending { it.title }
+            SortType.A_Z -> filtered.sortedWith(compareBy<PlaylistItem> { it.type }.thenBy { it.title })
+            SortType.Z_A -> filtered.sortedWith(compareBy<PlaylistItem> { it.type }.thenByDescending { it.title })
         }
     }
 
@@ -209,25 +238,75 @@ fun PlaylistMainContent(
     ) {
         Spacer(modifier = Modifier.height(50.dp))
 
-        // Header with Profile Picture
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = "Your Library",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontFamily = AppFont.Poppins,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = { /* TODO: Search */ }) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-            }
-            IconButton(onClick = { onCreatePlaylistClick() }) {
-                Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White)
+        // Header with Profile Picture or Search Bar
+        AnimatedContent(
+            targetState = isSearchVisible,
+            transitionSpec = {
+                fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(220))
+            },
+            label = "Search Bar Animation"
+        ) { searchVisible ->
+            if (searchVisible) {
+                // Tampilan Kolom Pencarian
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(
+                            text = "Find in playlists...",
+                            color = Color.White.copy(0.5f),
+                            fontFamily = AppFont.Helvetica
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White.copy(0.7f))
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                isSearchVisible = false
+                            }
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(0.1f),
+                        unfocusedContainerColor = Color.White.copy(0.1f),
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color.White
+                    )
+                )
+            } else {
+                // Tampilan Default "Your Library"
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Your Library",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontFamily = AppFont.Poppins,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { isSearchVisible = true }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                    }
+                    IconButton(onClick = { onCreatePlaylistClick() }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White)
+                    }
+                }
             }
         }
 
@@ -271,10 +350,14 @@ fun PlaylistMainContent(
                 FilterChip(
                     selected = sortType != SortType.RECENT,
                     onClick = {
-                        sortType = when (sortType) {
+                        val newSortType = when (sortType) {
                             SortType.RECENT -> SortType.A_Z
                             SortType.A_Z -> SortType.Z_A
                             SortType.Z_A -> SortType.RECENT
+                        }
+                        sortType = newSortType
+                        coroutineScope.launch {
+                            userPreferences.savePlaylistSortOption(newSortType.name)
                         }
                     },
                     label = {
@@ -297,7 +380,11 @@ fun PlaylistMainContent(
             }
 
             IconButton(onClick = {
-                viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                val newMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                viewMode = newMode
+                coroutineScope.launch {
+                    userPreferences.savePlaylistViewGrid(newMode == ViewMode.GRID)
+                }
             }) {
                 Icon(
                     if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList,
@@ -863,7 +950,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "240 songs", // Dummy count
+                            text = "fitur belum tersedia",
                             color = Color.White.copy(alpha = 0.7f),
                             fontFamily = AppFont.Helvetica,
                             fontSize = 11.sp
@@ -912,7 +999,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
                         fontSize = 16.sp
                     )
                     Text(
-                        text = "240 songs",
+                        text = "fitur belum tersedia",
                         color = Color.White.copy(alpha = 0.7f),
                         fontFamily = AppFont.Helvetica,
                         fontSize = 12.sp
