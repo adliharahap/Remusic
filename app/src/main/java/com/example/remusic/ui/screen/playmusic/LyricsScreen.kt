@@ -108,7 +108,8 @@ fun LyricsScreen(
     onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
     // Add Lyrics Config
-    lyricsConfig: LyricsConfig = LyricsConfig()
+    lyricsConfig: LyricsConfig = LyricsConfig(),
+    onSeekToMs: (Long) -> Unit = {}
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -212,7 +213,8 @@ fun LyricsScreen(
                                     isActive = index == activeIndex,
                                     isPassed = index <= activeIndex,
                                     isTranslateLyrics = isTranslateLyrics,
-                                    lyricsConfig = lyricsConfig
+                                    lyricsConfig = lyricsConfig,
+                                    onSeekToMs = onSeekToMs
                                 )
                             }
                         }
@@ -368,7 +370,8 @@ fun LyricLineItem(
     isActive: Boolean,
     isPassed: Boolean,
     isTranslateLyrics: Boolean,
-    lyricsConfig: LyricsConfig
+    lyricsConfig: LyricsConfig,
+    onSeekToMs: (Long) -> Unit = {}
 ) {
     // Spesifikasi animasi (durasi 200ms) untuk semua transisi
     val animationSpec = tween<Float>(durationMillis = 200, delayMillis = 80)
@@ -438,6 +441,14 @@ fun LyricLineItem(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (lyricsConfig.clickLyricsToSeek && line.timestamp != -1L) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onSeekToMs(line.timestamp) }
+                } else Modifier
+            )
             .padding(vertical = 2.dp),
         horizontalAlignment = horizontalAlignment // Align column content
     ) {

@@ -8,10 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.example.remusic.MainActivity
 import com.example.remusic.R
 
 object NotificationUtils {
@@ -20,9 +20,14 @@ object NotificationUtils {
     private const val CHANNEL_NAME = "Upload Notifications"
     private const val CHANNEL_DESC = "Notifikasi untuk upload status"
 
+    private const val DOWNLOAD_CHANNEL_ID = "download_channel"
+    private const val DOWNLOAD_CHANNEL_NAME = "Download Notifications"
+    private const val DOWNLOAD_CHANNEL_DESC = "Notifikasi untuk status download lagu"
+
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            // Upload Channel
+            val uploadChannel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_HIGH
@@ -30,9 +35,19 @@ object NotificationUtils {
                 description = CHANNEL_DESC
             }
 
+            // Download Channel (LOW importance strictly for progress bar silence)
+            val downloadChannel = NotificationChannel(
+                DOWNLOAD_CHANNEL_ID,
+                DOWNLOAD_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = DOWNLOAD_CHANNEL_DESC
+            }
+
             val notificationManager: NotificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(uploadChannel)
+            notificationManager.createNotificationChannel(downloadChannel)
         }
     }
 
@@ -44,7 +59,8 @@ object NotificationUtils {
         icon: Int = R.drawable.app_logo,
         destinationRoute: String? = null
     ) {
-        val intent = Intent(context, MainActivity::class.java).apply {
+        val intent = Intent().apply {
+            setClassName(context, "com.example.remusic.MainActivity")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             // ✅ 3. Sisipkan data rute tujuan
             putExtra("destination_route", destinationRoute)
@@ -74,8 +90,41 @@ object NotificationUtils {
             with(NotificationManagerCompat.from(context)) {
                 notify(notificationId, builder.build())
             }
+        }
+    }
+
+    fun showDownloadNotification(
+        context: Context,
+        title: String,
+        progress: Int,
+        isFinished: Boolean = false,
+        notificationId: Int = 1001
+    ) {
+        val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(R.drawable.app_logo)
+            .setContentTitle(title)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(!isFinished)
+            .setOnlyAlertOnce(true)
+
+        if (isFinished) {
+            builder.setContentText("download lagu $title has completed")
+                .setProgress(0, 0, false)
+                .setAutoCancel(true)
         } else {
-            // Tidak punya izin → sebaiknya request permission di Activity
+            builder.setContentText("Mengunduh... $progress%")
+                .setProgress(100, progress, progress == 0)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+            } catch (e: SecurityException) {
+                Log.e("NotificationUtils", "Missing notification permission", e)
+            }
         }
     }
 }

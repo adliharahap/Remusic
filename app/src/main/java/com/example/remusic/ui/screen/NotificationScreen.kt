@@ -1,8 +1,8 @@
 package com.example.remusic.ui.screen
 
-import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -36,6 +37,13 @@ import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.notification.NotificationUiState
 import com.example.remusic.viewmodel.notification.NotificationViewModel
 
+// --- Design Tokens (Premium Dark Theme) ---
+private val BgDark = Color(0xFF09090B)       // Latar belakang utama (Sangat gelap/modern)
+private val SurfaceDark = Color(0xFF18181B)  // Latar belakang card/item
+private val AccentPink = Color(0xFFE91E63)   // Warna aksen original
+private val TextPrimary = Color(0xFFFAFAFA)
+private val TextSecondary = Color(0xFFA1A1AA)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationScreen(
@@ -50,23 +58,41 @@ fun NotificationScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        "Notifikasi", 
+                        text = "Notifications", 
                         fontFamily = AppFont.Poppins, 
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 20.sp,
+                        color = TextPrimary
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceDark),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack, 
+                                contentDescription = "Back", 
+                                tint = TextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black
+                    containerColor = BgDark,
+                    scrolledContainerColor = BgDark
                 )
             )
         },
-        containerColor = Color.Black
+        containerColor = BgDark
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -77,38 +103,37 @@ fun NotificationScreen(
                 is NotificationUiState.Loading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
-                        color = Color(0xFFE91E63)
+                        color = AccentPink,
+                        strokeWidth = 3.dp
                     )
                 }
                 is NotificationUiState.Error -> {
-                    Text(
-                        text = state.message,
-                        color = Color.Gray,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info, 
+                            contentDescription = "Error",
+                            tint = AccentPink,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = state.message,
+                            color = TextSecondary,
+                            fontFamily = AppFont.Poppins,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
                 is NotificationUiState.Success -> {
                     if (state.notifications.isEmpty()) {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = "Empty",
-                                tint = Color.Gray,
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "Belum ada notifikasi baru",
-                                color = Color.Gray,
-                                fontFamily = AppFont.Poppins
-                            )
-                        }
+                        EmptyNotificationState(modifier = Modifier.align(Alignment.Center))
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(16.dp),
+                            // Padding bawah dihapus karena sudah diganti Spacer di dalam item
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
@@ -116,6 +141,7 @@ fun NotificationScreen(
                                 NotificationItem(
                                     notification = notif,
                                     onClick = {
+                                        // Logic utuh tidak diubah
                                         if (!notif.isRead) {
                                             viewModel.markAsRead(notif)
                                         }
@@ -123,6 +149,10 @@ fun NotificationScreen(
                                         navController.navigate("notification_detail/$jsonNotif")
                                     }
                                 )
+                            }
+                            // Spacer agar tidak tertutup Bottom Navigation
+                            item {
+                                Spacer(modifier = Modifier.height(120.dp))
                             }
                         }
                     }
@@ -137,24 +167,28 @@ fun NotificationItem(
     notification: Notification,
     onClick: () -> Unit
 ) {
-    // Both Read and Unread will have the same dark background
-    val backgroundColor = Color(0xFF1E1E1E)
-    val iconBackground = if (notification.isRead) Color(0xFF2C2C2C) else Color(0xFFE91E63).copy(alpha = 0.2f)
-    val iconTint = if (notification.isRead) Color.Gray else Color(0xFFE91E63)
+    // Styling dinamis berdasarkan status read/unread
+    val isUnread = !notification.isRead
+    val backgroundColor = if (isUnread) SurfaceDark else Color.Transparent
+    val borderColor = if (isUnread) SurfaceDark.copy(alpha = 0.5f) else Color.Transparent
+    
+    val iconBackground = if (isUnread) AccentPink.copy(alpha = 0.15f) else SurfaceDark
+    val iconTint = if (isUnread) AccentPink else TextSecondary
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(14.dp), // Padding sedikit dikecilkan agar lebih compact
+        verticalAlignment = Alignment.CenterVertically // Sejajar tengah secara horizontal
     ) {
-        // Icon based on type
+        // --- Icon Box ---
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(44.dp)
                 .clip(CircleShape)
                 .background(iconBackground),
             contentAlignment = Alignment.Center
@@ -169,59 +203,107 @@ fun NotificationItem(
                 imageVector = icon,
                 contentDescription = notification.type,
                 tint = iconTint,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
-        // Text Content
+        // --- Konten Teks ---
         Column(
             modifier = Modifier.weight(1f)
         ) {
             Text(
                 text = notification.title,
                 fontFamily = AppFont.Poppins,
-                fontWeight = if (notification.isRead) FontWeight.Medium else FontWeight.Bold,
-                color = Color.White,
-                fontSize = 16.sp,
+                fontWeight = if (isUnread) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (isUnread) TextPrimary else TextPrimary.copy(alpha = 0.8f),
+                fontSize = 15.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            
+            Spacer(modifier = Modifier.height(2.dp))
+            
             Text(
                 text = notification.message,
                 fontFamily = AppFont.Poppins,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                maxLines = 2,
+                fontWeight = FontWeight.Normal,
+                color = TextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                maxLines = 2, // Dibatasi 2 baris agar tetap compact
                 overflow = TextOverflow.Ellipsis
             )
-            
-            // Image Preview (if provided)
-            if (!notification.imageUrl.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                AsyncImage(
-                    model = notification.imageUrl,
-                    contentDescription = "Notification Image",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                )
-            }
         }
 
-        // Unread Indicator Dot
-        if (!notification.isRead) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
+        // --- Image Preview (Thumbnail Kotak 1:1 di Kanan) ---
+        if (!notification.imageUrl.isNullOrBlank()) {
+            Spacer(modifier = Modifier.width(12.dp))
+            AsyncImage(
+                model = notification.imageUrl,
+                contentDescription = "Notification Image",
+                contentScale = ContentScale.Crop, // Crop memastikan gambarnya menjadi persegi 1:1 tanpa gepeng
                 modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFE91E63))
+                    .size(56.dp) // Ukuran kecil dan proporsional
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceDark) // Placeholder saat loading
             )
         }
+
+        // --- Dot Unread Indicator (Pindah ke paling kanan) ---
+        if (isUnread) {
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(AccentPink, AccentPink.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyNotificationState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .clip(CircleShape)
+                .background(SurfaceDark),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Notifications,
+                contentDescription = "Empty Notifications",
+                tint = TextSecondary.copy(alpha = 0.5f),
+                modifier = Modifier.size(48.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "No New Notifications",
+            color = TextPrimary,
+            fontFamily = AppFont.Poppins,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "When you get notifications, they'll show up here.",
+            color = TextSecondary,
+            fontFamily = AppFont.Poppins,
+            fontSize = 14.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            lineHeight = 22.sp
+        )
     }
 }

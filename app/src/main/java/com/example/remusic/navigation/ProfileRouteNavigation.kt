@@ -12,6 +12,7 @@ object ProfileRoute {
     const val SECURITY = "profile_security"
     const val STORAGE_CACHE = "profile_storage_cache"
     const val NOTIFICATION = "profile_notification"
+    const val NOTIFICATION_DETAIL = "notification_detail/{notif}"
     const val ABOUT = "profile_about"
     const val PRIVACY_POLICY = "profile_privacy_policy"
     const val HELP_CENTER = "profile_help_center"

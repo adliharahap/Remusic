@@ -295,7 +295,8 @@ fun PlayMusicScreen(
                         playMusicViewModel.seekTo(newPosition)
                     },
                     onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
-                    lyricsConfig = uiState.lyricsConfig
+                    lyricsConfig = uiState.lyricsConfig,
+                    onSeekToMs = { ms -> playMusicViewModel.seekTo(ms) }
                 )
             }
         }
@@ -473,6 +474,12 @@ fun PlayMusicScreen(
             },
             onAddToLiked = {
                 playMusicViewModel.toggleLike()
+                showMoreOptionsSheet = false
+            },
+            onDownload = {
+                uiState.currentSong?.let { song ->
+                    playMusicViewModel.downloadSong(song)
+                }
                 showMoreOptionsSheet = false
             },
             onSetSleepTimer = {

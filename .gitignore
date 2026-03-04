@@ -17,3 +17,7 @@ local.properties
 # File Konfigurasi Sensitif
 google-services.json
 .env
+
+# Build outputs
+/app/release/
+*.apk

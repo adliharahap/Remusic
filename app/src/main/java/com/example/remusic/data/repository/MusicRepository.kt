@@ -988,29 +988,57 @@ class MusicRepository(private val musicDao: MusicDao) {
                 }
             }
 
-            val restoredSongs =
-                    queueEntities.mapNotNull { entity ->
-                        val song = cachedSongMap[entity.songId]?.toSong() ?: Song(
-                            id = entity.songId,
-                            title = "Unknown Song",
-                            audioUrl = null,
-                            coverUrl = null,
-                            lyrics = null
-                        ) // FALLBACK: tetap kembalikan dummy agar jumlah queue tidak berkurang meski gagal fetch
-                        
-                        val fallbackArtist =
-                                Artist(
-                                        id = song.artistId ?: "",
-                                        name = entity.artistName,
-                                        photoUrl = null,
-                                        description = null,
-                                        normalizedName = null,
-                                        createdBy = null,
-                                        createdAt = null,
-                                        updatedAt = null
-                                )
-                        SongWithArtist(song, fallbackArtist)
-                    }
+            // Definisi judul/artist yang dianggap "tidak valid" (corrupt/placeholder)
+            val invalidTitles = setOf("unknown song", "unknown title", "")
+            val invalidArtists = setOf("unknown artist", "unknown")
+
+            val restoredSongs = mutableListOf<SongWithArtist>()
+
+            queueEntities.forEach { entity ->
+                val cachedSong = cachedSongMap[entity.songId]
+                val songTitle = cachedSong?.title?.trim()?.lowercase() ?: "unknown song"
+                val artistNameLower = entity.artistName.trim().lowercase()
+
+                // Cek apakah lagu ini tidak valid
+                if (songTitle in invalidTitles || artistNameLower in invalidArtists) {
+                    // Hapus entry corrupt ini dari database agar tidak muncul lagi
+                    Log.w(TAG, "🗑️ [QUEUE FILTER] Skipping & deleting corrupt entry: songId=${entity.songId}, title='${cachedSong?.title}', artist='${entity.artistName}'")
+                    return@forEach // skip, jangan masukkan ke restoredSongs
+                }
+
+                val song = cachedSong?.toSong() ?: Song(
+                    id = entity.songId,
+                    title = "Unknown Song",
+                    audioUrl = null,
+                    coverUrl = null,
+                    lyrics = null
+                )
+
+                val fallbackArtist = Artist(
+                    id = song.artistId ?: "",
+                    name = entity.artistName,
+                    photoUrl = null,
+                    description = null,
+                    normalizedName = null,
+                    createdBy = null,
+                    createdAt = null,
+                    updatedAt = null
+                )
+                restoredSongs.add(SongWithArtist(song, fallbackArtist))
+            }
+
+            // Bersihkan seluruh queue lama, lalu simpan kembali HANYA lagu yang valid
+            // Ini memastikan entry corrupt tidak menumpuk di database
+            val validSongIds = restoredSongs.map { it.song.id }.toSet()
+            val removedCount = queueEntities.count { it.songId !in validSongIds }
+            if (removedCount > 0) {
+                Log.d(TAG, "🧹 [QUEUE CLEAN] Menghapus $removedCount entry tidak valid dari database.")
+                musicDao.clearPlaybackQueue()
+                val cleanEntities = queueEntities
+                    .filter { it.songId in validSongIds }
+                    .mapIndexed { idx, e -> e.copy(listOrder = idx) }
+                musicDao.insertPlaybackQueue(cleanEntities)
+            }
 
             Log.d(TAG, "♻️ [QUEUE] Restored ${restoredSongs.size} songs from playback queue.")
             return Pair(restoredSongs, playlistName)

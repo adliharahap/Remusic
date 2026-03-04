@@ -19,7 +19,13 @@ class AppUpdateViewModel : ViewModel() {
     private val _updateAvailable = MutableStateFlow<AppUpdate?>(null)
     val updateAvailable: StateFlow<AppUpdate?> = _updateAvailable.asStateFlow()
 
+    companion object {
+        var hasDismissedThisSession = false
+    }
+
     fun checkForUpdates() {
+        if (hasDismissedThisSession) return
+        
         viewModelScope.launch {
             try {
                 // Get the current version code of the app
@@ -55,6 +61,7 @@ class AppUpdateViewModel : ViewModel() {
 
     // Call this to dismiss the dialog temporarily
     fun dismissUpdate() {
+        hasDismissedThisSession = true
         _updateAvailable.value = null
     }
 }

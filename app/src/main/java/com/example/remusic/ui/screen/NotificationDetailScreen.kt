@@ -3,6 +3,7 @@ package com.example.remusic.ui.screen
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,12 +24,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.remusic.data.model.Notification
 import com.example.remusic.ui.theme.AppFont
+import java.util.Locale
+
+// --- Design Tokens (Premium Dark Theme) ---
+private val BgDark = Color(0xFF09090B)
+private val SurfaceDark = Color(0xFF18181B)
+private val AccentPink = Color(0xFFE91E63)
+private val TextPrimary = Color(0xFFFAFAFA)
+private val TextSecondary = Color(0xFFA1A1AA)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,97 +54,142 @@ fun NotificationDetailScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        "Detail Notifikasi", 
+                        text = "Detail", 
                         fontFamily = AppFont.Poppins, 
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = TextPrimary
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceDark),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack, 
+                                contentDescription = "Back", 
+                                tint = TextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black
+                    containerColor = BgDark,
+                    scrolledContainerColor = BgDark
                 )
             )
         },
-        containerColor = Color.Black
+        containerColor = BgDark
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(scrollState)
-                .padding(16.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally // Memusatkan konten layaknya Spotify/Apple Music
         ) {
-            // Icon Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            
+            // --- 1. Image Preview (Hero Image) ---
+            if (!notification.imageUrl.isNullOrBlank()) {
                 Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE91E63).copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    val icon = when (notification.type) {
-                        "promo" -> Icons.Default.LocalOffer
-                        "song_request" -> Icons.Default.MusicNote
-                        "welcome" -> Icons.Default.Star
-                        else -> Icons.Default.Info
-                    }
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = notification.type,
-                        tint = Color(0xFFE91E63),
-                        modifier = Modifier.size(28.dp)
+                    AsyncImage(
+                        model = notification.imageUrl,
+                        contentDescription = "Notification Image",
+                        // Menggunakan ContentScale.Crop, namun ukurannya dibatasi oleh widthIn & heightIn
+                        // Ini memastikan gambar 1:1 atau 16:9 tetap proporsional dan tidak kebesaran (anti pecah)
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .widthIn(max = 240.dp) // Ukuran ideal album art di tengah layar
+                            .heightIn(max = 240.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(SurfaceDark)
+                            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
                     )
                 }
+                Spacer(modifier = Modifier.height(24.dp))
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column {
+            // --- 2. Type Badge (Kategori Notifikasi) ---
+            val (icon, typeText) = when (notification.type) {
+                "promo" -> Icons.Default.LocalOffer to "PROMO"
+                "song_request" -> Icons.Default.MusicNote to "SONG REQUEST"
+                "welcome" -> Icons.Default.Star to "WELCOME"
+                else -> Icons.Default.Info to notification.type.uppercase(Locale.getDefault())
+            }
+            
+            Surface(
+                color = AccentPink.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = AccentPink,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = notification.title,
+                        text = typeText,
                         fontFamily = AppFont.Poppins,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 20.sp
+                        color = AccentPink,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp
                     )
-                    // You could add formatted date here if you want
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Message Body
+            // --- 3. Title ---
             Text(
-                text = notification.message,
+                text = notification.title,
                 fontFamily = AppFont.Poppins,
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 16.sp,
-                lineHeight = 24.sp
+                fontWeight = FontWeight.ExtraBold,
+                color = TextPrimary,
+                fontSize = 24.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 32.sp
             )
 
-            // Image Preview (if provided)
-            if (!notification.imageUrl.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                AsyncImage(
-                    model = notification.imageUrl,
-                    contentDescription = "Notification Image",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- 4. Message Body (Dibungkus Card Elegan) ---
+            Surface(
+                color = SurfaceDark,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = notification.message,
+                    fontFamily = AppFont.Poppins,
+                    color = TextSecondary,
+                    fontSize = 15.sp,
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.Normal,
+                    modifier = Modifier.padding(24.dp) // Memberikan ruang napas di dalam card
                 )
             }
 
-            // Reference Button (if provided)
+            // --- 5. Reference Button (Call to Action) ---
             if (!notification.referenceId.isNullOrBlank() && notification.referenceId.startsWith("http")) {
                 Spacer(modifier = Modifier.height(32.dp))
                 Button(
@@ -148,20 +203,24 @@ fun NotificationDetailScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE91E63)
+                        containerColor = AccentPink,
+                        contentColor = Color.White
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(100.dp)
                 ) {
                     Text(
                         text = "Buka Tautan",
                         fontFamily = AppFont.Poppins,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 16.sp,
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
+            
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }

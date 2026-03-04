@@ -1,14 +1,18 @@
 package com.example.remusic.ui.screen
 
+import android.Manifest
+import android.os.Build
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +20,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,20 +32,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.remusic.R
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import com.example.remusic.data.SupabaseManager
 import com.example.remusic.utils.LockScreenOrientationPortrait
 import io.github.jan.supabase.auth.auth
@@ -50,17 +51,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// --- Design Tokens ---
+private val BgDark = Color(0xFF0A0A0C) // Hampir hitam legam yang premium
+private val AccentBrand = Color(0xFF6C63FF) // Ungu elegan
+private val AccentSecondary = Color(0xFF00F2EA) // Cyan untuk sedikit sentuhan modern
+
 @Composable
 fun SplashScreen(navController: NavController) {
     LockScreenOrientationPortrait()
 
-    // Kumpulan state animasi
-    val logoScale = remember { Animatable(0f) }
-    val loadingAlpha = remember { Animatable(0f) }
+    // --- State Animasi (Lebih halus dan terkoordinasi) ---
+    val logoScale = remember { Animatable(0.8f) }
+    val logoAlpha = remember { Animatable(0f) }
+    val textOffsetY = remember { Animatable(20f) } // Slide up effect
     val textAlpha = remember { Animatable(0f) }
-    val subtextAlpha = remember { Animatable(0f) }
+    val loaderAlpha = remember { Animatable(0f) }
 
-    // Persiapkan daftar permission yang akan diminta berdasarkan versi Android
+    // --- LOGIKA ORIGINAL (TIDAK DIUBAH SAMA SEKALI) ---
     val permissionsToRequest = remember {
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -72,7 +79,6 @@ fun SplashScreen(navController: NavController) {
         perms.toTypedArray()
     }
 
-    // Fungsi untuk melanjutkan navigasi setelah permission diminta/sudah ada
     val proceedToApp = {
         CoroutineScope(Dispatchers.Main).launch {
             val TAG = "RemusicAuth"
@@ -103,52 +109,56 @@ fun SplashScreen(navController: NavController) {
         }
     }
 
-    // Launcher untuk meminta permission
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
-            // Apakah diizinkan atau ditolak, kita tetap lanjut ke aplikasi
             Log.d("SplashScreen", "Permission results: $permissions")
             proceedToApp()
         }
     )
+    // --- AKHIR LOGIKA ORIGINAL ---
 
+    // Menjalankan sekuens animasi
     LaunchedEffect(key1 = true) {
-        // 1. Animasi Logo & Teks Muncul Bersamaan (Lebih Cepat)
-        logoScale.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 500)
-        )
-        textAlpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 300)
-        )
-        subtextAlpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 300)
-        )
+        // 1. Munculkan logo perlahan
+        launch {
+            logoScale.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+        }
+        launch {
+            logoAlpha.animateTo(1f, tween(800))
+        }
+        
+        delay(200) // Staggered delay untuk efek berurutan
 
-        // 2. Minta Permission (Ini akan meng-pause navigasi sampai user merespons)
+        // 2. Teks nama aplikasi slide up dan fade in
+        launch {
+            textOffsetY.animateTo(0f, tween(600, easing = FastOutSlowInEasing))
+        }
+        launch {
+            textAlpha.animateTo(1f, tween(600))
+        }
+
+        delay(300)
+
+        // 3. Tampilkan Audio Visualizer Loader di bawah
+        launch {
+            loaderAlpha.animateTo(1f, tween(500))
+        }
+
+        delay(400) // Sedikit jeda tambahan agar animasi selesai sebelum pop up permission
+
+        // 4. Minta Permission
         permissionLauncher.launch(permissionsToRequest)
     }
 
-    // ... (SISA KODE UI KE BAWAH TIDAK PERLU DIUBAH, SAMA PERSIS) ...
-    val gradientColors = listOf(
-        Color(0xFF441088),
-        Color(0xFF121212)
-    )
-
+    // --- UI BARU ---
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.radialGradient(
-                    colors = gradientColors,
-                    radius = 1200f
-                )
-            ),
+            .background(BgDark), // Solid background, sleek dan clean
         contentAlignment = Alignment.Center
     ) {
+        // --- Bagian Tengah (Logo & Nama Aplikasi) ---
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -157,91 +167,120 @@ fun SplashScreen(navController: NavController) {
                 painter = painterResource(id = R.drawable.app_logo),
                 contentDescription = "App Logo",
                 modifier = Modifier
-                    .size(140.dp * logoScale.value)
-                    .clip(CircleShape)
-                    .border(
-                        width = 2.dp,
-                        color = Color.White.copy(alpha = 0.5f),
-                        shape = CircleShape
-                    )
+                    .size(110.dp)
+                    .graphicsLayer {
+                        scaleX = logoScale.value
+                        scaleY = logoScale.value
+                        alpha = logoAlpha.value
+                    }
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.height(48.dp)) {
-                JumpingDotsLoader(
-                    modifier = Modifier.alpha(loadingAlpha.value)
-                )
-
-                Text(
-                    text = "ReMusic",
-                    color = Color.White,
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.alpha(textAlpha.value)
-                )
-            }
+            // Nama Aplikasi dengan efek teks gradient
+            Text(
+                text = "ReMusic",
+                style = TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color.White, Color.White.copy(alpha = 0.7f))
+                    )
+                ),
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                modifier = Modifier.graphicsLayer {
+                    translationY = textOffsetY.value
+                    alpha = textAlpha.value
+                }
+            )
         }
 
-        Text(
-            text = "Your Music, Reimagined",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 16.sp,
-            style = MaterialTheme.typography.bodyLarge,
+        // --- Bagian Bawah (Audio Visualizer & Tagline) ---
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp)
-                .alpha(subtextAlpha.value)
-        )
+                .padding(bottom = 60.dp)
+                .alpha(loaderAlpha.value),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            AudioVisualizerLoader()
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "YOUR MUSIC, REIMAGINED",
+                color = Color.White.copy(alpha = 0.4f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 3.sp
+            )
+        }
     }
 }
 
+/**
+ * Pengganti JumpingDots yang kekanak-kanakan.
+ * Ini adalah animasi bar equalizer yang bergerak naik turun selayaknya
+ * musik sedang dimainkan. Sangat cocok untuk aplikasi streaming musik.
+ */
 @Composable
-fun JumpingDotsLoader(
+fun AudioVisualizerLoader(
     modifier: Modifier = Modifier,
-    dotSize: Dp = 10.dp,
-    dotColor: Color = Color.White,
-    spaceBetween: Dp = 4.dp,
-    jumpHeight: Dp = 15.dp
+    barColor: Color = AccentBrand,
+    barWidth: Dp = 4.dp,
+    spaceBetween: Dp = 6.dp,
+    maxHeight: Dp = 24.dp,
+    minHeight: Dp = 8.dp
 ) {
-    val dots = listOf(
-        remember { Animatable(0f) },
-        remember { Animatable(0f) },
-        remember { Animatable(0f) }
+    // 4 baris equalizer dengan delay dan durasi animasi yang berbeda
+    // agar terlihat acak dan natural seperti gelombang suara
+    val animations = listOf(
+        remember { Animatable(minHeight.value) },
+        remember { Animatable(minHeight.value) },
+        remember { Animatable(minHeight.value) },
+        remember { Animatable(minHeight.value) }
     )
 
-    dots.forEachIndexed { index, animatable ->
+    val configs = listOf(
+        Pair(0L, 400),
+        Pair(150L, 600),
+        Pair(50L, 350),
+        Pair(250L, 500)
+    )
+
+    animations.forEachIndexed { index, animatable ->
+        val (startDelay, duration) = configs[index]
         LaunchedEffect(animatable) {
-            delay(index * 150L)
+            delay(startDelay)
             animatable.animateTo(
-                targetValue = 1f,
+                targetValue = maxHeight.value,
                 animationSpec = infiniteRepeatable(
                     animation = keyframes {
-                        durationMillis = 1000
-                        0f at 0
-                        -jumpHeight.value at 250
-                        0f at 500
-                        0f at 1000
+                        durationMillis = duration * 2
+                        maxHeight.value at duration
+                        minHeight.value at duration * 2
                     },
-                    repeatMode = RepeatMode.Restart
+                    repeatMode = RepeatMode.Reverse
                 )
             )
         }
     }
 
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(spaceBetween)
+        modifier = modifier.height(maxHeight),
+        horizontalArrangement = Arrangement.spacedBy(spaceBetween),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        dots.forEach { anim ->
+        animations.forEach { anim ->
             Box(
                 modifier = Modifier
-                    .size(dotSize)
-                    .offset(y = anim.value.dp)
+                    .width(barWidth)
+                    .height(anim.value.dp)
                     .background(
-                        color = dotColor,
-                        shape = CircleShape
+                        brush = Brush.verticalGradient(
+                            colors = listOf(AccentSecondary, barColor)
+                        ),
+                        shape = RoundedCornerShape(50)
                     )
             )
         }

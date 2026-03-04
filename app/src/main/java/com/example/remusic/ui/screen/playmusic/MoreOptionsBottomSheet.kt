@@ -82,7 +82,8 @@ data class LyricsConfig(
     val markPassedLyrics: Boolean = false,
     val translateFontSize: Float = 15.5f,
     val translationFontWeight: LyricsFontWeight = LyricsFontWeight.REGULAR,
-    val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD
+    val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD,
+    val clickLyricsToSeek: Boolean = true
 )
 
 enum class LyricsFontWeight(val displayName: String, val weight: FontWeight) {
@@ -180,7 +181,6 @@ fun MoreOptionsBottomSheet(
                     Text(
                         text = songWithArtist?.song?.title ?: "Unknown Title",
                         color = Color.White,
-                        fontFamily = AppFont.Poppins,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -248,7 +248,8 @@ fun MoreOptionsBottomSheet(
                 title = "Unduh",
                 icon = Icons.Outlined.Download,
                 onClick = {
-                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
+                    onDownload()
+                    onDismiss()
                 }
             )
 
@@ -720,6 +721,45 @@ fun MoreOptionsBottomSheet(
                     checked = lyricsConfig.markPassedLyrics,
                     onCheckedChange = {
                         onLyricsConfigChange(lyricsConfig.copy(markPassedLyrics = it))
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.Black,
+                        checkedTrackColor = Color.White,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.DarkGray
+                    )
+                )
+            }
+
+            // 7. Click Lyrics to Seek
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onLyricsConfigChange(
+                            lyricsConfig.copy(clickLyricsToSeek = !lyricsConfig.clickLyricsToSeek)
+                        )
+                    }
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Klik lirik untuk seek",
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        "Ketuk baris lirik untuk loncat ke waktu tersebut",
+                        color = Color.White.copy(0.6f),
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = lyricsConfig.clickLyricsToSeek,
+                    onCheckedChange = {
+                        onLyricsConfigChange(lyricsConfig.copy(clickLyricsToSeek = it))
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.Black,

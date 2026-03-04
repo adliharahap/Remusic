@@ -73,7 +73,9 @@ import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.StorageCacheViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
+import com.example.remusic.data.model.Notification
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
 import com.example.remusic.R
 
 @Composable
@@ -155,6 +157,24 @@ fun ProfileScreen(
         }
         composable(ProfileRoute.NOTIFICATION) {
             NotificationScreen(
+                navController = profileNavController
+            )
+        }
+        composable(
+            route = ProfileRoute.NOTIFICATION_DETAIL,
+            arguments = listOf(
+                navArgument("notif") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val jsonNotif = backStackEntry.arguments?.getString("notif") ?: return@composable
+            val notification = try {
+                Json { ignoreUnknownKeys = true }.decodeFromString<Notification>(jsonNotif)
+            } catch (e: Exception) {
+                profileNavController.popBackStack()
+                return@composable
+            }
+            NotificationDetailScreen(
+                notification = notification,
                 navController = profileNavController
             )
         }

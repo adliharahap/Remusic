@@ -101,6 +101,7 @@ class UserPreferencesRepository(private val context: Context) {
     private val LYRICS_TRANSLATE_FONT_SIZE_KEY = floatPreferencesKey("lyrics_translate_font_size")
     private val LYRICS_TRANSLATE_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_translate_font_weight")
     private val LYRICS_MAIN_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_main_font_weight")
+    private val LYRICS_CLICK_TO_SEEK_KEY = booleanPreferencesKey("lyrics_click_to_seek")
 
     val lyricsConfigFlow: Flow<com.example.remusic.ui.screen.playmusic.LyricsConfig> =
             context.dataStore.data.map { preferences ->
@@ -118,6 +119,7 @@ class UserPreferencesRepository(private val context: Context) {
                 val translateFontSize = preferences[LYRICS_TRANSLATE_FONT_SIZE_KEY] ?: 15.5f
                 val translateFontWeightName = preferences[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR.name
                 val mainFontWeightName = preferences[LYRICS_MAIN_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD.name
+                val clickLyricsToSeek = preferences[LYRICS_CLICK_TO_SEEK_KEY] ?: true
 
                 val fontFamily =
                         try {
@@ -156,7 +158,8 @@ class UserPreferencesRepository(private val context: Context) {
                         markPassedLyrics = markPassed,
                         translateFontSize = translateFontSize,
                         translationFontWeight = fontWeight,
-                        mainFontWeight = mainWeight
+                        mainFontWeight = mainWeight,
+                        clickLyricsToSeek = clickLyricsToSeek
                 )
             }
 
@@ -171,6 +174,7 @@ class UserPreferencesRepository(private val context: Context) {
             settings[LYRICS_TRANSLATE_FONT_SIZE_KEY] = config.translateFontSize
             settings[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] = config.translationFontWeight.name
             settings[LYRICS_MAIN_FONT_WEIGHT_KEY] = config.mainFontWeight.name
+            settings[LYRICS_CLICK_TO_SEEK_KEY] = config.clickLyricsToSeek
         }
     }
 

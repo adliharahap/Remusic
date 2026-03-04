@@ -28,7 +28,10 @@ import com.example.remusic.data.model.User
 import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.data.repository.MusicRepository
 import com.example.remusic.services.MusicService
+import com.example.remusic.utils.NotificationUtils
+import com.example.remusic.utils.SongDownloader
 import com.example.remusic.utils.extractGradientColorsFromImageUrl
+import android.widget.Toast
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
@@ -1836,6 +1839,56 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     it
                 }
             }
+        }
+    }
+
+    fun downloadSong(songWithArtist: SongWithArtist) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            
+            Log.d("PlayMusicViewModel", "📥 [DOWNLOAD] Memulai proses download untuk: ${songWithArtist.song.title}")
+
+            // 1. Resolve URL (Biasanya Telegram URL expired, jadi kita refresh)
+            val resolved = resolveSongUrl(songWithArtist)
+            val url = resolved.url
+            
+            if (url.isBlank()) {
+                Log.e("PlayMusicViewModel", "❌ [DOWNLOAD] Gagal mendapatkan URL. Reason: ${resolved.errorType}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Gagal mendapatkan link download: ${resolved.errorType}", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            // 2. Start Download with Management Notification
+            val notifId = songWithArtist.song.id.hashCode()
+            val songTitle = songWithArtist.song.title
+            
+            NotificationUtils.showDownloadNotification(context, songTitle, 0, false, notifId)
+            
+            SongDownloader.downloadSong(
+                context = context,
+                songWithArtist = songWithArtist,
+                url = url,
+                onProgress = { progress ->
+                    NotificationUtils.showDownloadNotification(context, songTitle, progress, false, notifId)
+                },
+                onComplete = { success, message ->
+                    // Membatalkan notifikasi progress bar (yang silent)
+                    androidx.core.app.NotificationManagerCompat.from(context).cancel(notifId)
+                    
+                    // Menampilkan notifikasi popup (Importance High)
+                    if (success) {
+                        NotificationUtils.showNotification(context, "Unduh Berhasil", "download lagu $songTitle has completed", notifId + 1)
+                    } else {
+                        NotificationUtils.showNotification(context, "Unduh Gagal", message ?: "Terjadi kesalahan", notifId + 1)
+                    }
+
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, message ?: (if (success) "Selesai" else "Gagal"), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
         }
     }
 
