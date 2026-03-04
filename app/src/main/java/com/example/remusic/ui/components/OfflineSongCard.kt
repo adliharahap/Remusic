@@ -82,7 +82,7 @@ fun OfflineSongCard(
                 Text(
                     text = (index + 1).toString(),
                     color = Color.White.copy(0.8f),
-                    fontFamily = AppFont.Helvetica,
+                    fontFamily = AppFont.Coolvetica,
                     fontSize = 15.sp,
                     modifier = Modifier.width(20.dp)
                 )
