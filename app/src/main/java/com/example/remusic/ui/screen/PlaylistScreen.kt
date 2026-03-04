@@ -70,6 +70,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.remusic.ui.screen.offline.OfflinePlaylistScreen
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.remusic.R
@@ -131,39 +132,44 @@ fun PlaylistScreen(
                     playlistNavController.navigate(
                         PlaylistRoute.createRoute(id = id, type = routeType, name = title, coverUrl = imageUrl)
                     )
-                }
+                },
+                onOfflineMusicClick = { playlistNavController.navigate(PlaylistRoute.OFFLINE_PLAYLIST) }
             )
         }
         composable(
             route = PlaylistRoute.PLAYLIST_DETAIL,
             arguments = listOf(
                 navArgument(PlaylistRoute.ARGS_ID) { type = NavType.StringType },
-                navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType; defaultValue = "AUTO" },
-                navArgument(PlaylistRoute.ARGS_PLAYLIST_NAME) { type = NavType.StringType; nullable = true },
-                navArgument(PlaylistRoute.ARGS_PLAYLIST_COVER) { type = NavType.StringType; nullable = true }
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_TYPE) { type = NavType.StringType },
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_NAME) { type = NavType.StringType },
+                navArgument(PlaylistRoute.ARGS_PLAYLIST_COVER) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_ID) ?: ""
-            val typeString = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
-            val rawName = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_NAME)
-            val name = rawName?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: "Artist"
-            val rawCover = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_COVER)
-            val decodedCover = rawCover?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: ""
+            val argsId = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_ID) ?: ""
+            val typeStr = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_TYPE) ?: "AUTO"
+            val type = try { PlaylistType.valueOf(typeStr) } catch(e:Exception){ PlaylistType.AUTO }
+            val name = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_NAME) ?: "Belum ada nama"
+            val decodedName = java.net.URLDecoder.decode(name, "UTF-8")
+            val coverUrl = backStackEntry.arguments?.getString(PlaylistRoute.ARGS_PLAYLIST_COVER) ?: ""
+            val decodedCoverUrl = java.net.URLDecoder.decode(coverUrl, "UTF-8") // Decode URL
 
-            val playlistType = try {
-                PlaylistType.valueOf(typeString)
-            } catch (e: Exception) {
-                PlaylistType.AUTO
-            }
             PlaylistDetailScreen(
-                songs = emptyList(),
-                playlistName = name,
-                playlistCoverUrl = decodedCover,
-                playlistType = playlistType,
-                playlistId = id,
+                songs = emptyList(), // Fetch di dalam composable
+                playlistName = decodedName,
+                playlistCoverUrl = decodedCoverUrl,
+                playlistType = type,
+                playlistId = argsId,
                 playMusicViewModel = playMusicViewModel
             )
         }
+
+        composable(PlaylistRoute.OFFLINE_PLAYLIST) {
+            OfflinePlaylistScreen(
+                playMusicViewModel = playMusicViewModel,
+                onBack = { playlistNavController.popBackStack() }
+            )
+        }
+
         composable("request_song") {
             com.example.remusic.ui.screen.RequestSongScreen(navController = playlistNavController, playMusicViewModel = playMusicViewModel)
         }
@@ -179,7 +185,8 @@ fun PlaylistScreen(
 fun PlaylistMainContent(
     onCreatePlaylistClick: () -> Unit,
     viewModel: com.example.remusic.viewmodel.PlaylistScreenViewModel,
-    onItemClick: (String, FilterType, String, String) -> Unit
+    onItemClick: (String, FilterType, String, String) -> Unit,
+    onOfflineMusicClick: () -> Unit
 ) {
     val allItems by viewModel.playlistsAndArtists.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -427,14 +434,14 @@ fun PlaylistMainContent(
                     item {
                         if (viewMode == ViewMode.GRID) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OfflineMusicCard(viewMode)
+                                OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
                                 LikedSongsCard(
                                     onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
                                 )
                             }
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OfflineMusicCard(viewMode)
+                                OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
                                 LikedSongsListItem(
                                     onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
                                 )
@@ -903,13 +910,13 @@ fun ArtistListItem(
     }
 }
 @Composable
-fun OfflineMusicCard(viewMode: ViewMode) {
+fun OfflineMusicCard(viewMode: ViewMode, onClick: () -> Unit = {}) {
     if (viewMode == ViewMode.GRID) {
         Card(
             modifier = Modifier
                 .height(180.dp) // Matched to PlaylistGridItem (Reduced from 200)
                 .fillMaxWidth()
-                .clickable { /* TODO: Navigate to Offline Music */ },
+                .clickable { onClick() },
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent) // No background
         ) {
@@ -950,7 +957,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "fitur belum tersedia",
+                            text = "Dengarkan musik tanpa internet",
                             color = Color.White.copy(alpha = 0.7f),
                             fontFamily = AppFont.Helvetica,
                             fontSize = 11.sp
@@ -965,7 +972,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(90.dp) // Matched PlaylistListItem (Reduced from 100)
-                .clickable { /* TODO */ },
+                .clickable { onClick() },
             shape = RoundedCornerShape(12.dp),
              colors = CardDefaults.cardColors(containerColor = Color.Transparent)
         ) {
@@ -999,7 +1006,7 @@ fun OfflineMusicCard(viewMode: ViewMode) {
                         fontSize = 16.sp
                     )
                     Text(
-                        text = "fitur belum tersedia",
+                        text = "Dengarkan musik tanpa internet",
                         color = Color.White.copy(alpha = 0.7f),
                         fontFamily = AppFont.Helvetica,
                         fontSize = 12.sp

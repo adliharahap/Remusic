@@ -406,6 +406,10 @@ fun MainScreen(
                     playMusicViewModel.showAddToPlaylistSheet(selectedSong)
                     playMusicViewModel.dismissQueueOptions()
                 },
+                onDownload = {
+                    playMusicViewModel.downloadSong(selectedSong)
+                    playMusicViewModel.dismissQueueOptions()
+                },
                 onAddToLiked = {
                     playMusicViewModel.toggleLike(selectedSong.song.id)
                 },

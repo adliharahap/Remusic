@@ -833,6 +833,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun fetchFullSongDetails(songId: String, forceUpdate: Boolean = false) {
+        if (songId.startsWith("offline_")) {
+            // Lagu offline tidak punya lirik/detail di Supabase
+            return
+        }
         fetchLyricsJob?.cancel()
         searchDebounceJob?.cancel()
         searchDebounceJob =
@@ -953,6 +957,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+
     fun setPlaylist(
             songs: List<SongWithArtist>,
             startIndex: Int = 0,
@@ -994,7 +999,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
         // SAVE QUEUE TO DB
         viewModelScope.launch(Dispatchers.IO) {
-            repository.savePlaybackQueue(songs, finalPlaylistName)
+            val onlineSongs = songs.filter { !it.song.id.startsWith("offline_") }
+            repository.savePlaybackQueue(onlineSongs, finalPlaylistName)
             userPreferencesRepository.saveLastPlaylistName(finalPlaylistName)
         }
 
@@ -1038,16 +1044,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // C. Fetch Data Lengkap (Lirik, dll) untuk lagu pertama
             fetchFullSongDetails(songToPlay.song.id)
 
-            // C. Extract Warna (Sambil jalan)
-            val colors =
-                    extractGradientColorsFromImageUrl(
-                            context = getApplication(),
-                            imageUrl = songToPlay.song.coverUrl ?: ""
-                    )
-            // Update warna ke UI
-            _uiState.update { it.copy(dominantColors = colors) }
-            // Save to preferences for HomeScreen
-            userPreferencesRepository.saveLastSongColor(colors.getOrElse(0) { Color(0xFF755D8D) })
+            // C. Extract Warna (Sambil jalan - JANGAN BLOCK MEDIA SETUP)
+            launch {
+                val colors =
+                        extractGradientColorsFromImageUrl(
+                                context = getApplication(),
+                                imageUrl = songToPlay.song.coverUrl ?: ""
+                        )
+                // Update warna ke UI
+                _uiState.update { it.copy(dominantColors = colors) }
+                // Save to preferences for HomeScreen
+                userPreferencesRepository.saveLastSongColor(colors.getOrElse(0) { Color(0xFF755D8D) })
+            }
 
             Log.d("DEBUG_PLAYER", "🛠 MAPPING: Membuat MediaItems...")
 
@@ -1127,6 +1135,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // Tunggu sebentar sampai lagu utama mulai disiapkan
             playJob?.join()
 
+            if (seedSong.song.id.startsWith("offline_")) {
+                Log.d("PlayMusicViewModel", "Skip Smart Queue untuk offline song")
+                return@launch
+            }
+
             // Fetch Smart Queue (List<Song>)
             val relatedSongs = repository.fetchSmartQueue(seedSong.song)
 
@@ -1185,8 +1198,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 // Simpan total playlist baru
                 val finalPlaylist = currentPlaylist.toList()
 
-                // FIX: Update Player Queue Persistance to SQLite
-                repository.savePlaybackQueue(finalPlaylist, playlistName)
+                // FIX: Update Player Queue Persistance to SQLite (Filter offline songs)
+                val onlineSongs = finalPlaylist.filter { !it.song.id.startsWith("offline_") }
+                repository.savePlaybackQueue(onlineSongs, playlistName)
 
                 // Update UI State (Queue terlihat oleh user)
                 _uiState.update { it.copy(playlist = finalPlaylist) }
@@ -1523,17 +1537,19 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         // Ambil data detail
                         fetchFullSongDetails(targetSong.song.id, forceUpdate = true)
 
-                        val colors =
-                                extractGradientColorsFromImageUrl(
-                                        getApplication(),
-                                        targetSong.song.coverUrl ?: ""
-                                )
+                        launch {
+                            val colors =
+                                    extractGradientColorsFromImageUrl(
+                                            getApplication(),
+                                            targetSong.song.coverUrl ?: ""
+                                    )
 
-                        _uiState.update { it.copy(dominantColors = colors) }
-                        // Save to preferences for HomeScreen
-                        userPreferencesRepository.saveLastSongColor(
-                                colors.getOrElse(0) { Color(0xFF755D8D) }
-                        )
+                            _uiState.update { it.copy(dominantColors = colors) }
+                            // Save to preferences for HomeScreen
+                            userPreferencesRepository.saveLastSongColor(
+                                    colors.getOrElse(0) { Color(0xFF755D8D) }
+                            )
+                        }
 
                         // 5. CEK STATUS LIKE
                         checkIfLiked(targetSong.song.id)
@@ -1613,6 +1629,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun generateSmartQueue(seedSong: SongWithArtist) {
+        if (seedSong.song.id.startsWith("offline_")) {
+            Log.d("PlayMusicViewModel", "Skip Smart Queue untuk offline song")
+            return
+        }
         withContext(Dispatchers.IO) {
             val fullSongDetails =
                     repository.getFullSongDetails(
@@ -1730,6 +1750,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun resolveSongUrl(song: SongWithArtist): MusicRepository.ResolvedSongUrl {
+        // Fitur Offline: Bypass request resolusi url jika lagu berasal dari local storage
+        if (song.song.id.startsWith("offline_") || song.song.audioUrl?.startsWith("content://") == true) {
+            Log.d("PlayMusicViewModel", "✅ RESOLVED OFFLINE URL: ${song.song.audioUrl}")
+            return MusicRepository.ResolvedSongUrl(song.song.audioUrl ?: "", "OFFLINE_STORAGE")
+        }
+
         // Logika disederhanakan: Serahkan ke Repository
         // Repository akan otomatis cek SQLite -> Cek Expired -> Request API jika perlu
         val result =
@@ -1823,6 +1849,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun checkIfLiked(songId: String) {
+        if (songId.startsWith("offline_")) {
+            _uiState.update { it.copy(isLiked = false) }
+            return
+        }
         val userId = SupabaseManager.client.auth.currentSessionOrNull()?.user?.id
         if (userId == null) {
             _uiState.update { it.copy(isLiked = false) }
@@ -2038,9 +2068,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         mediaController?.addMediaItem(createMediaItem(song.song, song.song.audioUrl ?: ""))
         Log.d("PlayMusicViewModel", "Added to queue: ${song.song.title}")
 
-        // Save new queue to DB
+        // Save new queue to DB (Filter offline songs)
         viewModelScope.launch(Dispatchers.IO) {
-            repository.savePlaybackQueue(mutableList, _uiState.value.playingMusicFromPlaylist)
+            val onlineSongs = mutableList.filter { !it.song.id.startsWith("offline_") }
+            repository.savePlaybackQueue(onlineSongs, _uiState.value.playingMusicFromPlaylist)
         }
 
         return "${song.song.title} ditambahkan ke antrean"
@@ -2088,7 +2119,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // Prefetch audio and save to DB
             prefetchSongAtIndex(targetIndex)
             viewModelScope.launch(Dispatchers.IO) {
-                repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+                val onlineSongs = currentPlaylist.filter { !it.song.id.startsWith("offline_") }
+                repository.savePlaybackQueue(onlineSongs, _uiState.value.playingMusicFromPlaylist)
             }
         } else {
             // Logic Lama: Insert Baru
@@ -2103,7 +2135,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             // Prefetch audio and save to DB
             prefetchSongAtIndex(nextIndex)
             viewModelScope.launch(Dispatchers.IO) {
-                repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+                val onlineSongs = currentPlaylist.filter { !it.song.id.startsWith("offline_") }
+                repository.savePlaybackQueue(onlineSongs, _uiState.value.playingMusicFromPlaylist)
             }
         }
     }
@@ -2744,7 +2777,8 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
              
              // Save updated queue to SQLite
              viewModelScope.launch(Dispatchers.IO) {
-                 repository.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+                 val onlineSongs = currentPlaylist.filter { !it.song.id.startsWith("offline_") }
+                 repository.savePlaybackQueue(onlineSongs, _uiState.value.playingMusicFromPlaylist)
              }
              
              Log.d("PlayMusicViewModel", "✅ Removed '${songToRemove.song.title}' from queue at index $indexToRemove.")

@@ -119,6 +119,7 @@ fun NowPlaying(
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     val context = LocalContext.current
+    val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {}
     }
@@ -255,8 +256,8 @@ fun NowPlaying(
                                         )
                                         .clip(RoundedCornerShape(6.dp)),
                                     contentScale = ContentScale.Crop,
-                                    placeholder = painterResource(id = R.drawable.img_placeholder),
-                                    error = painterResource(id = R.drawable.img_placeholder)
+                                    placeholder = painterResource(id = R.drawable.default_playlist),
+                                    error = painterResource(id = R.drawable.default_playlist)
                                 )
                                 Column(
                                     modifier = Modifier.weight(0.7f).fillMaxHeight(),
@@ -316,7 +317,13 @@ fun NowPlaying(
                                     Icon(
                                         if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                         "Fav",
-                                        Modifier.size(28.dp).clickable { onLikeClick() },
+                                        Modifier.size(28.dp).clickable {
+                                            if (isOfflineSong) {
+                                                Toast.makeText(context, "Mendengarkan lagu offline tidak bisa like", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                onLikeClick()
+                                            }
+                                        },
                                         if (isLiked) Color.Red else Color.White
                                     )
                                     Icon(
@@ -589,8 +596,8 @@ fun NowPlaying(
                                     )
                                     .clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop,
-                                placeholder = painterResource(id = R.drawable.img_placeholder),
-                                error = painterResource(id = R.drawable.img_placeholder)
+                                placeholder = painterResource(id = R.drawable.default_playlist),
+                                error = painterResource(id = R.drawable.default_playlist)
                             )
                         }
                         // Jarak antara Album Art dan Judul
@@ -647,7 +654,13 @@ fun NowPlaying(
                                 Icon(
                                     if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                     "Fav",
-                                    Modifier.size(25.dp).clickable { onLikeClick() },
+                                    Modifier.size(25.dp).clickable {
+                                        if (isOfflineSong) {
+                                            Toast.makeText(context, "Mendengarkan lagu offline tidak bisa like", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            onLikeClick()
+                                        }
+                                    },
                                     if (isLiked) Color.Red else Color.White
                                 )
                                 Icon(
@@ -887,7 +900,7 @@ fun NowPlaying(
                 // Spacer agar ada jarak sedikit saat user mulai scroll ke bawah
                 Spacer(modifier = Modifier.height(20.dp))
 
-                if (songWithArtist != null) {
+                if (songWithArtist != null && !isOfflineSong) {
                     UploaderBoxAndArtist(
                         artist = songWithArtist.artist,
                         uploader = uploader,

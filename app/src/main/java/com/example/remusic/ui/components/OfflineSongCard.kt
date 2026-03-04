@@ -1,12 +1,9 @@
 package com.example.remusic.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,24 +20,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import com.example.remusic.R
 import com.example.remusic.ui.screen.playmusic.AudioWaveVisualizer
 import com.example.remusic.ui.theme.AppFont
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import coil.compose.AsyncImage
+import com.example.remusic.R
 
 
 @Composable
-fun QueueSongCard(
+fun OfflineSongCard(
     index: Int,
     songTitle: String,
     artistName: String,
-    posterUri: String,
+    durationMs: Long,
+    posterUri: String?, // Tambahkan parameter posterUri
     isCurrentlyPlaying: Boolean,
     modifier: Modifier = Modifier,
     onClickListener: (index: Int) -> Unit = {},
@@ -53,15 +52,11 @@ fun QueueSongCard(
         Color.Transparent
     }
 
-    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = { onClickListener(index) },
-                onLongClick = { onMoreClick() }
-            ),
+            .clickable { onClickListener(index) },
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
         ),
@@ -70,7 +65,7 @@ fun QueueSongCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isCurrentlyPlaying) {
@@ -87,7 +82,7 @@ fun QueueSongCard(
                 Text(
                     text = (index + 1).toString(),
                     color = Color.White.copy(0.8f),
-                    fontFamily = AppFont.RobotoMedium,
+                    fontFamily = AppFont.Helvetica,
                     fontSize = 15.sp,
                     modifier = Modifier.width(20.dp)
                 )
@@ -96,11 +91,8 @@ fun QueueSongCard(
             Spacer(modifier = Modifier.width(14.dp))
 
             AsyncImage(
-                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                    .data(posterUri)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = "Poster Music",
+                model = posterUri,
+                contentDescription = "Cover Image",
                 modifier = Modifier
                     .size(48.dp)
                     .aspectRatio(1f)
@@ -131,6 +123,16 @@ fun QueueSongCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            // Duration indicator
+            Text(
+                text = String.format("%02d:%02d", java.util.concurrent.TimeUnit.MILLISECONDS.toMinutes(durationMs), java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(durationMs) % 60),
+                color = Color.White.copy(0.6f),
+                fontFamily = AppFont.RobotoMedium,
+                fontSize = 12.sp,
+            )
 
             Spacer(modifier = Modifier.width(16.dp))
 

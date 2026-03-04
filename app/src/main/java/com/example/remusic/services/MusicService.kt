@@ -94,10 +94,13 @@ class MusicService : MediaSessionService() {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
 
-        // 3. Siapkan Cache Source (Gabungan Cache + Internet)
+        // 2.5 Siapkan Default Data Source (Mendukung Content, File, HTTP, dll)
+        val defaultDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
+
+        // 3. Siapkan Cache Source (Gabungan Cache + Local + Internet)
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(simpleCache)
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
+            .setUpstreamDataSourceFactory(defaultDataSourceFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
         // 4. Pasang ke ExoPlayer

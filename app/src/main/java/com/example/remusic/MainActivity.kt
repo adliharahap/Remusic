@@ -514,7 +514,7 @@ fun OfflineBanner(
         modifier = modifier
     ) {
         Surface(
-            color = Color(0xFFB00020),
+            color = Color.Black,
             shape = androidx.compose.ui.graphics.RectangleShape,
             modifier = Modifier
                 .fillMaxWidth()

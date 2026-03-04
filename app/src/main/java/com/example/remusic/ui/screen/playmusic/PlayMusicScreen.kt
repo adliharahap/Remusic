@@ -209,6 +209,7 @@ fun PlayMusicScreen(
             when (page) {
                 0 -> {
                     val context = LocalContext.current
+
                     QueueScreen(
                         songWithArtist = uiState.currentSong,
                         playlistQueue = uiState.playlist,
@@ -229,6 +230,9 @@ fun PlayMusicScreen(
                         },
                         onAddToLiked = { song ->
                             playMusicViewModel.toggleLike(song.song.id)
+                        },
+                        onDownload = { song ->
+                            playMusicViewModel.downloadSong(song)
                         },
                         onAddToPlaylist = { song ->
                             playMusicViewModel.showAddToPlaylistSheet(song)

@@ -69,6 +69,7 @@ fun QueueOptionsBottomSheet(
     onRemoveFromQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -171,11 +172,13 @@ fun QueueOptionsBottomSheet(
             )
 
             // 3. Add to Playlist
-            QueueMenuOptionItem(
-                title = "Tambahkan ke playlist",
-                icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                onClick = onAddToPlaylist
-            )
+            if (!isOfflineSong) {
+                QueueMenuOptionItem(
+                    title = "Tambahkan ke playlist",
+                    icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                    onClick = onAddToPlaylist
+                )
+            }
 
             // 3.5 Remove from Playlist (Conditional)
             if (showRemoveFromPlaylist) {
@@ -196,29 +199,28 @@ fun QueueOptionsBottomSheet(
             }
 
             // 4. Add to Liked
-            QueueMenuOptionItem(
-                title = "Tambahkan ke Lagu yang Disukai",
-                icon = Icons.Outlined.FavoriteBorder,
-                onClick = onAddToLiked
-            )
+            if (!isOfflineSong) {
+                QueueMenuOptionItem(
+                    title = "Tambahkan ke Lagu yang Disukai",
+                    icon = Icons.Outlined.FavoriteBorder,
+                    onClick = onAddToLiked
+                )
 
-            // 5. Download
-            QueueMenuOptionItem(
-                title = "Unduh",
-                icon = Icons.Outlined.Download,
-                onClick = {
-                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
-                }
-            )
-            
-            // 6. Share
-            QueueMenuOptionItem(
-                title = "Bagikan",
-                icon = Icons.Outlined.Share,
-                onClick = {
-                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
-                }
-            )
+                QueueMenuOptionItem(
+                    title = "Unduh",
+                    icon = Icons.Outlined.Download,
+                    onClick = onDownload
+                )
+                
+                // 6. Share
+                QueueMenuOptionItem(
+                    title = "Bagikan",
+                    icon = Icons.Outlined.Share,
+                    onClick = {
+                        Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(40.dp))
         }

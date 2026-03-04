@@ -133,6 +133,7 @@ fun MoreOptionsBottomSheet(
     onDataSaverModeChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -219,39 +220,43 @@ fun MoreOptionsBottomSheet(
             Spacer(modifier = Modifier.height(10.dp))
 
             // --- MENU OPTIONS ---
-            MenuOptionItem(
-                title = "Bagikan",
-                icon = Icons.Outlined.Share,
-                onClick = {
-                    Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
-                }
-            )
-            MenuOptionItem(
-                title = "Tambahkan ke playlist",
-                icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                onClick = onAddToPlaylist
-            )
-            MenuOptionItem(
-                title = "Tambahkan ke Lagu yang Disukai",
-                icon = Icons.Outlined.FavoriteBorder, // Use Favorite if liked, logic handled by parent
-                onClick = onAddToLiked
-            )
+            if (!isOfflineSong) {
+                MenuOptionItem(
+                    title = "Bagikan",
+                    icon = Icons.Outlined.Share,
+                    onClick = {
+                        Toast.makeText(context, "Fitur belum tersedia", Toast.LENGTH_SHORT).show()
+                    }
+                )
+                MenuOptionItem(
+                    title = "Tambahkan ke playlist",
+                    icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                    onClick = onAddToPlaylist
+                )
+                MenuOptionItem(
+                    title = "Tambahkan ke Lagu yang Disukai",
+                    icon = Icons.Outlined.FavoriteBorder,
+                    onClick = onAddToLiked
+                )
+            }
             MenuOptionItem(
                 title = "Setel waktu tidur",
                 icon = Icons.Outlined.Bedtime,
                 onClick = {
                     onSetSleepTimer()
-                    onDismiss() // Dismiss this sheet to show timer sheet? Or handle in parent
-                }
-            )
-            MenuOptionItem(
-                title = "Unduh",
-                icon = Icons.Outlined.Download,
-                onClick = {
-                    onDownload()
                     onDismiss()
                 }
             )
+            if (!isOfflineSong) {
+                MenuOptionItem(
+                    title = "Unduh",
+                    icon = Icons.Outlined.Download,
+                    onClick = {
+                        onDownload()
+                        onDismiss()
+                    }
+                )
+            }
 
             // --- DATA SAVER MODE ---
             Row(

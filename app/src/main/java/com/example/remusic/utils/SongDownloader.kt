@@ -7,8 +7,11 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -78,9 +81,31 @@ object SongDownloader {
                 onProgress(95)
             }
 
-            // 3. Simpan lirik sebagai file .lrc jika tersedia (Bobot: Instan terakhir)
-            if (!song.lyrics.isNullOrBlank()) {
-                saveTextFile(context, song.lyrics, lrcFileName, "application/octet-stream", relativePath)
+            // 3. Simpan lirik sebagai file .lrc (Bobot: Instan terakhir)
+            // Jika song.lyrics dari model kosong, coba fetch langsung dari server
+            val finalLyrics = if (!song.lyrics.isNullOrBlank()) {
+                song.lyrics
+            } else {
+                try {
+                    Log.d(TAG, "Lyrics lokal kosong, mencoba mengambil dari server untuk lagu: ${song.id}")
+                    val result = SupabaseManager.client.postgrest["songs"]
+                        .select(columns = io.github.jan.supabase.postgrest.query.Columns.list("lyrics")) {
+                            filter { eq("id", song.id) }
+                        }.decodeSingleOrNull<kotlinx.serialization.json.JsonObject>()
+                    
+                    val fetchedLyrics = result?.get("lyrics")?.jsonPrimitive?.content
+                    if (!fetchedLyrics.isNullOrBlank() && fetchedLyrics != "null") fetchedLyrics else null
+                } catch (e: Exception) {
+                    Log.e(TAG, "Gagal mengambil lirik dari server: ${e.message}")
+                    null
+                }
+            }
+
+            if (!finalLyrics.isNullOrBlank()) {
+                saveTextFile(context, finalLyrics, lrcFileName, "application/octet-stream", relativePath)
+                Log.d(TAG, "Lirik berhasil disimpan ke $lrcFileName")
+            } else {
+                Log.d(TAG, "Lirik tetap kosong setelah pengecekan server.")
             }
             
             onComplete(true, "Selesai diunduh ke folder: $folderName")

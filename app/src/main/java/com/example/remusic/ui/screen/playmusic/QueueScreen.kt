@@ -48,6 +48,7 @@ fun QueueScreen(
     onAddToQueue: (SongWithArtist) -> Unit = {},
     onPlayNext: (SongWithArtist) -> Unit = {},
     onAddToPlaylist: (SongWithArtist) -> Unit = {},
+    onDownload: (SongWithArtist) -> Unit = {},
     onAddToLiked: (SongWithArtist) -> Unit = {},
     onRemoveFromQueue: (SongWithArtist) -> Unit = {},
     topPlayerColor: Color = Color.Transparent,
@@ -183,6 +184,10 @@ fun QueueScreen(
             },
             onAddToPlaylist = {
                 onAddToPlaylist(selectedSongForOptions!!)
+                showQueueOptions = false
+            },
+            onDownload = {
+                onDownload(selectedSongForOptions!!)
                 showQueueOptions = false
             },
             onAddToLiked = {

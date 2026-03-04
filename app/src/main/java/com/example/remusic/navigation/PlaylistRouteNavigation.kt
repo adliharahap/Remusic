@@ -10,6 +10,7 @@ object PlaylistRoute {
     // Route format: playlist_tab_detail/{id}?type={type}&name={name}&coverUrl={coverUrl}
     const val PLAYLIST_DETAIL = "playlist_tab_detail/{$ARGS_ID}?$ARGS_PLAYLIST_TYPE={$ARGS_PLAYLIST_TYPE}&$ARGS_PLAYLIST_NAME={$ARGS_PLAYLIST_NAME}&$ARGS_PLAYLIST_COVER={$ARGS_PLAYLIST_COVER}"
     const val CREATE_PLAYLIST = "playlist_create_playlist"
+    const val OFFLINE_PLAYLIST = "playlist_offline_music"
 
     fun createRoute(id: String, type: String = "AUTO", name: String = "Unknown Playlist", coverUrl: String = ""): String {
         val encodedName = java.net.URLEncoder.encode(name, "UTF-8")

@@ -271,4 +271,16 @@ class UserPreferencesRepository(private val context: Context) {
             settings[READ_GLOBAL_NOTIFICATIONS_KEY] = currentSet + notificationId
         }
     }
+
+    // --- OFFLINE MUSIC FILTER PREFERENCE ---
+    private val OFFLINE_SHOW_ONLY_REMUSIC_KEY = booleanPreferencesKey("offline_show_only_remusic")
+
+    val offlineShowOnlyRemusicFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences ->
+            preferences[OFFLINE_SHOW_ONLY_REMUSIC_KEY] ?: true  // default: Remusic only
+        }
+
+    suspend fun saveOfflineShowOnlyRemusic(value: Boolean) {
+        context.dataStore.edit { settings -> settings[OFFLINE_SHOW_ONLY_REMUSIC_KEY] = value }
+    }
 }
