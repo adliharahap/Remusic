@@ -116,7 +116,8 @@ fun NowPlaying(
     onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
     isDataSaverModeEnabled: Boolean = false,
     topPlayerColor: Color = Color.Transparent,
-    headerHeight: androidx.compose.ui.unit.Dp = 120.dp
+    headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
+    isExiting: Boolean = false
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -197,6 +198,7 @@ fun NowPlaying(
                             videoUrl = canvasUrl,
                             coverUrl = songWithArtist.song.coverUrl.toString(),
                             songId = songWithArtist.song.id,
+                            isExiting = isExiting,
                             modifier = Modifier.fillMaxSize()
                         )
 

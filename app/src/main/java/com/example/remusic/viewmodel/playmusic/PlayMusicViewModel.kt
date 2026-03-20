@@ -128,7 +128,10 @@ data class PlayerUiState(
         // Add to Playlist State
         val selectedSongForAddToPlaylist: SongWithArtist? = null,
         val userPlaylists: List<com.example.remusic.data.model.Playlist> = emptyList(),
-        val isFetchingUserPlaylists: Boolean = false
+        val isFetchingUserPlaylists: Boolean = false,
+
+        // Background Music
+        val backgroundMusicEnabled: Boolean = false
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -226,6 +229,13 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             userPreferencesRepository.gradientBottomColorIndexFlow.collect { index ->
                 _uiState.update { it.copy(gradientBottomColorIndex = index) }
+            }
+        }
+
+        // Collect background music preference
+        viewModelScope.launch {
+            userPreferencesRepository.backgroundMusicEnabledFlow.collect { isEnabled ->
+                _uiState.update { it.copy(backgroundMusicEnabled = isEnabled) }
             }
         }
     }
@@ -509,34 +519,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                 )
                                 // fallback kalau nggak ketemu di playlist
                                 _uiState.update {
-                                    it.copy(
-                                            currentSong =
-                                                    SongWithArtist(
-                                                            song =
-                                                                    Song(
-                                                                            id = mediaItem.mediaId,
-                                                                            title =
-                                                                                    mediaItem
-                                                                                            .mediaMetadata
-                                                                                            .title
-                                                                                            ?.toString()
-                                                                                            ?: "Unknown",
-                                                                            audioUrl =
-                                                                                    mediaItem
-                                                                                            .localConfiguration
-                                                                                            ?.uri
-                                                                                            .toString(),
-                                                                            coverUrl =
-                                                                                    mediaItem
-                                                                                            .mediaMetadata
-                                                                                            .artworkUri
-                                                                                            .toString(),
-                                                                            lyrics = "" // default
-                                                                            // kosong
-                                                                            ),
-                                                            artist = null
-                                                    )
-                                    )
+                                    it.copy(currentSong = SongWithArtist(song = Song(id = mediaItem.mediaId,title = mediaItem.mediaMetadata.title?.toString() ?: "Unknown",audioUrl = mediaItem.localConfiguration?.uri.toString(),coverUrl = mediaItem.mediaMetadata.artworkUri.toString(),lyrics = ""),artist = null))
                                 }
                             }
                         }
@@ -1160,6 +1143,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         } else {
             fadeInAndPlay()
         }
+    }
+
+    fun stopPlayback() {
+        mediaController?.stop()
+        _uiState.update { it.copy(isPlaying = false) }
     }
 
     // --- FUNGSI BARU UNTUK FADE OUT ---

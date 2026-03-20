@@ -142,6 +142,20 @@ fun PlayMusicScreen(
         colors = listOf(animatedTopColor, animatedBottomColor)
     )
 
+    // --- EXIT FLAG ---
+    var isExiting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isExiting) {
+        if (isExiting) {
+            kotlinx.coroutines.delay(50)
+            navController.popBackStack()
+        }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = !isExiting) {
+        isExiting = true
+    }
+
     // Scroll state untuk halaman NowPlaying (agar Header bisa baca posisi scroll)
     val nowPlayingScrollState = rememberScrollState()
 
@@ -283,7 +297,8 @@ fun PlayMusicScreen(
                     },
                     isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
                     topPlayerColor = animatedTopColor,
-                    headerHeight = headerHeight
+                    headerHeight = headerHeight,
+                    isExiting = isExiting
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -354,7 +369,7 @@ fun PlayMusicScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Back icon
-                IconButton(onClick = { navController.popBackStack() }) {
+                IconButton(onClick = { isExiting = true }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",

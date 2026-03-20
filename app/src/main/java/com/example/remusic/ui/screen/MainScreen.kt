@@ -336,8 +336,12 @@ fun MainScreen(
 
         if (showExitDialog) {
             ExitDialog(
+                backgroundMusicEnabled = playerUiState.backgroundMusicEnabled,
                 onDismissRequest = { showExitDialog = false },
                 onConfirm = {
+                    if (!playerUiState.backgroundMusicEnabled) {
+                        playMusicViewModel.stopPlayback()
+                    }
                     showExitDialog = false
                     (context as? Activity)?.finish()
                 }

@@ -31,9 +31,11 @@ import androidx.compose.ui.window.Dialog
 
 @Composable
 fun ExitDialog(
+    backgroundMusicEnabled: Boolean,
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit
 ) {
+
     Dialog(onDismissRequest = onDismissRequest) {
         Box(
             modifier = Modifier
@@ -53,7 +55,7 @@ fun ExitDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Keluar Aplikasi",
+                    text = "Keluar Aplikasi?",
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -63,7 +65,11 @@ fun ExitDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Musik akan berhenti. Ingin keluar?",
+                    text = if (backgroundMusicEnabled) {
+                        "ReMusic akan tetap memutar lagu di latar belakang. Cek panel notifikasi untuk kontrol."
+                    } else {
+                        "Ingin keluar? Musik akan berhenti saat aplikasi ditutup."
+                    },
                     style = MaterialTheme.typography.bodyMedium.copy(
                         color = Color.LightGray,
                         textAlign = TextAlign.Center

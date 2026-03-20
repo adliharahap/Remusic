@@ -32,7 +32,8 @@ fun CanvasVideoPlayer(
     videoUrl: String,
     coverUrl: String?,
     songId: String, // Tambah parameter songId untuk cache key
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isExiting: Boolean = false
 ) {
     val context = LocalContext.current
 
@@ -87,7 +88,7 @@ fun CanvasVideoPlayer(
         // Jadi poster muncul dulu, baru video loading lagi
         isVideoReady = false
 
-        if (videoUrl.isNotBlank()) {
+        if (videoUrl.isNotBlank() && !isExiting) {
             // Gunakan songId sebagai cache key agar stabil walau URL berubah (misal signed URL)
             // Tambahkan prefix 'video_' untuk mencegah bentrok dengan cache lagu (jika lagu pakai ID juga)
             val mediaItem = MediaItem.Builder()
@@ -103,26 +104,35 @@ fun CanvasVideoPlayer(
         }
     }
 
+    // Tangani saat exiting
+    LaunchedEffect(isExiting) {
+        if (isExiting) {
+            exoPlayer.pause()
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize().background(Color.Black).clip(RectangleShape)) {
         // LAYER 1: VIDEO PLAYER
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    // Agar video full screen (Zoom & Crop)
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+        if (!isExiting) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        // Agar video full screen (Zoom & Crop)
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // LAYER 2: POSTER GAMBAR (Overlay)
         // Kita gunakan AnimatedVisibility agar saat video siap, gambarnya hilang pelan-pelan (Fade Out)
         // Bukan ngilang kaget (kedip).
         AnimatedVisibility(
-            visible = !isVideoReady, // Tampil jika video BELUM siap
+            visible = !isVideoReady || isExiting, // Tampil jika video BELUM siap atau KELUAR
             exit = fadeOut(animationSpec = tween(500)), // Hilang perlahan selama 0.5 detik
             modifier = Modifier.fillMaxSize()
         ) {
