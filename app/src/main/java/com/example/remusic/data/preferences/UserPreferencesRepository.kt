@@ -283,4 +283,16 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveOfflineShowOnlyRemusic(value: Boolean) {
         context.dataStore.edit { settings -> settings[OFFLINE_SHOW_ONLY_REMUSIC_KEY] = value }
     }
+
+    // --- BACKGROUND MUSIC PREFERENCE ---
+    private val BACKGROUND_MUSIC_ENABLED_KEY = booleanPreferencesKey("background_music_enabled")
+
+    val backgroundMusicEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences ->
+            preferences[BACKGROUND_MUSIC_ENABLED_KEY] ?: false // default: off
+        }
+
+    suspend fun setBackgroundMusicEnabled(isEnabled: Boolean) {
+        context.dataStore.edit { settings -> settings[BACKGROUND_MUSIC_ENABLED_KEY] = isEnabled }
+    }
 }

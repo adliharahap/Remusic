@@ -44,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +69,9 @@ import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.remusic.BuildConfig
 import com.example.remusic.data.UserManager
+import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.navigation.ProfileRoute
+import kotlinx.coroutines.launch
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.viewmodel.StorageCacheViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
@@ -244,12 +247,16 @@ fun ProfileMainContent(
     val totalCacheSize by storageCacheViewModel.totalCacheSizeMB.collectAsState()
     var isVisible by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val userPreferencesRepository = remember { UserPreferencesRepository(context) }
+    val backgroundMusicEnabled by userPreferencesRepository.backgroundMusicEnabledFlow.collectAsState(initial = false)
+
     LaunchedEffect(Unit) {
         delay(100)
         isVisible = true
     }
 
-    val context = LocalContext.current
     var dominantColors by remember { 
         mutableStateOf(
             listOf(Color(0xFF2B0B16), Color(0xFF0A0A0A), Color(0xFF000000))
@@ -430,6 +437,18 @@ fun ProfileMainContent(
                                 title = "Penyimpanan & Cache",
                                 value = StorageCacheViewModel.formatSize(totalCacheSize),
                                 onClick = onStorageCacheClick
+                            )
+                            DividerItem()
+                            SettingsRow(
+                                icon = Icons.Rounded.Info,
+                                iconBgColor = Color(0xFF00BCD4), // Cyan
+                                title = "Jalan Terus di Background",
+                                value = if (backgroundMusicEnabled) "Aktif" else "Nonaktif",
+                                onClick = {
+                                    coroutineScope.launch {
+                                        userPreferencesRepository.setBackgroundMusicEnabled(!backgroundMusicEnabled)
+                                    }
+                                }
                             )
                         }
                     }

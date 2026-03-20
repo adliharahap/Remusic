@@ -15,11 +15,25 @@ import androidx.media3.session.MediaSessionService
 import com.example.remusic.utils.RemusicCache // Import file utils tadi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.util.Log
+import com.example.remusic.data.local.MusicDatabase
+import com.example.remusic.data.repository.MusicRepository
+import androidx.media3.common.Player
 
 @UnstableApi
 class MusicService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private lateinit var sleepTimerManager: SleepTimerManager
 
@@ -114,6 +128,87 @@ class MusicService : MediaSessionService() {
             .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy()) // <--- PANTANG MENYERAH!
             )
             .build()
+            
+        val database = MusicDatabase.getDatabase(this)
+        val repository = MusicRepository(database.musicDao())
+
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                super.onMediaItemTransition(mediaItem, reason)
+                if (mediaItem == null) return
+
+                val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
+                val isUrlValid = currentUrl.isNotBlank() && (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
+                
+                // Jika URL berasal dari local storage "offline_", URL tersebut akan diproses terpisah.
+                // Jika tidak valid, kita harus meresolve URI yang kosong / kadaluarsa ini.
+                if (!isUrlValid && !mediaItem.mediaId.startsWith("offline_")) {
+                    Log.w("MusicService", "⚠️ URL KOSONG/INVALID di MusicService. Resolving URL dulu untuk ${mediaItem.mediaId}...")
+                    
+                    // Pause player sementara agar tidak error saat mencoba memutar url kosong
+                    player.pause()
+
+                    serviceScope.launch {
+                        try {
+                            val songId = mediaItem.mediaId
+                            val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
+                            
+                            // Ambil detail song dari local DB untuk info fallback/telegramFileId
+                            val localSong = database.musicDao().getSongById(songId)
+                            val artistId = localSong?.artistId
+                            val telegramFileId = localSong?.telegramFileId
+                            val fallbackUrl = localSong?.telegramDirectUrl
+                            
+                            val result = repository.getPlayableUrl(
+                                songId = songId,
+                                title = songTitle,
+                                telegramFileId = telegramFileId,
+                                fallbackUrl = fallbackUrl,
+                                artistId = artistId
+                            )
+                            
+                            val newUrl = result.url
+                            if (newUrl.isNotBlank()) {
+                                Log.d("MusicService", "✅ URL Resolved in Service: $newUrl")
+                                // Rebuild MediaItem dengan URL yang valid
+                                val newItem = mediaItem.buildUpon()
+                                    .setUri(newUrl)
+                                    .build()
+                                
+                                withContext(Dispatchers.Main) {
+                                    val newIndex = player.currentMediaItemIndex
+                                    player.replaceMediaItem(newIndex, newItem)
+                                    // Memastikan ExoPlayer tahu kita me-replace data (Fix cascade issue)
+                                    player.seekTo(newIndex, C.TIME_UNSET) 
+                                    player.play()
+                                }
+                            } else {
+                                Log.e("MusicService", "❌ Gagal resolve URL in Service (Fatal). Melewati lagu.")
+                                withContext(Dispatchers.Main) {
+                                    if (player.hasNextMediaItem()) {
+                                        player.seekToNextMediaItem()
+                                    } else {
+                                        player.pause()
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MusicService", "❌ Error resolving URL in Service: ${e.message}")
+                            withContext(Dispatchers.Main) {
+                                if (player.hasNextMediaItem()) {
+                                    player.seekToNextMediaItem()
+                                } else {
+                                    player.pause()
+                                }
+                            }
+                        }
+                    }
+                } else if (isUrlValid && player.playbackState != Player.STATE_IDLE && !player.isPlaying) {
+                    // Jika valid dari awal tapi player tertahan, coba play kembali
+                    // player.play() // Ini bisa menimbulkan masalah jika state buffering.
+                }
+            }
+        })
 
         // Create an intent to launch MainActivity
         val sessionActivityIntent = Intent(this, com.example.remusic.MainActivity::class.java).apply {
@@ -147,15 +242,25 @@ class MusicService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        mediaSession?.player?.stop()
-        mediaSession?.player?.release()
-        sleepTimerManager.cancelTimer()
 
-        // Jangan release cache di sini jika kamu pakai Singleton,
-        // biarkan dia hidup selama Application hidup.
-        // Kecuali kamu yakin app benar-benar mati.
+        // Cek settingan background music dari DataStore
+        val userPrefs = com.example.remusic.data.preferences.UserPreferencesRepository(this)
+        var isBackgroundEnabled = false
+        runBlocking {
+            isBackgroundEnabled = userPrefs.backgroundMusicEnabledFlow.first()
+        }
 
-        stopSelf()
+        if (!isBackgroundEnabled) {
+            mediaSession?.player?.stop()
+            mediaSession?.player?.release()
+            sleepTimerManager.cancelTimer()
+
+            // Jangan release cache di sini jika kamu pakai Singleton,
+            // biarkan dia hidup selama Application hidup.
+            // Kecuali kamu yakin app benar-benar mati.
+
+            stopSelf()
+        }
     }
 
     private fun broadcastSleepTimerState(isActive: Boolean) {
@@ -174,6 +279,7 @@ class MusicService : MediaSessionService() {
             mediaSession = null
         }
         sleepTimerManager.cancelTimer()
+        serviceScope.cancel()
         super.onDestroy()
     }
 }

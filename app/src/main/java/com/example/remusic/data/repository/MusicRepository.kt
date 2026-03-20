@@ -930,6 +930,49 @@ class MusicRepository(private val musicDao: MusicDao) {
                         )
                     }
             musicDao.insertPlaybackQueue(queueEntities)
+
+            // 🔥 FIX: Aktivasi Caching SongDetails Langsung Saat Menyimpan Antrean
+            for (songWA in songs) {
+                val song = songWA.song
+                val existing = musicDao.getSongById(song.id)
+                if (existing != null) {
+                    val needsUpdate = existing.coverUrl == null || existing.canvasUrl == null || 
+                                      (song.lyricsUpdatedAt != null && song.lyricsUpdatedAt != existing.lyricsUpdatedAt)
+                    if (needsUpdate) {
+                       musicDao.updateSongDetails(
+                           id = song.id,
+                           title = song.title,
+                           lyrics = song.lyrics ?: existing.lyrics,
+                           lyricsUpdatedAt = song.lyricsUpdatedAt ?: existing.lyricsUpdatedAt,
+                           cover = song.coverUrl ?: existing.coverUrl,
+                           canvas = song.canvasUrl ?: existing.canvasUrl,
+                           uploaderId = song.uploaderUserId ?: existing.uploaderUserId,
+                           language = song.language ?: existing.language,
+                           moods = song.moods.ifEmpty { existing.moods },
+                           artistId = song.artistId ?: existing.artistId,
+                           featuredArtists = song.featuredArtists.ifEmpty { existing.featuredArtists }
+                       )
+                    }
+                } else {
+                    musicDao.insertSong(CachedSong(
+                        id = song.id,
+                        title = song.title,
+                        uploaderUserId = song.uploaderUserId,
+                        artistName = songWA.artist?.name ?: "Unknown",
+                        coverUrl = song.coverUrl,
+                        canvasUrl = song.canvasUrl,
+                        lyrics = song.lyrics,
+                        lyricsUpdatedAt = song.lyricsUpdatedAt,
+                        telegramFileId = song.telegramFileId,
+                        telegramDirectUrl = song.audioUrl,
+                        language = song.language,
+                        moods = song.moods,
+                        artistId = song.artistId,
+                        featuredArtists = song.featuredArtists
+                    ))
+                }
+            }
+
             Log.d(TAG, "💾 [QUEUE] Saved ${songs.size} songs to playback queue.")
         } catch (e: Exception) {
             Log.e(TAG, "❌ [QUEUE ERROR] Failed to save queue: ${e.message}")
@@ -950,17 +993,21 @@ class MusicRepository(private val musicDao: MusicDao) {
             val cachedSongs = songIds.mapNotNull { id -> musicDao.getSongById(id) }
             val cachedSongMap = cachedSongs.associateBy { it.id }.toMutableMap()
 
-            val missingSongIds = songIds.filter { !cachedSongMap.containsKey(it) }
+            val missingSongIds = songIds.filter { 
+                val cached = cachedSongMap[it]
+                cached == null || cached.coverUrl == null 
+            }
 
             // Jika ada lagu yang belum di-cache, fetch dari Supabase secara bulk
             if (missingSongIds.isNotEmpty()) {
-                Log.d(TAG, "☁️ [QUEUE] Fetching ${missingSongIds.size} missing songs from Supabase...")
+                Log.d(TAG, "☁️ [QUEUE] Fetching ${missingSongIds.size} missing/incomplete songs from Supabase...")
                 try {
                     val remoteSongs = SupabaseManager.client.from("songs")
                         .select { filter { isIn("id", missingSongIds) } }
                         .decodeList<Song>()
 
                     val newCacheEntries = remoteSongs.map { song ->
+                        val existing = cachedSongMap[song.id]
                         CachedSong(
                             id = song.id,
                             title = song.title,
@@ -968,13 +1015,13 @@ class MusicRepository(private val musicDao: MusicDao) {
                             artistName = "Unknown",
                             coverUrl = song.coverUrl,
                             canvasUrl = song.canvasUrl,
-                            lyrics = song.lyrics,
-                            lyricsUpdatedAt = song.lyricsUpdatedAt,
-                            telegramFileId = song.telegramFileId,
-                            telegramDirectUrl = null,
-                            language = song.language,
-                            moods = song.moods,
-                            artistId = song.artistId
+                            lyrics = song.lyrics ?: existing?.lyrics,
+                            lyricsUpdatedAt = song.lyricsUpdatedAt ?: existing?.lyricsUpdatedAt,
+                            telegramFileId = song.telegramFileId ?: existing?.telegramFileId,
+                            telegramDirectUrl = existing?.telegramDirectUrl, // 🔥 PERTAHANKAN DIRECT URL!
+                            language = song.language ?: existing?.language,
+                            moods = song.moods.ifEmpty { existing?.moods ?: emptyList() },
+                            artistId = song.artistId ?: existing?.artistId
                         )
                     }
 

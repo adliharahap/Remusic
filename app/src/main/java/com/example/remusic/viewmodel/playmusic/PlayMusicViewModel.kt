@@ -463,96 +463,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                                         "🎵 Lagu Terdeteksi: ${matchedSong.song.title}"
                                 )
 
-                                // 🔍 CRITICAL FIX: Cek URL sebelum play (ASYNC)
-                                // Jika URL kosong/invalid, resolve dulu sebelum ExoPlayer coba load
-                                val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
-                                val isUrlValid =
-                                        currentUrl.isNotBlank() &&
-                                                (currentUrl.startsWith("http") ||
-                                                        currentUrl.startsWith("content"))
-
-                                if (!isUrlValid) {
-                                    Log.w(
-                                            "DEBUG_PLAYER",
-                                            "⚠️ URL KOSONG/INVALID di index $newIndex. Resolving URL dulu..."
-                                    )
-
-                                    // Pause player sementara
-                                    player.pause()
-
-                                    // Resolve URL di background
-                                    viewModelScope.launch(Dispatchers.IO) {
-                                        try {
-                                            val result = resolveSongUrl(matchedSong)
-                                            val newUrl = result.url
-
-                                            withContext(Dispatchers.Main) {
-                                                // 🔥 CRITICAL FIX: STOP AUTO-SKIP ON NETWORK ERROR
-                                                // 🔥
-                                                if (result.errorType ==
-                                                                MusicRepository.ErrorType.NETWORK &&
-                                                                newUrl.isEmpty()
-                                                ) {
-                                                    Log.e(
-                                                            "DEBUG_PLAYER",
-                                                            "❌ NETWORK ERROR on Auto-Next. PAUSING PLAYER."
-                                                    )
-                                                    player.pause()
-                                                    _uiState.update {
-                                                        it.copy(
-                                                                hasError = true,
-                                                                errorType =
-                                                                        "Koneksi Terputus. Playback dipause.",
-                                                                isPlaying = false,
-                                                                isLoadingData = false // Stop infinite loading spinner
-                                                        )
-                                                    }
-                                                } else if (newUrl.isNotBlank()) {
-                                                    Log.d("DEBUG_PLAYER", "✅ URL Resolved: $newUrl")
-
-                                                    // Update MediaItem dengan URL valid
-                                                    val newItem =
-                                                            createMediaItem(matchedSong, newUrl)
-                                                    player.replaceMediaItem(newIndex, newItem)
-                                                    // 🔥 FIX SHUFFLE CASCADE:
-                                                    // seekTo() memaksa ExoPlayer kembali ke index
-                                                    // yang benar
-                                                    // sebelum play(). Tanpa ini, ExoPlayer (shuffle
-                                                    // mode) bisa
-                                                    // melompat ke item acak lain setelah
-                                                    // replaceMediaItem().
-                                                    player.seekTo(newIndex, 0)
-                                                    player.play()
-                                                } else {
-                                                    Log.e(
-                                                            "DEBUG_PLAYER",
-                                                            "❌ Gagal resolve URL (Fatal/Not Found). Skip lagu ini.")
-                                                    
-                                                    // Stop infinite loading spinner since there is no data to load
-                                                    _uiState.update { it.copy(isLoadingData = false) }
-
-                                                    // Skip ke lagu berikutnya
-                                                    if (player.hasNextMediaItem()) {
-                                                        player.seekToNextMediaItem()
-                                                    } else {
-                                                        // Stop gracefully if it was the last song
-                                                        player.pause()
-                                                    }
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(
-                                                    "DEBUG_PLAYER",
-                                                    "❌ Error resolving URL: ${e.message}"
-                                            )
-                                            _uiState.update { it.copy(isLoadingData = false) } // Pastikan spinner berhenti saat exception
-                                        }
-                                    }
-                                } else {
-                                    // URL is already valid. If the player was previously stuck/paused due to an error, we need to make sure it plays.
-                                    if (!player.isPlaying && player.playbackState != Player.STATE_IDLE) {
-                                        player.play()
-                                    }
+                                // URL resolution is now handled by MusicService.kt directly.
+                                // We just need to ensure the player plays if it was stuck.
+                                if (!player.isPlaying && player.playbackState != Player.STATE_IDLE) {
+                                    player.play()
                                 }
 
                                 // PRE-FETCH: Siapkan lagu tetangga HANYA untuk AUTO/SEEK.
@@ -2847,6 +2761,33 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             val controller = mediaController ?: return
+
+            // 🔥 CRITICAL FIX: JANGAN RESTORE JIKA PLAYER SUDAH JALAN! (Misal: klik notifikasi saat app sudah mati tapi service idup)
+            if (controller.mediaItemCount > 0) {
+                Log.d("PlayMusicViewModel", "♻️ [RESTORE SKIP] ExoPlayer sudah punya ${controller.mediaItemCount} item. Service masih hidup. Sync UI saja.")
+                val currentMediaId = controller.currentMediaItem?.mediaId
+                val currentIndex = playlist.indexOfFirst { it.song.id == currentMediaId }.coerceAtLeast(0)
+                _uiState.update {
+                    it.copy(
+                            playlist = playlist,
+                            currentSong = if (playlist.isNotEmpty()) playlist[currentIndex] else null,
+                            currentSongIndex = currentIndex,
+                            playingMusicFromPlaylist = finalPlaylistName,
+                            currentPosition = controller.currentPosition,
+                            totalDuration = controller.duration.coerceAtLeast(0L),
+                            isPlaying = controller.isPlaying
+                    )
+                }
+                
+                if (playlist.isNotEmpty()) {
+                    val coverUrl = playlist[currentIndex].song.coverUrl
+                    if (coverUrl != null) {
+                        val colors = extractGradientColorsFromImageUrl(getApplication(), coverUrl)
+                        _uiState.update { it.copy(dominantColors = colors) }
+                    }
+                }
+                return
+            }
 
             // Setup Media Items
             val mediaItems =

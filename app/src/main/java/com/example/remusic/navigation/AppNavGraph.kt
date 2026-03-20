@@ -30,8 +30,16 @@ fun AppNavGraph(
     )
     LaunchedEffect(notificationRoute) {
         if (notificationRoute != null) {
-            navController.navigate(notificationRoute) {
-                launchSingleTop = true
+            if (notificationRoute == "playmusic") {
+                // Pastikan MainScreen ada di bawah PlayMusicScreen (Hapus Splash)
+                navController.navigate("main") {
+                    popUpTo("splash") { inclusive = true }
+                }
+                navController.navigate("playmusic")
+            } else {
+                navController.navigate(notificationRoute) {
+                    launchSingleTop = true
+                }
             }
             onRouteConsumed()
         }
