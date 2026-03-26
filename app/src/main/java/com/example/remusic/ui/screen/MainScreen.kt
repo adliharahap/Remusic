@@ -4,8 +4,11 @@ import com.example.remusic.utils.ConnectivityObserver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -13,7 +16,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -53,14 +55,10 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.example.remusic.ui.components.ExitDialog
 import androidx.activity.compose.BackHandler
-import com.example.remusic.navigation.HomeRoute
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import android.app.Activity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf // Ensure this is imported
 import androidx.compose.runtime.remember // Ensure this is imported
-import com.example.remusic.ui.screen.RequestSongScreen
 
 // ------ Sealed class untuk item navigasi ------
 sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: String) {
@@ -75,7 +73,8 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
     fun BottomBar(
         navController: NavHostController,
         onSearchReset: () -> Unit = {}, // Add callback to reset search state
-        onCreatePlaylistClick: () -> Unit // New callback for bottom sheet
+        onCreatePlaylistClick: () -> Unit, // New callback for bottom sheet
+        isOffline: Boolean = false
     ) {
         val items = listOf(
             BottomNavItem.Home,
@@ -85,9 +84,11 @@ sealed class BottomNavItem(val route: String, val icon: ImageVector, val label: 
             BottomNavItem.Profile
         )
 
+        val systemNavBarPadding = if (isOffline) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
         // Menggunakan NavigationBar dari Material 3
         NavigationBar(
-            modifier = (Modifier.height(60.dp)),
+            modifier = Modifier.height(60.dp + systemNavBarPadding),
             containerColor = Color(0xD9000000),
         ) {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -188,7 +189,7 @@ fun BottomNavGraph(
         
         // Simplified Search Route (no arguments needed)
         composable(BottomNavItem.Search.route) {
-            com.example.remusic.ui.screen.SearchScreen(
+            SearchScreen(
                 playMusicViewModel = playMusicViewModel, // Pass ViewModel
                 isSearchActive = isSearchActive, // Pass hoisted state
                 onSearchActiveChange = onSearchActiveChange // Pass callback
@@ -212,7 +213,7 @@ fun BottomNavGraph(
             RequestSongScreen(navController = navController, playMusicViewModel = playMusicViewModel)
         }
         composable("create_playlist") {
-            com.example.remusic.ui.screen.CreatePlaylistScreen(
+            CreatePlaylistScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -234,21 +235,26 @@ fun MainScreen(
     val homeViewModel: HomeViewModel = viewModel()
     
     // Hoist Search State here
-    var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var isSearchActive by androidx.compose.runtime.remember { mutableStateOf(false) }
 
     // Track if we're at the root of HomeScreen (not in nested navigation)
-    var isAtHomeRoot by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+    var isAtHomeRoot by androidx.compose.runtime.remember { mutableStateOf(true) }
 
     // Trigger to reset HomeScreen nested nav to root when user returns to Home tab
-    var homeResetTrigger by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
+    var homeResetTrigger by androidx.compose.runtime.remember { mutableStateOf(0) }
 
     // BottomSheet State
-    var showCreatePlaylistSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showCreatePlaylistSheet by androidx.compose.runtime.remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
 
+    val isOffline = connectivityStatus == ConnectivityObserver.Status.Lost || 
+                    connectivityStatus == ConnectivityObserver.Status.Unavailable
+
+    val systemNavBarPadding = if (isOffline) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     // Tentukan tinggi dari komponen bawah untuk padding
-    val bottomBarHeight = 65.dp // Sesuaikan dengan tinggi BottomBar Anda
+    val bottomBarHeight = 60.dp + systemNavBarPadding // Sesuaikan dengan tinggi BottomBar
     val playerCardHeight = 64.dp // Perkiraan tinggi BottomPlayerCard
 
     // Hitung padding dinamis
@@ -292,7 +298,8 @@ fun MainScreen(
             BottomBar(
                 navController = navController,
                 onSearchReset = { isSearchActive = false }, // Reset to inactive when tab clicked
-                onCreatePlaylistClick = { showCreatePlaylistSheet = true }
+                onCreatePlaylistClick = { showCreatePlaylistSheet = true },
+                isOffline = isOffline
             )
         }
 

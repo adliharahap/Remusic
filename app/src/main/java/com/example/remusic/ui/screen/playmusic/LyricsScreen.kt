@@ -46,6 +46,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Translate
@@ -63,8 +65,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +80,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -107,7 +112,6 @@ fun LyricsScreen(
     headerHeight: Dp,
     onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
-    // Add Lyrics Config
     lyricsConfig: LyricsConfig = LyricsConfig(),
     onSeekToMs: (Long) -> Unit = {}
 ) {
@@ -116,71 +120,120 @@ fun LyricsScreen(
     val activeIndex by lyricsViewModel.activeLyricIndex.collectAsState()
     val isTranslateLyrics by lyricsViewModel.isTranslateLyrics.collectAsState()
     val currentPosition by lyricsViewModel.currentPosition.collectAsState()
-
-    // Ambil State GLOBAL Auto Scroll dari ViewModel
     val hasAutoScrolledToTop by lyricsViewModel.hasAutoScrolledToTop.collectAsState()
 
     // Variable UI
-    // Track previous song ID untuk detect song change
     var previousSongId by remember { mutableStateOf(songWithArtist?.song?.id) }
     val currentSongId = songWithArtist?.song?.id
-    
-    // Track previous active index untuk prevent redundant scroll
     var previousActiveIndex by remember { mutableIntStateOf(-1) }
+    
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
 
+    // 🔥 2. PERBAIKAN OFFSET TENGAH (Mencegah bug lirik terlalu ke bawah/atas)
+    val topPadding = 200.dp
+    val centerOffsetPx: Int = with(density) {
+        val centerOfScreen = screenHeight.toPx() / 2f
+        val estimatedItemHalfHeight = 30.dp.toPx() // Perkiraan setengah tinggi teks lirik
 
-    
+        val shiftUp = 60.dp.toPx()
+        
+        // Offset = (Jarak padding atas) - (Tengah layar) + (Setengah tinggi font)
+        // Dibuat negatif karena di Compose negatif berarti mendorong item ke bawah dari batas atas
+        (topPadding.toPx() - centerOfScreen + estimatedItemHalfHeight + shiftUp).toInt()
+    }
+
+    // 🎯 STATE: Apakah auto-scroll sedang aktif
+    var isAutoScrollEnabled by remember { mutableStateOf(true) }
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+
     // 🔝 SMART AUTO-SCROLL TO TOP
-    // Hanya scroll ke atas jika: belum pernah auto-scroll DAN position < timestamp lyric pertama
     LaunchedEffect(currentPosition, lyrics, hasAutoScrolledToTop) {
         if (!hasAutoScrolledToTop && lyrics.isNotEmpty()) {
             val firstLyricTimestamp = lyrics.firstOrNull { it.timestamp != -1L }?.timestamp ?: 0L
-            
-            // Jika current position masih di bawah lyric pertama, scroll ke atas
             if (currentPosition < firstLyricTimestamp) {
-                lazyListState.scrollToItem(0) // Instant scroll ke atas
-                // Tandai sudah auto-scroll (HANYA 1x!) via ViewModel
+                lazyListState.scrollToItem(0) 
                 lyricsViewModel.setAutoScrolledToTop(true)
             }
         }
     }
 
-    // 📜 Auto Scroll Logic untuk follow active lyric (dengan smooth animation)
+    // 🛑 Deteksi USER MANUAL SCROLL → matikan auto-scroll
     LaunchedEffect(lazyListState) {
-        snapshotFlow { activeIndex }
-            .distinctUntilChanged()
-            .collect { index ->
-                if (index >= 0 && index < lyrics.size && index != previousActiveIndex) {
-
-                    // Smooth scroll dengan delay untuk animasi yang terlihat
-                    delay(150) // Beri waktu mata untuk baca lyric sebelum scroll
-                    lazyListState.animateScrollToItem(
-                        index = index,
-                        scrollOffset = -(screenHeight.value * 0.5f).toInt()
-                    )
+        snapshotFlow { lazyListState.isScrollInProgress }
+            .collect { isScrolling ->
+                if (isScrolling && !isProgrammaticScroll) {
+                    isAutoScrollEnabled = false
                 }
             }
     }
 
+    // 🔄 🔥 PERBAIKAN RE-ENGAGE AUTO SCROLL (Menggunakan visibleItemsInfo seperti IntersectionObserver di Web)
+    LaunchedEffect(lazyListState) {
+        // Kita hanya memantau status scroll dan activeIndex untuk menghindari recomposition berlebihan
+        snapshotFlow { Pair(lazyListState.isScrollInProgress, activeIndex) }
+            .collect { (isScrolling, currentIndex) ->
+                // Jika user sedang TIDAK scroll manual dan auto-scroll posisinya mati
+                if (!isScrolling && !isAutoScrollEnabled && !isProgrammaticScroll) {
+                    // Delay sejenak biar user sempat membaca lirik yang dia cari manual
+                    delay(600) 
+                    
+                    // Double check memastikan user belum mulai scroll lagi
+                    if (!lazyListState.isScrollInProgress && !isAutoScrollEnabled) {
+                        
+                        // Tanya ke Compose: "Apakah index lirik yang sedang bernyanyi terlihat di layar HP user?"
+                        val isTargetVisible = lazyListState.layoutInfo.visibleItemsInfo.any { it.index == currentIndex }
+                        
+                        if (isTargetVisible) {
+                            // Lirik terlihat! Langsung aktifkan kembali mode Auto-Sync dan tarik ke tengah
+                            previousActiveIndex = -1
+                            isAutoScrollEnabled = true
+                            
+                            if (currentIndex in lyrics.indices) {
+                                isProgrammaticScroll = true
+                                lazyListState.animateScrollToItem(
+                                    index = currentIndex,
+                                    scrollOffset = centerOffsetPx
+                                )
+                                isProgrammaticScroll = false
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    // 📜 Auto Scroll Logic untuk follow active lyric 
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { activeIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                if (isAutoScrollEnabled && index in lyrics.indices && index != previousActiveIndex) {
+                    previousActiveIndex = index
+                    delay(150) 
+                    isProgrammaticScroll = true
+                    lazyListState.animateScrollToItem(
+                        index = index,
+                        scrollOffset = centerOffsetPx // Gunakan hitungan offset baru
+                    )
+                    isProgrammaticScroll = false
+                }
+            }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
         // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
         Crossfade(
             targetState = when {
-                // HANYA Loading kalau statusnya BENAR-BENAR loading
                 isLoading -> "LOADING"
-
-                // Kalau tidak loading, tapi datanya kosong -> Empty View
                 lyrics.isEmpty() -> "EMPTY"
-
-                // Sisanya -> Konten
                 else -> "CONTENT"
             },
-            animationSpec = tween(500), // Durasi animasi fade (0.5 detik)
+            animationSpec = tween(500),
             label = "LyricsStateAnimation"
         ) { state ->
 
@@ -195,7 +248,8 @@ fun LyricsScreen(
                     LazyColumn(
                         state = lazyListState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 200.dp, bottom = screenHeight / 2),
+                        // Pastikan top padding-nya menggunakan variabel topPadding (200.dp)
+                        contentPadding = PaddingValues(top = topPadding, bottom = screenHeight / 2),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         itemsIndexed(
@@ -223,28 +277,27 @@ fun LyricsScreen(
             }
         }
 
-        // 1. Gradient ATAS (Fade dari Warna ke Transparan)
+        // 1. Gradient ATAS
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(headerHeight + 40.dp) // Total: 94 + 40 = 134.dp
+                .height(headerHeight + 40.dp)
                 .heightIn(min = 100.dp, max = 200.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
-                        // KUNCI RAHASIA: Gunakan banyak titik (Stops) untuk bikin kurva halus
                         colorStops = arrayOf(
-                            0.0f to topPlayerColor,                    // Atas: Solid
+                            0.0f to topPlayerColor,
                             0.5f to topPlayerColor,
-                            0.6f to topPlayerColor.copy(alpha = 0.8f), // Mulai pudar dikit
-                            0.8f to topPlayerColor.copy(alpha = 0.5f), // Pudar makin banyak (efek blur/glow terjadi disini)
-                            1.0f to topPlayerColor.copy(alpha = 0f)    // Bawah: Transparan Total
+                            0.6f to topPlayerColor.copy(alpha = 0.8f),
+                            0.8f to topPlayerColor.copy(alpha = 0.5f),
+                            1.0f to topPlayerColor.copy(alpha = 0f)
                         )
                     )
                 )
         )
 
-        // 2. Gradient BAWAH (Fade dari Transparan ke Warna)
+        // 2. Gradient BAWAH
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -253,22 +306,9 @@ fun LyricsScreen(
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
-                            // Titik 0.0 (Paling Atas Box):
-                            // Pakai warna Bottom tapi Alpha 0 (Invisible).
-                            // Ini kuncinya biar gak belang/abu-abu.
                             0.0f to bottomPlayerColor.copy(alpha = 0f),
-
-                            // Titik 0.3 (30% ke bawah):
-                            // Masih sangat tipis (10% opacity).
-                            // Ini bikin efek "glow" halus di batas atas.
                             0.4f to bottomPlayerColor.copy(alpha = 0.1f),
-
-                            // Titik 0.6 (60% ke bawah):
-                            // Mulai tebal (60% opacity). Teks mulai susah dibaca disini.
                             0.6f to bottomPlayerColor.copy(alpha = 0.5f),
-
-                            // Titik 0.9 - 1.0 (Bawah):
-                            // Solid total. Menutupi panel kontrol biar gak tabrakan.
                             0.8f to bottomPlayerColor,
                             1.0f to bottomPlayerColor
                         )
@@ -289,12 +329,72 @@ fun LyricsScreen(
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
             lyrics = lyrics,
         )
+
+        // ↩ FLOATING BUTTON "Kembali ke Lirik"
+        AnimatedVisibility(
+            visible = !isAutoScrollEnabled && activeIndex >= 0,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 155.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color.White.copy(alpha = 0.18f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        coroutineScope.launch {
+                            if (activeIndex in lyrics.indices) {
+                                isProgrammaticScroll = true
+                                lazyListState.animateScrollToItem(
+                                    index = activeIndex,
+                                    scrollOffset = centerOffsetPx
+                                )
+                                isProgrammaticScroll = false
+                            }
+                            previousActiveIndex = -1
+                            isAutoScrollEnabled = true
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val scrollDirectionIcon = if (lazyListState.firstVisibleItemIndex > activeIndex) {
+                    Icons.Default.KeyboardArrowUp
+                } else {
+                    Icons.Default.KeyboardArrowDown
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = scrollDirectionIcon,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Kembali ke Lirik",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontFamily = AppFont.RobotoMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
 fun LyricsSkeletonLoader() {
-    // 1. Setup Animasi Shimmer (Kedip-kedip)
     val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 0.2f,
@@ -306,28 +406,25 @@ fun LyricsSkeletonLoader() {
         label = "alpha"
     )
 
-    // 2. Gunakan LazyColumn agar bisa scroll (atau memenuhi layar) tanpa error
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 120.dp, bottom = 150.dp, start = 24.dp, end = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         userScrollEnabled = false
     ) {
-        // 3. Ulangi sebanyak 25 kali (cukup untuk memenuhi layar HP panjang sekalipun)
         items(25) { index ->
-            // Variasi panjang lebar (Pendek, Panjang, Sedang) biar lebih natural
             val widthFraction = when (index % 3) {
-                0 -> 0.6f // Pendek
-                1 -> 0.8f // Panjang
-                else -> 0.4f // Sangat Pendek
+                0 -> 0.6f 
+                1 -> 0.8f 
+                else -> 0.4f 
             }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth(widthFraction)
-                    .height(20.dp) // Tinggi per baris
+                    .height(20.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.White.copy(alpha = alpha)) // Warna skeleton
+                    .background(Color.White.copy(alpha = alpha))
             )
         }
     }
@@ -363,7 +460,6 @@ fun EmptyLyricsView() {
     }
 }
 
-
 @Composable
 fun LyricLineItem(
     line: LyricLine,
@@ -373,18 +469,15 @@ fun LyricLineItem(
     lyricsConfig: LyricsConfig,
     onSeekToMs: (Long) -> Unit = {}
 ) {
-    // Spesifikasi animasi (durasi 200ms) untuk semua transisi
     val animationSpec = tween<Float>(durationMillis = 200, delayMillis = 80)
     val colorAnimationSpec = tween<Color>(durationMillis = 200, delayMillis = 80)
 
-    // 1. Tentukan Font Family berdasarkan Config
     val fontFamily = when (lyricsConfig.fontFamily) {
         LyricsFontFamily.POPPINS -> AppFont.Poppins
         LyricsFontFamily.ROBOTO -> AppFont.RobotoRegular
         LyricsFontFamily.HELVETICA -> AppFont.Helvetica
     }
 
-    // 2. Tentukan Alignment berdasarkan Config
     val textAlign = when (lyricsConfig.align) {
         LyricsAlign.LEFT -> TextAlign.Left
         LyricsAlign.CENTER -> TextAlign.Center
@@ -397,12 +490,9 @@ fun LyricLineItem(
         LyricsAlign.RIGHT -> Alignment.End
     }
 
-    // 3. Logika Ukuran Font (Scaling)
-    // Base size dari config (default 21.dp -> konversi ke sp)
-    // Old logic: base * scale. New logic: base + (scale * 2)
     val baseFontSize = lyricsConfig.fontSize
     val shouldScale = lyricsConfig.autoScaleIfNoTranslation && (!isTranslateLyrics || line.translatedText == null)
-    val addedSize = if (shouldScale) (lyricsConfig.scaleFactor * 2) else 0 // +2, +4, +6
+    val addedSize = if (shouldScale) (lyricsConfig.scaleFactor * 2) else 0
     
     val finalFontSize = (baseFontSize + addedSize).sp
 
@@ -412,7 +502,6 @@ fun LyricLineItem(
         label = "fontSizeAnimation"
     )
 
-    // 4. Animasikan Warna Font Utama
     val targetFontColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
         Color.White
     } else {
@@ -425,7 +514,6 @@ fun LyricLineItem(
         label = "fontColorAnimation"
     )
 
-    // 5. Animasikan Warna Font Terjemahan
     val targetTranslatedColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
         Color.White.copy(alpha = 0.9f)
     } else {
@@ -450,30 +538,29 @@ fun LyricLineItem(
                 } else Modifier
             )
             .padding(vertical = 2.dp),
-        horizontalAlignment = horizontalAlignment // Align column content
+        horizontalAlignment = horizontalAlignment 
     ) {
         Text(
             text = line.originalText,
-            color = fontColor, // Gunakan warna yang dianimasikan
-            fontSize = fontSize.sp, // Gunakan ukuran yang dianimasikan
+            color = fontColor,
+            fontSize = fontSize.sp,
             fontFamily = fontFamily,
             fontWeight = lyricsConfig.mainFontWeight.weight,
             textAlign = textAlign,
-            modifier = Modifier.fillMaxWidth() // Ensure text takes width for alignment
+            modifier = Modifier.fillMaxWidth()
         )
 
-        // Animasi Masuk/Keluar untuk Lirik Terjemahan
         AnimatedVisibility(
             visible = line.translatedText != null && isTranslateLyrics,
             enter = slideInVertically(
-                initialOffsetY = { -it }, // Mulai dari atas (negatif height)
+                initialOffsetY = { -it },
                 animationSpec = tween(durationMillis = 300)
             ) + fadeIn(animationSpec = tween(durationMillis = 300)) + expandVertically(
                 expandFrom = Alignment.Top,
                 animationSpec = tween(durationMillis = 300)
             ),
             exit = slideOutVertically(
-                targetOffsetY = { -it }, // Keluar ke atas (negatif height)
+                targetOffsetY = { -it },
                 animationSpec = tween(durationMillis = 300)
             ) + fadeOut(animationSpec = tween(durationMillis = 300)) + shrinkVertically(
                 shrinkTowards = Alignment.Top,
@@ -484,10 +571,10 @@ fun LyricLineItem(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = line.translatedText,
-                    color = translatedColor, // Gunakan warna yang dianimasikan
-                    fontSize = lyricsConfig.translateFontSize.sp, // Ukuran terjemahan dari config
-                    fontFamily = fontFamily, // Pakai font yang sama
-                    fontWeight = lyricsConfig.translationFontWeight.weight, // Ketebalan terjemahan dari config
+                    color = translatedColor,
+                    fontSize = lyricsConfig.translateFontSize.sp,
+                    fontFamily = fontFamily,
+                    fontWeight = lyricsConfig.translationFontWeight.weight,
                     textAlign = textAlign,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -516,18 +603,15 @@ fun LyricsBottomPanel(
         object : NestedScrollConnection {}
     }
 
-    // State lokal untuk menghandle saat user menggeser slider
     var isUserSeeking by remember { mutableStateOf(false) }
     var userSeekPosition by remember { mutableFloatStateOf(0f) }
 
-    // Menentukan posisi slider
     val sliderValue = if (isUserSeeking) {
         userSeekPosition
     } else {
         if (totalDuration > 0) (currentPosition.toFloat() / totalDuration.toFloat()) else 0f
     }
 
-    // Hitung waktu yang ditampilkan (Realtime saat digeser)
     val displayCurrentTime = if (isUserSeeking) {
         (userSeekPosition * totalDuration).toLong()
     } else {
@@ -538,7 +622,6 @@ fun LyricsBottomPanel(
         modifier = modifier
             .fillMaxWidth()
             .height(140.dp)
-//            .background(bottomPlayerColor)
             .verticalScroll(scrollState)
             .nestedScroll(nestedScrollConnection),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -579,10 +662,10 @@ fun LyricsBottomPanel(
                         .fillMaxWidth()
                         .basicMarquee(
                             animationMode = MarqueeAnimationMode.Immediately,
-                            velocity = 70.dp,             // kecepatan scroll
-                            initialDelayMillis = 2000,  // delay sebelum scroll pertama
-                            repeatDelayMillis = 5000,   // delay di ujung sebelum loop
-                            iterations = Int.MAX_VALUE, // scroll terus-menerus
+                            velocity = 70.dp,
+                            initialDelayMillis = 2000,
+                            repeatDelayMillis = 5000,
+                            iterations = Int.MAX_VALUE,
                         )
                         .padding(bottom = 5.dp)
                 )
@@ -646,42 +729,35 @@ fun LyricsBottomPanel(
                     userSeekPosition = newValue
                 },
                 onValueChangeFinished = {
-                    onSeek(userSeekPosition) // Kirim posisi akhir ke ViewModel
+                    onSeek(userSeekPosition)
                     isUserSeeking = false
                 },
                 valueRange = 0f..1f,
                 modifier = Modifier.padding(horizontal = 8.dp),
-                // 1. Sembunyikan thumb & track default M3 dengan membuatnya transparan
                 colors = SliderDefaults.colors(
                     thumbColor = Color.Transparent,
                     activeTrackColor = Color.Transparent,
                     inactiveTrackColor = Color.Transparent
                 ),
-
-                // 2. Gambar THUMB kita sendiri yang bulat sempurna
                 thumb = {
                     Box(
                         modifier = Modifier
                             .offset(y = 1.dp)
-                            .size(14.dp) // Atur ukuran bulatan di sini
-                            .background(color = Color.White, shape = CircleShape) // CircleShape membuatnya bulat
+                            .size(14.dp)
+                            .background(color = Color.White, shape = CircleShape)
                     )
                 },
-
-                // 3. Gambar TRACK kita sendiri yang lebih tipis
                 track = { sliderPositions ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(3.dp)
                     ) {
-                        // Garis sisa (inactive)
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(color = Color.White.copy(0.4f), shape = RoundedCornerShape(2.dp))
                         )
-                        // Garis aktif
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(sliderPositions.value)

@@ -408,13 +408,32 @@ fun PlaylistMainContent(
             visible = isVisible,
             enter = fadeIn() + slideInVertically(initialOffsetY = { 50 })
         ) {
-            if (isLoading && allItems.isEmpty()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                // Liked Songs & Offline Music (always visible)
+                item {
+                    if (viewMode == ViewMode.GRID) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
+                            LikedSongsCard(
+                                onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
+                            LikedSongsListItem(
+                                onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
+                            )
+                        }
+                    }
+                }
+
+                if (isLoading && allItems.isEmpty()) {
                     items(12) {
                         if (viewMode == ViewMode.GRID) {
                             PlaylistGridSkeleton()
@@ -422,33 +441,7 @@ fun PlaylistMainContent(
                             PlaylistListSkeleton()
                         }
                     }
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(if (viewMode == ViewMode.GRID) 3 else 1),
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    // Liked Songs (always first)
-                    item {
-                        if (viewMode == ViewMode.GRID) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
-                                LikedSongsCard(
-                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
-                                )
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OfflineMusicCard(viewMode, onClick = onOfflineMusicClick)
-                                LikedSongsListItem(
-                                    onClick = { onItemClick("LIKED_SONGS", FilterType.PLAYLIST, "Liked Songs", "") }
-                                )
-                            }
-                        }
-                    }
-
+                } else {
                     // Display filtered and sorted items
                     items(displayItems) { item ->
                         if (viewMode == ViewMode.GRID) {
@@ -487,10 +480,10 @@ fun PlaylistMainContent(
                             }
                         }
                     }
+                }
 
-                    item {
-                        Spacer(modifier = Modifier.height(120.dp).fillMaxWidth())
-                    }
+                item {
+                    Spacer(modifier = Modifier.height(120.dp).fillMaxWidth())
                 }
             }
         }

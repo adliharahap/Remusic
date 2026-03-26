@@ -26,18 +26,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,10 +52,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.time.ZonedDateTime
@@ -85,7 +90,6 @@ import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 
@@ -140,7 +144,7 @@ class MainActivity : ComponentActivity() {
             }
             // Tambahkan interceptor untuk Retry 10x dengan jeda bertahap (1s, 2s, 3s, 4s, max 5s)
             .components {
-                add(coil.intercept.Interceptor { chain ->
+                add { chain ->
                     var response: coil.request.ImageResult? = null
                     var attempt = 0
                     val maxRetries = 5
@@ -159,7 +163,10 @@ class MainActivity : ComponentActivity() {
                                 throw response.throwable
                             }
                         } catch (e: Exception) {
-                            Log.e("CoilRetry", "Attempt $attempt/$maxRetries failed for ${chain.request.data}: ${e.message}")
+                            Log.e(
+                                "CoilRetry",
+                                "Attempt $attempt/$maxRetries failed for ${chain.request.data}: ${e.message}"
+                            )
                             if (attempt >= maxRetries) {
                                 // Jika sudah maksimal, kembalikan ErrorResult
                                 response = coil.request.ErrorResult(
@@ -173,7 +180,7 @@ class MainActivity : ComponentActivity() {
                         if (response == null || response is coil.request.ErrorResult) {
                             if (attempt < maxRetries) {
                                 // Jeda: 1 detik, 2 detik, ..., maks 5 detik
-                                val delaySeconds = if (attempt <= 5) attempt else 5
+                                val delaySeconds = attempt
                                 val retryDelayMillis = delaySeconds * 1000L
                                 delay(retryDelayMillis) // Suspend properly without blocking the thread
                             }
@@ -184,7 +191,7 @@ class MainActivity : ComponentActivity() {
                         request = chain.request,
                         throwable = IllegalStateException("Unknown Error after $maxRetries attempts")
                     )
-                })
+                }
             }
             .respectCacheHeaders(false) // Paksa pakai cache lokal kita meski server bilang jangan
             .build()
@@ -200,7 +207,13 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            ReMusicTheme {
+            val currentDensity = LocalDensity.current
+            val customDensity = Density(
+                density = currentDensity.density,
+                fontScale = 0.9f
+            )
+            CompositionLocalProvider(LocalDensity provides customDensity) {
+                ReMusicTheme {
                 val navController = rememberNavController()
 
                 // State untuk menyimpan tujuan awal (default null dulu)
@@ -313,7 +326,18 @@ class MainActivity : ComponentActivity() {
                     ) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding)) {
                             Column(modifier = Modifier.fillMaxSize()) {
-                                Box(modifier = Modifier.weight(1f)) {
+                                val isOffline = status == ConnectivityObserver.Status.Lost || status == ConnectivityObserver.Status.Unavailable
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .let {
+                                            if (isOffline) {
+                                                it.consumeWindowInsets(WindowInsets.navigationBars)
+                                            } else {
+                                                it
+                                            }
+                                        }
+                                ) {
                                     AppNavGraph(
                                         navController = navController,
                                         startDestination = startDestination!!,
@@ -363,6 +387,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
     }
 
     private fun signInWithGoogle(onSuccess: () -> Unit) {
@@ -461,7 +486,7 @@ class MainActivity : ComponentActivity() {
             val token = task.result
             
             // CEK CACHE LOKAL DULU:
-            val cachedToken = com.example.remusic.data.UserManager.getCachedFcmToken()
+            val cachedToken = UserManager.getCachedFcmToken()
             if (cachedToken == token) {
                 Log.d("FCM_TEST", "Token FCM tidak berubah, skip update ke database.")
                 return@addOnCompleteListener
@@ -479,7 +504,7 @@ class MainActivity : ComponentActivity() {
                             filter { eq("id", user.id) }
                         }
                         // Jika berhasil update DB, simpan ke cache lokal
-                        com.example.remusic.data.UserManager.saveCachedFcmToken(token)
+                        UserManager.saveCachedFcmToken(token)
                         Log.d("FCM_TEST", "Berhasil update FCM Token ke DB: $token")
                     } catch (e: Exception) {
                         Log.e("FCM_TEST", "Gagal update FCM Token ke DB", e)
@@ -499,13 +524,17 @@ fun OfflineBanner(
 ) {
     // Derive visibility directly from status — no LaunchedEffect, no delay
     val isOffline = status == ConnectivityObserver.Status.Lost ||
-                    status == ConnectivityObserver.Status.Unavailable
+            status == ConnectivityObserver.Status.Unavailable
 
     val message = when (status) {
-        ConnectivityObserver.Status.Limited  -> "Koneksi Terbatas"
-        ConnectivityObserver.Status.Losing   -> "Koneksi Tidak Stabil"
-        else                                 -> "Tidak ada koneksi internet"
+        ConnectivityObserver.Status.Limited -> "Koneksi Terbatas"
+        ConnectivityObserver.Status.Losing -> "Koneksi Tidak Stabil"
+        else -> "Tidak ada koneksi internet"
     }
+
+    val navBarPadding =
+        WindowInsets.navigationBars.asPaddingValues()
+            .calculateBottomPadding()
 
     AnimatedVisibility(
         visible = isOffline,
@@ -518,26 +547,33 @@ fun OfflineBanner(
             shape = androidx.compose.ui.graphics.RectangleShape,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(40.dp + navBarPadding)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxSize()
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter
             ) {
-                Icon(
-                    imageVector = Icons.Default.WifiOff,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = message,
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WifiOff,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = message,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }
@@ -553,8 +589,9 @@ fun BannedUserDialog(
         try {
             val zdt = ZonedDateTime.parse(bannedUntil)
             val localZdt = zdt.withZoneSameInstant(ZoneId.systemDefault())
-            val formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
-                .withLocale(Locale("id", "ID"))
+            val formatter =
+                DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG, FormatStyle.SHORT)
+                    .withLocale(Locale("id", "ID"))
             localZdt.format(formatter)
         } catch (e: Exception) {
             bannedUntil
@@ -637,7 +674,8 @@ fun BannedUserDialog(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = banReason ?: "Pelanggaran pedoman komunitas atau aktivitas mencurigakan.",
+                                text = banReason
+                                    ?: "Pelanggaran pedoman komunitas atau aktivitas mencurigakan.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
