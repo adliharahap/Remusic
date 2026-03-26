@@ -65,6 +65,13 @@ import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 
+enum class LyricsBackgroundStyle(val displayName: String) {
+    LINEAR_GRADIENT("Linear Gradient"),
+    MESH_GRADIENT("Mesh Gradient (Cloud)"),
+    RADIAL_GRADIENT("Radial Gradient"),
+    BLURRED_COVER("Blurred Cover")
+}
+
 // Data class for Lyrics Config
 data class LyricsConfig(
     val fontFamily: LyricsFontFamily = LyricsFontFamily.POPPINS,
@@ -76,7 +83,8 @@ data class LyricsConfig(
     val translateFontSize: Float = 15.5f,
     val translationFontWeight: LyricsFontWeight = LyricsFontWeight.REGULAR,
     val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD,
-    val clickLyricsToSeek: Boolean = true
+    val clickLyricsToSeek: Boolean = true,
+    val backgroundStyle: LyricsBackgroundStyle = LyricsBackgroundStyle.LINEAR_GRADIENT
 )
 
 enum class LyricsFontWeight(val displayName: String, val weight: FontWeight) {
@@ -133,7 +141,16 @@ fun MoreOptionsBottomSheet(
     onDataSaverModeChange: (Boolean) -> Unit = {},
     // Playback Speed
     playbackSpeed: Float = 1.0f,
-    onPlaybackSpeedChange: (Float) -> Unit = {}
+    onPlaybackSpeedChange: (Float) -> Unit = {},
+    // Player Theme
+    playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+    onPlayerBackgroundStyleChange: (com.example.remusic.data.preferences.PlayerBackgroundStyle) -> Unit = {},
+    isThemeAppliedToQueue: Boolean = true,
+    onThemeAppliedToQueueChange: (Boolean) -> Unit = {},
+    isThemeAppliedToNowPlaying: Boolean = true,
+    onThemeAppliedToNowPlayingChange: (Boolean) -> Unit = {},
+    isThemeAppliedToLyrics: Boolean = true,
+    onThemeAppliedToLyricsChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -453,7 +470,48 @@ fun MoreOptionsBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- 5. LYRICS SETTINGS SECTION ---
+            // --- 5. PLAYER THEME SECTION ---
+            SectionTitle(title = "Player Background Theme")
+            SectionCard {
+                var themeMenuExpanded by remember { mutableStateOf(false) }
+                SettingDropdownRow(
+                    title = "Background",
+                    value = playerBackgroundStyle.displayName,
+                    expanded = themeMenuExpanded,
+                    onExpandedChange = { themeMenuExpanded = it },
+                    items = com.example.remusic.data.preferences.PlayerBackgroundStyle.values().toList(),
+                    itemLabel = { it.displayName },
+                    onItemSelected = { onPlayerBackgroundStyleChange(it) }
+                )
+
+                if (playerBackgroundStyle != com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT) {
+                    ItemDivider()
+                    SettingToggleRow(
+                        title = "Terapkan di Queue",
+                        subtitle = "Tema aktif di layar antrian lagu",
+                        checked = isThemeAppliedToQueue,
+                        onCheckedChange = { onThemeAppliedToQueueChange(it) }
+                    )
+                    ItemDivider()
+                    SettingToggleRow(
+                        title = "Terapkan di Now Playing",
+                        subtitle = "Tema aktif di layar putar lagu",
+                        checked = isThemeAppliedToNowPlaying,
+                        onCheckedChange = { onThemeAppliedToNowPlayingChange(it) }
+                    )
+                    ItemDivider()
+                    SettingToggleRow(
+                        title = "Terapkan di Lyrics",
+                        subtitle = "Tema aktif di layar lirik lagu",
+                        checked = isThemeAppliedToLyrics,
+                        onCheckedChange = { onThemeAppliedToLyricsChange(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- 6. LYRICS SETTINGS SECTION ---
             SectionTitle(
                 title = "Lyrics Settings",
                 actionText = if (lyricsConfig != LyricsConfig()) "Reset" else null,

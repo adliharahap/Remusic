@@ -35,6 +35,7 @@ import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.data.preferences.PlayerBackgroundStyle
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +53,9 @@ fun QueueScreen(
     onAddToLiked: (SongWithArtist) -> Unit = {},
     onRemoveFromQueue: (SongWithArtist) -> Unit = {},
     topPlayerColor: Color = Color.Transparent,
+    bottomPlayerColor: Color = Color.Transparent,
+    gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
@@ -68,6 +72,14 @@ fun QueueScreen(
     //untuk memberikan padding top
     val configuration = LocalConfiguration.current
     Box(modifier = Modifier.fillMaxSize()) {
+        PlayerBackground(
+            style = playerBackgroundStyle,
+            topColor = topPlayerColor,
+            bottomColor = bottomPlayerColor,
+            gradientBrush = gradientBrush,
+            coverUrl = songWithArtist?.song?.coverUrl
+        )
+
         LazyColumn(
             state = listState,
         modifier = Modifier.fillMaxSize()

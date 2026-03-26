@@ -255,6 +255,10 @@ fun PlayMusicScreen(
                             playMusicViewModel.removeFromQueue(song)
                         },
                         topPlayerColor = animatedTopColor,
+                        bottomPlayerColor = animatedBottomColor,
+                        gradientBrush = animatedGradientBrush,
+                        playerBackgroundStyle = if (uiState.isThemeAppliedToQueue) uiState.playerBackgroundStyle
+                            else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
                         headerHeight = headerHeight
                     )
                 }
@@ -297,9 +301,13 @@ fun PlayMusicScreen(
                     },
                     isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
                     topPlayerColor = animatedTopColor,
+                    bottomPlayerColor = animatedBottomColor,
+                    gradientBrush = animatedGradientBrush,
                     headerHeight = headerHeight,
                     isExiting = isExiting,
-                    playbackSpeed = uiState.playbackSpeed
+                    playbackSpeed = uiState.playbackSpeed,
+                    playerBackgroundStyle = if (uiState.isThemeAppliedToNowPlaying) uiState.playerBackgroundStyle
+                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -317,7 +325,10 @@ fun PlayMusicScreen(
                     onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
                     lyricsConfig = uiState.lyricsConfig,
                     onSeekToMs = { ms -> playMusicViewModel.seekTo(ms) },
-                    playbackSpeed = uiState.playbackSpeed
+                    playbackSpeed = uiState.playbackSpeed,
+                    playerBackgroundStyle = if (uiState.isThemeAppliedToLyrics) uiState.playerBackgroundStyle
+                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+                    gradientBrush = animatedGradientBrush
                 )
             }
         }
@@ -518,7 +529,15 @@ fun PlayMusicScreen(
             isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
             onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) },
             playbackSpeed = uiState.playbackSpeed,
-            onPlaybackSpeedChange = { playMusicViewModel.setPlaybackSpeed(it) }
+            onPlaybackSpeedChange = { playMusicViewModel.setPlaybackSpeed(it) },
+            playerBackgroundStyle = uiState.playerBackgroundStyle,
+            onPlayerBackgroundStyleChange = { playMusicViewModel.setPlayerBackgroundStyle(it) },
+            isThemeAppliedToQueue = uiState.isThemeAppliedToQueue,
+            onThemeAppliedToQueueChange = { playMusicViewModel.setThemeAppliedToQueue(it) },
+            isThemeAppliedToNowPlaying = uiState.isThemeAppliedToNowPlaying,
+            onThemeAppliedToNowPlayingChange = { playMusicViewModel.setThemeAppliedToNowPlaying(it) },
+            isThemeAppliedToLyrics = uiState.isThemeAppliedToLyrics,
+            onThemeAppliedToLyricsChange = { playMusicViewModel.setThemeAppliedToLyrics(it) }
         )
     }
 

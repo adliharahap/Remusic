@@ -21,6 +21,7 @@ import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +72,7 @@ import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -95,10 +97,13 @@ import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
+import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.sin
+import androidx.compose.ui.geometry.Offset
 
 @SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
@@ -115,7 +120,9 @@ fun LyricsScreen(
     onPlayPauseClick: () -> Unit,
     lyricsConfig: LyricsConfig = LyricsConfig(),
     onSeekToMs: (Long) -> Unit = {},
-    playbackSpeed: Float = 1.0f
+    playbackSpeed: Float = 1.0f,
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
+    gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -215,6 +222,13 @@ fun LyricsScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        PlayerBackground(
+            style = playerBackgroundStyle,
+            topColor = topPlayerColor,
+            bottomColor = bottomPlayerColor,
+            gradientBrush = gradientBrush,
+            coverUrl = songWithArtist?.song?.coverUrl
+        )
 
         // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
         Crossfade(

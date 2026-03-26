@@ -134,12 +134,20 @@ data class PlayerUiState(
         val backgroundMusicEnabled: Boolean = false,
 
         // Playback Speed
-        val playbackSpeed: Float = 1.0f
+        val playbackSpeed: Float = 1.0f,
+
+        // Player Background Style
+        val playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+
+        // Per-screen theme toggles
+        val isThemeAppliedToQueue: Boolean = true,
+        val isThemeAppliedToNowPlaying: Boolean = true,
+        val isThemeAppliedToLyrics: Boolean = true
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
 
-    // untuk fitur fade ketika play, pause di klik
+    // untuk fitur fade ketika play, pause di klike
     companion object {
         private const val FADE_DURATION_MS = 500L // Durasi fade dalam milidetik
         private const val FADE_INTERVAL_MS = 20L // Seberapa sering volume diupdate
@@ -235,10 +243,33 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // Collect background music preference
         viewModelScope.launch {
             userPreferencesRepository.backgroundMusicEnabledFlow.collect { isEnabled ->
                 _uiState.update { it.copy(backgroundMusicEnabled = isEnabled) }
+            }
+        }
+
+        // Collect player background style (restores selection on relaunch)
+        viewModelScope.launch {
+            userPreferencesRepository.playerBackgroundStyleFlow.collect { style ->
+                _uiState.update { it.copy(playerBackgroundStyle = style) }
+            }
+        }
+
+        // Collect per-screen theme toggles
+        viewModelScope.launch {
+            userPreferencesRepository.themeApplyToQueueFlow.collect { enabled ->
+                _uiState.update { it.copy(isThemeAppliedToQueue = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.themeApplyToNowPlayingFlow.collect { enabled ->
+                _uiState.update { it.copy(isThemeAppliedToNowPlaying = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.themeApplyToLyricsFlow.collect { enabled ->
+                _uiState.update { it.copy(isThemeAppliedToLyrics = enabled) }
             }
         }
     }
@@ -1138,6 +1169,34 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // By setting pitch to match speed, we disable the time-stretching algorithm
         // which prevents robotic/stuttering sounds and naturally deepens voice when slowed down
         mediaController?.playbackParameters = androidx.media3.common.PlaybackParameters(speed, speed)
+    }
+
+    fun setPlayerBackgroundStyle(style: com.example.remusic.data.preferences.PlayerBackgroundStyle) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(playerBackgroundStyle = style) }
+            userPreferencesRepository.savePlayerBackgroundStyle(style)
+        }
+    }
+
+    fun setThemeAppliedToQueue(enabled: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isThemeAppliedToQueue = enabled) }
+            userPreferencesRepository.saveThemeApplyToQueue(enabled)
+        }
+    }
+
+    fun setThemeAppliedToNowPlaying(enabled: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isThemeAppliedToNowPlaying = enabled) }
+            userPreferencesRepository.saveThemeApplyToNowPlaying(enabled)
+        }
+    }
+
+    fun setThemeAppliedToLyrics(enabled: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isThemeAppliedToLyrics = enabled) }
+            userPreferencesRepository.saveThemeApplyToLyrics(enabled)
+        }
     }
 
     fun togglePlayPause() {

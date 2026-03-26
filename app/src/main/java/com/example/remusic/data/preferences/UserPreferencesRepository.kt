@@ -25,6 +25,13 @@ enum class GradientStyle(val displayName: String) {
     LIGHT("Light")
 }
 
+enum class PlayerBackgroundStyle(val displayName: String) {
+    LINEAR_GRADIENT("Linear Gradient"),
+    MESH_GRADIENT("Mesh Gradient (Cloud)"),
+    RADIAL_GRADIENT("Radial Gradient"),
+    BLURRED_COVER("Blurred Cover")
+}
+
 
 // Buat instance DataStore sebagai extension property pada Context
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -185,6 +192,47 @@ class UserPreferencesRepository(private val context: Context) {
     private val GRADIENT_STYLE_KEY = stringPreferencesKey("gradient_style")
     private val GRADIENT_TOP_COLOR_INDEX_KEY = intPreferencesKey("gradient_top_color_index")
     private val GRADIENT_BOTTOM_COLOR_INDEX_KEY = intPreferencesKey("gradient_bottom_color_index")
+    private val PLAYER_BACKGROUND_STYLE_KEY = stringPreferencesKey("player_background_style")
+
+    val playerBackgroundStyleFlow: Flow<PlayerBackgroundStyle> =
+        context.dataStore.data.map { preferences ->
+            val styleName = preferences[PLAYER_BACKGROUND_STYLE_KEY] ?: PlayerBackgroundStyle.LINEAR_GRADIENT.name
+            try {
+                PlayerBackgroundStyle.valueOf(styleName)
+            } catch (e: IllegalArgumentException) {
+                PlayerBackgroundStyle.LINEAR_GRADIENT
+            }
+        }
+
+    suspend fun savePlayerBackgroundStyle(style: PlayerBackgroundStyle) {
+        context.dataStore.edit { settings -> settings[PLAYER_BACKGROUND_STYLE_KEY] = style.name }
+    }
+
+    // Per-screen theme application toggles (default ON for all)
+    private val THEME_APPLY_QUEUE_KEY = booleanPreferencesKey("theme_apply_queue")
+    private val THEME_APPLY_NOW_PLAYING_KEY = booleanPreferencesKey("theme_apply_now_playing")
+    private val THEME_APPLY_LYRICS_KEY = booleanPreferencesKey("theme_apply_lyrics")
+
+    val themeApplyToQueueFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences -> preferences[THEME_APPLY_QUEUE_KEY] ?: true }
+
+    val themeApplyToNowPlayingFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences -> preferences[THEME_APPLY_NOW_PLAYING_KEY] ?: true }
+
+    val themeApplyToLyricsFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences -> preferences[THEME_APPLY_LYRICS_KEY] ?: true }
+
+    suspend fun saveThemeApplyToQueue(enabled: Boolean) {
+        context.dataStore.edit { settings -> settings[THEME_APPLY_QUEUE_KEY] = enabled }
+    }
+
+    suspend fun saveThemeApplyToNowPlaying(enabled: Boolean) {
+        context.dataStore.edit { settings -> settings[THEME_APPLY_NOW_PLAYING_KEY] = enabled }
+    }
+
+    suspend fun saveThemeApplyToLyrics(enabled: Boolean) {
+        context.dataStore.edit { settings -> settings[THEME_APPLY_LYRICS_KEY] = enabled }
+    }
 
     val gradientStyleFlow: Flow<GradientStyle> =
         context.dataStore.data.map { preferences ->

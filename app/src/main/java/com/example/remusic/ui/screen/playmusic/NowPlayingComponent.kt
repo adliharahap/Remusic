@@ -63,6 +63,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -116,9 +117,12 @@ fun NowPlaying(
     onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
     isDataSaverModeEnabled: Boolean = false,
     topPlayerColor: Color = Color.Transparent,
+    bottomPlayerColor: Color = Color.Transparent,
+    gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
     isExiting: Boolean = false,
-    playbackSpeed: Float = 1.0f
+    playbackSpeed: Float = 1.0f,
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -181,6 +185,16 @@ fun NowPlaying(
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
     ) {
+        if (!isCanvasMode) {
+            PlayerBackground(
+                style = playerBackgroundStyle,
+                topColor = topPlayerColor,
+                bottomColor = bottomPlayerColor,
+                gradientBrush = gradientBrush,
+                coverUrl = songWithArtist?.song?.coverUrl
+            )
+        }
+
         // Simpan tinggi layar ke variabel
         val screenHeight = maxHeight
 
