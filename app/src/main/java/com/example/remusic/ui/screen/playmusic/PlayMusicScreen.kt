@@ -298,7 +298,8 @@ fun PlayMusicScreen(
                     isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
                     topPlayerColor = animatedTopColor,
                     headerHeight = headerHeight,
-                    isExiting = isExiting
+                    isExiting = isExiting,
+                    playbackSpeed = uiState.playbackSpeed
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -315,7 +316,8 @@ fun PlayMusicScreen(
                     },
                     onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
                     lyricsConfig = uiState.lyricsConfig,
-                    onSeekToMs = { ms -> playMusicViewModel.seekTo(ms) }
+                    onSeekToMs = { ms -> playMusicViewModel.seekTo(ms) },
+                    playbackSpeed = uiState.playbackSpeed
                 )
             }
         }
@@ -514,7 +516,9 @@ fun PlayMusicScreen(
             gradientBottomColorIndex = uiState.gradientBottomColorIndex,
             onGradientBottomColorIndexChange = { playMusicViewModel.setGradientBottomColorIndex(it) },
             isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
-            onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) }
+            onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) },
+            playbackSpeed = uiState.playbackSpeed,
+            onPlaybackSpeedChange = { playMusicViewModel.setPlaybackSpeed(it) }
         )
     }
 

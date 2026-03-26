@@ -131,7 +131,10 @@ data class PlayerUiState(
         val isFetchingUserPlaylists: Boolean = false,
 
         // Background Music
-        val backgroundMusicEnabled: Boolean = false
+        val backgroundMusicEnabled: Boolean = false,
+
+        // Playback Speed
+        val playbackSpeed: Float = 1.0f
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -1125,6 +1128,16 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.w("PlayMusicViewModel", "⚠️ Smart Queue returned empty list.")
             }
         }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        Log.d("PlayMusicViewModel", "🚀 SET PLAYBACK SPEED: ${speed}x")
+        _uiState.update { it.copy(playbackSpeed = speed) }
+        
+        // ExoPlayer MediaController automatically adjusts internal PlaybackParameters
+        // By setting pitch to match speed, we disable the time-stretching algorithm
+        // which prevents robotic/stuttering sounds and naturally deepens voice when slowed down
+        mediaController?.playbackParameters = androidx.media3.common.PlaybackParameters(speed, speed)
     }
 
     fun togglePlayPause() {
@@ -2773,6 +2786,11 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         val colors = extractGradientColorsFromImageUrl(getApplication(), coverUrl)
                         _uiState.update { it.copy(dominantColors = colors) }
                     }
+                    
+                    // 🔥 FETCH FULL DETAILS UNTUK MELENGKAPI ARTIST & UPLOADER SELEPAS RESUME!
+                    // Ketika resuming dari notifikasi (service hidup), onMediaItemTransition tidak terpanggil,
+                    // maka kita harus fetch manual supaya layar tidak menampilkan 'Unknown Artist/Uploader'.
+                    fetchFullSongDetails(playlist[currentIndex].song.id)
                 }
                 return
             }

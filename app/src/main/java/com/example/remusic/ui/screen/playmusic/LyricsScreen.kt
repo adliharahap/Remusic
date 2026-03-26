@@ -97,6 +97,7 @@ import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @SuppressLint("ConfigurationScreenWidthHeight")
@@ -113,7 +114,8 @@ fun LyricsScreen(
     onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
     lyricsConfig: LyricsConfig = LyricsConfig(),
-    onSeekToMs: (Long) -> Unit = {}
+    onSeekToMs: (Long) -> Unit = {},
+    playbackSpeed: Float = 1.0f
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -125,7 +127,6 @@ fun LyricsScreen(
     // Variable UI
     var previousSongId by remember { mutableStateOf(songWithArtist?.song?.id) }
     val currentSongId = songWithArtist?.song?.id
-    var previousActiveIndex by remember { mutableIntStateOf(-1) }
     
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
@@ -155,17 +156,22 @@ fun LyricsScreen(
         if (!hasAutoScrolledToTop && lyrics.isNotEmpty()) {
             val firstLyricTimestamp = lyrics.firstOrNull { it.timestamp != -1L }?.timestamp ?: 0L
             if (currentPosition < firstLyricTimestamp) {
-                lazyListState.scrollToItem(0) 
-                lyricsViewModel.setAutoScrolledToTop(true)
+                isProgrammaticScroll = true
+                try {
+                    lazyListState.scrollToItem(0) 
+                } finally {
+                    isProgrammaticScroll = false
+                    lyricsViewModel.setAutoScrolledToTop(true)
+                }
             }
         }
     }
 
     // 🛑 Deteksi USER MANUAL SCROLL → matikan auto-scroll
     LaunchedEffect(lazyListState) {
-        snapshotFlow { lazyListState.isScrollInProgress }
-            .collect { isScrolling ->
-                if (isScrolling && !isProgrammaticScroll) {
+        snapshotFlow { Pair(lazyListState.isScrollInProgress, isProgrammaticScroll) }
+            .collect { (isScrolling, isProgrammatic) ->
+                if (isScrolling && !isProgrammatic) {
                     isAutoScrollEnabled = false
                 }
             }
@@ -173,33 +179,14 @@ fun LyricsScreen(
 
     // 🔄 🔥 PERBAIKAN RE-ENGAGE AUTO SCROLL (Menggunakan visibleItemsInfo seperti IntersectionObserver di Web)
     LaunchedEffect(lazyListState) {
-        // Kita hanya memantau status scroll dan activeIndex untuk menghindari recomposition berlebihan
         snapshotFlow { Pair(lazyListState.isScrollInProgress, activeIndex) }
-            .collect { (isScrolling, currentIndex) ->
-                // Jika user sedang TIDAK scroll manual dan auto-scroll posisinya mati
+            .collectLatest { (isScrolling, currentIndex) ->
                 if (!isScrolling && !isAutoScrollEnabled && !isProgrammaticScroll) {
-                    // Delay sejenak biar user sempat membaca lirik yang dia cari manual
                     delay(600) 
-                    
-                    // Double check memastikan user belum mulai scroll lagi
                     if (!lazyListState.isScrollInProgress && !isAutoScrollEnabled) {
-                        
-                        // Tanya ke Compose: "Apakah index lirik yang sedang bernyanyi terlihat di layar HP user?"
                         val isTargetVisible = lazyListState.layoutInfo.visibleItemsInfo.any { it.index == currentIndex }
-                        
                         if (isTargetVisible) {
-                            // Lirik terlihat! Langsung aktifkan kembali mode Auto-Sync dan tarik ke tengah
-                            previousActiveIndex = -1
                             isAutoScrollEnabled = true
-                            
-                            if (currentIndex in lyrics.indices) {
-                                isProgrammaticScroll = true
-                                lazyListState.animateScrollToItem(
-                                    index = currentIndex,
-                                    scrollOffset = centerOffsetPx
-                                )
-                                isProgrammaticScroll = false
-                            }
                         }
                     }
                 }
@@ -208,18 +195,21 @@ fun LyricsScreen(
 
     // 📜 Auto Scroll Logic untuk follow active lyric 
     LaunchedEffect(lazyListState) {
-        snapshotFlow { activeIndex }
-            .distinctUntilChanged()
-            .collect { index ->
-                if (isAutoScrollEnabled && index in lyrics.indices && index != previousActiveIndex) {
-                    previousActiveIndex = index
-                    delay(150) 
+        snapshotFlow { Pair(activeIndex, isAutoScrollEnabled) }
+            .collectLatest { (index, autoScroll) ->
+                if (autoScroll && index in lyrics.indices) {
+                    delay(100) 
                     isProgrammaticScroll = true
-                    lazyListState.animateScrollToItem(
-                        index = index,
-                        scrollOffset = centerOffsetPx // Gunakan hitungan offset baru
-                    )
-                    isProgrammaticScroll = false
+                    try {
+                        lazyListState.animateScrollToItem(
+                            index = index,
+                            scrollOffset = centerOffsetPx 
+                        )
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } finally {
+                        isProgrammaticScroll = false
+                    }
                 }
             }
     }
@@ -328,11 +318,12 @@ fun LyricsScreen(
             isTranslateLyrics = isTranslateLyrics,
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
             lyrics = lyrics,
+            playbackSpeed = playbackSpeed
         )
 
         // ↩ FLOATING BUTTON "Kembali ke Lirik"
         AnimatedVisibility(
-            visible = !isAutoScrollEnabled && activeIndex >= 0,
+            visible = !isAutoScrollEnabled && activeIndex in lyrics.indices,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
             exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
             modifier = Modifier
@@ -347,18 +338,7 @@ fun LyricsScreen(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        coroutineScope.launch {
-                            if (activeIndex in lyrics.indices) {
-                                isProgrammaticScroll = true
-                                lazyListState.animateScrollToItem(
-                                    index = activeIndex,
-                                    scrollOffset = centerOffsetPx
-                                )
-                                isProgrammaticScroll = false
-                            }
-                            previousActiveIndex = -1
-                            isAutoScrollEnabled = true
-                        }
+                        isAutoScrollEnabled = true
                     }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
@@ -596,6 +576,7 @@ fun LyricsBottomPanel(
     isTranslateLyrics: Boolean,
     onToggleTranslateLyrics: () -> Unit,
     lyrics: List<LyricLine>,
+    playbackSpeed: Float = 1.0f
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -616,6 +597,18 @@ fun LyricsBottomPanel(
         (userSeekPosition * totalDuration).toLong()
     } else {
         currentPosition
+    }
+
+    val scaledTotalDuration = if (playbackSpeed > 0f) {
+        (totalDuration / playbackSpeed).toLong()
+    } else {
+        totalDuration
+    }
+    
+    val scaledCurrentTime = if (playbackSpeed > 0f) {
+        (displayCurrentTime / playbackSpeed).toLong()
+    } else {
+        displayCurrentTime
     }
 
     Column(
@@ -775,14 +768,14 @@ fun LyricsBottomPanel(
             verticalAlignment = Alignment.CenterVertically
         ){
             Text(
-                text = formatDuration(displayCurrentTime),
+                text = formatDuration(scaledCurrentTime),
                 color = Color.White,
                 fontFamily = AppFont.Coolvetica,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
             )
             Text(
-                text = formatDuration(totalDuration),
+                text = formatDuration(scaledTotalDuration),
                 color = Color.White,
                 fontFamily = AppFont.Coolvetica,
                 fontWeight = FontWeight.Normal,

@@ -117,7 +117,8 @@ fun NowPlaying(
     isDataSaverModeEnabled: Boolean = false,
     topPlayerColor: Color = Color.Transparent,
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
-    isExiting: Boolean = false
+    isExiting: Boolean = false,
+    playbackSpeed: Float = 1.0f
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -153,6 +154,19 @@ fun NowPlaying(
         (userSeekPosition * totalDuration).toLong()
     } else {
         currentPosition
+    }
+
+    // Hitung waktu yang dipanjangkan/dipendekkan sesuai kecepatan putaran
+    val scaledTotalDuration = if (playbackSpeed > 0f) {
+        (totalDuration / playbackSpeed).toLong()
+    } else {
+        totalDuration
+    }
+    
+    val scaledCurrentTime = if (playbackSpeed > 0f) {
+        (displayCurrentTime / playbackSpeed).toLong()
+    } else {
+        displayCurrentTime
     }
 
     // Slider Box
@@ -369,14 +383,14 @@ fun NowPlaying(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = formatDuration(displayCurrentTime),
+                                    text = formatDuration(scaledCurrentTime),
                                     color = Color.White,
                                     fontFamily = AppFont.Coolvetica,
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 14.sp,
                                 )
                                 Text(
-                                    text = formatDuration(totalDuration),
+                                    text = formatDuration(scaledTotalDuration),
                                     color = Color.White,
                                     fontFamily = AppFont.Coolvetica,
                                     fontWeight = FontWeight.Normal,
@@ -709,14 +723,14 @@ fun NowPlaying(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = formatDuration(displayCurrentTime),
+                                text = formatDuration(scaledCurrentTime),
                                 color = Color.White,
                                 fontFamily = AppFont.Coolvetica,
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 14.sp,
                             )
                             Text(
-                                text = formatDuration(totalDuration),
+                                text = formatDuration(scaledTotalDuration),
                                 color = Color.White,
                                 fontFamily = AppFont.Coolvetica,
                                 fontWeight = FontWeight.Normal,
