@@ -9,7 +9,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,29 +29,25 @@ import androidx.compose.material.icons.outlined.FormatAlignCenter
 import androidx.compose.material.icons.outlined.FormatAlignLeft
 import androidx.compose.material.icons.outlined.FormatAlignRight
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -270,28 +264,86 @@ fun MoreOptionsBottomSheet(
             )
             SectionCard {
                 // Playback Speed
-                Column(modifier = Modifier.padding(vertical = 12.dp)) {
-                    Text(
-                        text = "Kecepatan Putar",
-                        color = TextPrimaryColor,
-                        fontSize = 15.sp,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp, top = 0.dp)
-                    )
+                Column(modifier = Modifier.padding(top = 16.dp, bottom = 12.dp)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val speedOptions = listOf(0.5f, 0.7f, 0.75f, 0.8f, 0.85f, 0.9f, 0.95f, 1.0f, 1.05f, 1.1f, 1.15f, 1.2f, 1.25f, 1.5f, 2.0f)
-                        speedOptions.forEach { speed ->
-                            CustomChip(
-                                selected = playbackSpeed == speed,
-                                text = if (speed == 1.0f) "Normal" else "${speed}x",
-                                onClick = { onPlaybackSpeedChange(speed) }
-                            )
-                        }
+                        Text(
+                            text = "Kecepatan Putar",
+                            color = TextPrimaryColor,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (playbackSpeed == 1.0f) "Normal" else "${playbackSpeed}x",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(Color.White.copy(0.1f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val speedOptions = listOf(0.5f, 0.6f, 0.7f, 0.75f, 0.8f, 0.85f, 0.9f, 0.95f, 1.0f, 1.05f, 1.1f, 1.15f, 1.2f, 1.25f, 1.3f, 1.4f, 1.5f, 1.75f, 2.0f)
+                    val currentIndex = speedOptions.indexOf(playbackSpeed).coerceAtLeast(0)
+
+                    Slider(
+                        value = currentIndex.toFloat(),
+                        onValueChange = { index ->
+                            onPlaybackSpeedChange(speedOptions[index.toInt()])
+                        },
+                        valueRange = 0f..(speedOptions.size - 1).toFloat(),
+                        steps = speedOptions.size - 2,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(0.2f),
+                            activeTickColor = Color.Transparent,
+                            inactiveTickColor = Color.Transparent
+                        )
+                    )
+
+                    // Speed Labels Alignment
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                    ) {
+                        // Left Label (0.5x)
+                        Text(
+                            text = "0.5x",
+                            color = if (playbackSpeed == 0.5f) Color.White else TextSecondaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = if (playbackSpeed == 0.5f) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        )
+
+                        // Center Label (Normal) - Index 8 of 18 (total 19 points)
+                        val normalBias = (8f / 18f) * 2 - 1
+                        Text(
+                            text = "Normal",
+                            color = if (playbackSpeed == 1.0f) Color.White else TextSecondaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = if (playbackSpeed == 1.0f) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.align(BiasAlignment(normalBias, 0f))
+                        )
+
+                        // Right Label (2.0x)
+                        Text(
+                            text = "2.0x",
+                            color = if (playbackSpeed == 2.0f) Color.White else TextSecondaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = if (playbackSpeed == 2.0f) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
                     }
                 }
 
