@@ -93,8 +93,6 @@ data class PlayerUiState(
         val hasError: Boolean = false,
         val errorType: String? = null,
 
-        // Lyrics Config
-        // Lyrics Config
         val lyricsConfig: com.example.remusic.ui.screen.playmusic.LyricsConfig =
                 com.example.remusic.ui.screen.playmusic.LyricsConfig(),
 
@@ -1175,6 +1173,13 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _uiState.update { it.copy(playerBackgroundStyle = style) }
             userPreferencesRepository.savePlayerBackgroundStyle(style)
+            
+            if (style == com.example.remusic.data.preferences.PlayerBackgroundStyle.BLURRED_COVER) {
+                if (_uiState.value.lyricsConfig.inactiveLyricsColor == com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.BLACK) {
+                    _uiState.update { it.copy(isThemeAppliedToLyrics = false) }
+                    userPreferencesRepository.saveThemeApplyToLyrics(false)
+                }
+            }
         }
     }
 
@@ -1999,7 +2004,44 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun updateLyricsConfig(config: com.example.remusic.ui.screen.playmusic.LyricsConfig) {
-        viewModelScope.launch(Dispatchers.IO) { userPreferencesRepository.saveLyricsConfig(config) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val oldConfig = userPreferencesRepository.lyricsConfigFlow.first()
+            val isChangingToBlack = config.inactiveLyricsColor == com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.BLACK && oldConfig.inactiveLyricsColor != com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.BLACK
+            val isChangingFromBlack = oldConfig.inactiveLyricsColor == com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.BLACK && config.inactiveLyricsColor != com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.BLACK
+
+            if (isChangingToBlack) {
+                // Save current top/bottom indices as previous
+                val currentTop = userPreferencesRepository.gradientTopColorIndexFlow.first()
+                val currentBottom = userPreferencesRepository.gradientBottomColorIndexFlow.first()
+                
+                userPreferencesRepository.savePreviousGradientTopColorIndex(currentTop)
+                userPreferencesRepository.savePreviousGradientBottomColorIndex(currentBottom)
+
+                // Enforce auto style and mapped indices
+                userPreferencesRepository.saveGradientStyle(com.example.remusic.data.preferences.GradientStyle.AUTO)
+                
+                val newTop = if (currentTop > 1) currentTop - 2 else currentTop
+                val newBottom = if (currentBottom > 1) currentBottom - 2 else currentBottom
+
+                userPreferencesRepository.saveGradientTopColorIndex(newTop)
+                userPreferencesRepository.saveGradientBottomColorIndex(newBottom)
+
+                // If currently using BLURRED_COVER, force lyrics theme to disabled
+                val currentPlayerBgStyle = userPreferencesRepository.playerBackgroundStyleFlow.first()
+                if (currentPlayerBgStyle == com.example.remusic.data.preferences.PlayerBackgroundStyle.BLURRED_COVER) {
+                    _uiState.update { it.copy(isThemeAppliedToLyrics = false) }
+                    userPreferencesRepository.saveThemeApplyToLyrics(false)
+                }
+            } else if (isChangingFromBlack) {
+                // Restore previous top/bottom indices
+                val prevTop = userPreferencesRepository.previousGradientTopColorIndexFlow.first()
+                val prevBottom = userPreferencesRepository.previousGradientBottomColorIndexFlow.first()
+                userPreferencesRepository.saveGradientTopColorIndex(prevTop)
+                userPreferencesRepository.saveGradientBottomColorIndex(prevBottom)
+            }
+
+            userPreferencesRepository.saveLyricsConfig(config)
+        }
     }
 
     // --- QUEUE MANAGEMENT ---

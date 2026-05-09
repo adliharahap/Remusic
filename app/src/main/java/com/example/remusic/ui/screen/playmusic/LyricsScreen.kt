@@ -7,6 +7,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -77,6 +79,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -96,6 +100,7 @@ import com.example.remusic.data.model.LyricLine
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.utils.GoogleFontDownloader
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
@@ -272,6 +277,8 @@ fun LyricsScreen(
                                     isPassed = index <= activeIndex,
                                     isTranslateLyrics = isTranslateLyrics,
                                     lyricsConfig = lyricsConfig,
+                                    lazyListState = lazyListState,
+                                    index = index,
                                     onSeekToMs = onSeekToMs
                                 )
                             }
@@ -461,15 +468,32 @@ fun LyricLineItem(
     isPassed: Boolean,
     isTranslateLyrics: Boolean,
     lyricsConfig: LyricsConfig,
+    lazyListState: androidx.compose.foundation.lazy.LazyListState? = null,
+    index: Int = -1,
     onSeekToMs: (Long) -> Unit = {}
 ) {
-    val animationSpec = tween<Float>(durationMillis = 200, delayMillis = 80)
-    val colorAnimationSpec = tween<Color>(durationMillis = 200, delayMillis = 80)
+    val animationSpec = tween<Float>(durationMillis = 550, easing = LinearOutSlowInEasing)
+    val colorAnimationSpec = tween<Color>(durationMillis = 450, easing = LinearOutSlowInEasing)
 
-    val fontFamily = when (lyricsConfig.fontFamily) {
-        LyricsFontFamily.POPPINS -> AppFont.Poppins
-        LyricsFontFamily.ROBOTO -> AppFont.RobotoRegular
-        LyricsFontFamily.HELVETICA -> AppFont.Helvetica
+    val context = LocalContext.current
+
+    val fontFamily = when {
+        lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
+        lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
+        lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
+        lyricsConfig.fontFamily.isOnline -> {
+            // Load font dari cache file (filesDir/fonts/<name>.ttf)
+            val typeface = GoogleFontDownloader.loadCachedTypeface(
+                context, lyricsConfig.fontFamily.googleFontName
+            )
+            if (typeface != null) {
+                androidx.compose.ui.text.font.FontFamily(typeface)
+            } else {
+                // Fallback ke Poppins jika belum diunduh
+                AppFont.Poppins
+            }
+        }
+        else -> AppFont.Poppins
     }
 
     val textAlign = when (lyricsConfig.align) {
@@ -490,16 +514,45 @@ fun LyricLineItem(
     
     val finalFontSize = (baseFontSize + addedSize).sp
 
-    val fontSize by animateFloatAsState(
-        targetValue = finalFontSize.value,
+    // We don't animate fontSize anymore to prevent reflow. We use the target finalFontSize directly.
+    val fontSize = finalFontSize.value
+
+    // Animation for Scale
+    val targetScale = if (isActive && lyricsConfig.animateActiveLyric) 1.07f else 1.0f
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
         animationSpec = animationSpec,
-        label = "fontSizeAnimation"
+        label = "scaleAnimation"
     )
+
+    // Gap (Padding) - dibuat statis agar tidak ada jedug saat scroll (LazyColumn re-measurement)
+    val verticalPadding = if (lyricsConfig.animateActiveLyric) 8.dp else 2.dp
+
+    // Margin ekstra horizontal agar lirik yang discale tidak terpotong (keluar layar)
+    val extraHorizontalPadding = if (lyricsConfig.animateActiveLyric) {
+        when (lyricsConfig.align) {
+            LyricsAlign.LEFT -> PaddingValues(end = 16.dp)
+            LyricsAlign.CENTER -> PaddingValues(horizontal = 8.dp)
+            LyricsAlign.RIGHT -> PaddingValues(start = 16.dp)
+        }
+    } else {
+        PaddingValues(0.dp)
+    }
+
+    val transformOrigin = when (lyricsConfig.align) {
+        LyricsAlign.LEFT -> TransformOrigin(0f, 0.5f)
+        LyricsAlign.CENTER -> TransformOrigin(0.5f, 0.5f)
+        LyricsAlign.RIGHT -> TransformOrigin(1f, 0.5f)
+    }
 
     val targetFontColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
         Color.White
     } else {
-        Color.White.copy(alpha = 0.5f)
+        if (lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK) {
+            Color.Black
+        } else {
+            Color.White.copy(alpha = 0.5f)
+        }
     }
 
     val fontColor by animateColorAsState(
@@ -511,7 +564,11 @@ fun LyricLineItem(
     val targetTranslatedColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
         Color.White.copy(alpha = 0.9f)
     } else {
-        Color.White.copy(alpha = 0.5f)
+        if (lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK) {
+            Color.Black.copy(alpha = 0.8f)
+        } else {
+            Color.White.copy(alpha = 0.5f)
+        }
     }
 
     val translatedColor by animateColorAsState(
@@ -531,17 +588,54 @@ fun LyricLineItem(
                     ) { onSeekToMs(line.timestamp) }
                 } else Modifier
             )
-            .padding(vertical = 2.dp),
+            .padding(vertical = verticalPadding)
+            .padding(extraHorizontalPadding)
+            .graphicsLayer {
+                if (lyricsConfig.animateActiveLyric && lazyListState != null && index != -1) {
+                    val itemInfo = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                    if (itemInfo != null) {
+                        val viewportCenterY = lazyListState.layoutInfo.viewportEndOffset / 2f
+                        val itemCenterY = itemInfo.offset + (itemInfo.size / 2f)
+                        
+                        // Distance from center (-1f to 1f)
+                        val normalizedDistance = ((itemCenterY - viewportCenterY) / viewportCenterY).coerceIn(-1f, 1f)
+                        
+                        if (normalizedDistance > 0f) {
+                            // Rotate around X axis (bottom items tilt forward)
+                            rotationX = normalizedDistance * -35f
+                            // Parallax stretching (push items away from center slightly)
+                            translationY = (normalizedDistance * normalizedDistance) * 30f
+                            // Pengecilan dinamis (semakin ke bawah, semakin kecil)
+                            val depthScale = 1f - (normalizedDistance * 0.15f)
+                            scaleX = depthScale
+                            scaleY = depthScale
+                        } else {
+                            // Bagian atas dibiarkan rata (flat)
+                            rotationX = 0f
+                            translationY = 0f
+                            scaleX = 1f
+                            scaleY = 1f
+                        }
+                    }
+                }
+            },
         horizontalAlignment = horizontalAlignment 
     ) {
         Text(
             text = line.originalText,
             color = fontColor,
             fontSize = fontSize.sp,
+            lineHeight = (fontSize * 1.2f).sp,
             fontFamily = fontFamily,
             fontWeight = lyricsConfig.mainFontWeight.weight,
             textAlign = textAlign,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.transformOrigin = transformOrigin
+                }
         )
 
         AnimatedVisibility(
@@ -570,7 +664,13 @@ fun LyricLineItem(
                     fontFamily = fontFamily,
                     fontWeight = lyricsConfig.translationFontWeight.weight,
                     textAlign = textAlign,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            this.transformOrigin = transformOrigin
+                        }
                 )
             }
         }

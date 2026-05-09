@@ -1,9 +1,12 @@
 package com.example.remusic.ui.screen.playmusic
 
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Download
@@ -50,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -64,6 +69,8 @@ import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.utils.GoogleFontDownloader
+import kotlinx.coroutines.launch
 
 enum class LyricsBackgroundStyle(val displayName: String) {
     LINEAR_GRADIENT("Linear Gradient"),
@@ -84,8 +91,15 @@ data class LyricsConfig(
     val translationFontWeight: LyricsFontWeight = LyricsFontWeight.REGULAR,
     val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD,
     val clickLyricsToSeek: Boolean = true,
-    val backgroundStyle: LyricsBackgroundStyle = LyricsBackgroundStyle.LINEAR_GRADIENT
+    val backgroundStyle: LyricsBackgroundStyle = LyricsBackgroundStyle.LINEAR_GRADIENT,
+    val animateActiveLyric: Boolean = true,
+    val inactiveLyricsColor: InactiveLyricsColor = InactiveLyricsColor.FADED_WHITE
 )
+
+enum class InactiveLyricsColor(val displayName: String) {
+    FADED_WHITE("Putih Pudar"),
+    BLACK("Hitam")
+}
 
 enum class LyricsFontWeight(val displayName: String, val weight: FontWeight) {
     LIGHT("Light", FontWeight.Light),
@@ -96,10 +110,25 @@ enum class LyricsFontWeight(val displayName: String, val weight: FontWeight) {
     BLACK("Black", FontWeight.Black)
 }
 
-enum class LyricsFontFamily(val displayName: String) {
+enum class LyricsFontFamily(
+    val displayName: String,
+    val isOnline: Boolean = false,
+    val googleFontName: String = ""
+) {
+    // --- Font Bawaan (Offline) ---
     POPPINS("Poppins"),
     ROBOTO("Roboto"),
-    HELVETICA("Helvetica")
+    HELVETICA("Helvetica"),
+
+    // --- Google Fonts (Online, bisa diunduh offline) ---
+    NUNITO("Nunito",           isOnline = true, googleFontName = "Nunito"),
+    LATO("Lato",               isOnline = true, googleFontName = "Lato"),
+    MONTSERRAT("Montserrat",   isOnline = true, googleFontName = "Montserrat"),
+    INTER("Inter",             isOnline = true, googleFontName = "Inter"),
+    PLAYFAIR_DISPLAY("Playfair Display", isOnline = true, googleFontName = "Playfair_Display"),
+    RALEWAY("Raleway",         isOnline = true, googleFontName = "Raleway"),
+    JOSEFIN_SANS("Josefin Sans", isOnline = true, googleFontName = "Josefin_Sans"),
+    PACIFICO("Pacifico",       isOnline = true, googleFontName = "Pacifico"),
 }
 
 enum class LyricsAlign {
@@ -129,7 +158,7 @@ fun MoreOptionsBottomSheet(
     lyricsConfig: LyricsConfig = LyricsConfig(),
     onLyricsConfigChange: (LyricsConfig) -> Unit = {},
     // Background Style
-    gradientStyle: com.example.remusic.data.preferences.GradientStyle = com.example.remusic.data.preferences.GradientStyle.PRIMARY,
+    gradientStyle: com.example.remusic.data.preferences.GradientStyle = com.example.remusic.data.preferences.GradientStyle.AUTO,
     onGradientStyleChange: (com.example.remusic.data.preferences.GradientStyle) -> Unit = {},
     // Gradient Color Positions
     gradientTopColorIndex: Int = 0,
@@ -150,7 +179,9 @@ fun MoreOptionsBottomSheet(
     isThemeAppliedToNowPlaying: Boolean = true,
     onThemeAppliedToNowPlayingChange: (Boolean) -> Unit = {},
     isThemeAppliedToLyrics: Boolean = true,
-    onThemeAppliedToLyricsChange: (Boolean) -> Unit = {}
+    onThemeAppliedToLyricsChange: (Boolean) -> Unit = {},
+    // Font Picker Navigation
+    onOpenFontPicker: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -380,9 +411,9 @@ fun MoreOptionsBottomSheet(
             // --- 4. APPEARANCE SECTION ---
             SectionTitle(
                 title = "Appearance",
-                actionText = if (gradientStyle != com.example.remusic.data.preferences.GradientStyle.PRIMARY || gradientTopColorIndex != 0 || gradientBottomColorIndex != 1) "Reset" else null,
+                actionText = if (gradientStyle != com.example.remusic.data.preferences.GradientStyle.AUTO || gradientTopColorIndex != 0 || gradientBottomColorIndex != 1) "Reset" else null,
                 onActionClick = {
-                    onGradientStyleChange(com.example.remusic.data.preferences.GradientStyle.PRIMARY)
+                    onGradientStyleChange(com.example.remusic.data.preferences.GradientStyle.AUTO)
                     onGradientTopColorIndexChange(0)
                     onGradientBottomColorIndexChange(1)
                 }
@@ -415,6 +446,8 @@ fun MoreOptionsBottomSheet(
                 
                 ItemDivider()
 
+                val isInactiveBlack = lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK
+
                 // Top Color
                 Column(modifier = Modifier.padding(vertical = 12.dp)) {
                     Text(
@@ -434,6 +467,7 @@ fun MoreOptionsBottomSheet(
                             CustomChip(
                                 selected = gradientTopColorIndex == index,
                                 text = "Color ${index + 1}",
+                                enabled = if (isInactiveBlack) index < 2 else true,
                                 onClick = { onGradientTopColorIndexChange(index) }
                             )
                         }
@@ -461,6 +495,7 @@ fun MoreOptionsBottomSheet(
                             CustomChip(
                                 selected = gradientBottomColorIndex == index,
                                 text = "Color ${index + 1}",
+                                enabled = if (isInactiveBlack) index < 2 else true,
                                 onClick = { onGradientBottomColorIndexChange(index) }
                             )
                         }
@@ -499,11 +534,12 @@ fun MoreOptionsBottomSheet(
                         checked = isThemeAppliedToNowPlaying,
                         onCheckedChange = { onThemeAppliedToNowPlayingChange(it) }
                     )
-                    ItemDivider()
+                    val isBlurredDisabled = playerBackgroundStyle == com.example.remusic.data.preferences.PlayerBackgroundStyle.BLURRED_COVER && lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK
                     SettingToggleRow(
                         title = "Terapkan di Lyrics",
-                        subtitle = "Tema aktif di layar lirik lagu",
-                        checked = isThemeAppliedToLyrics,
+                        subtitle = if (isBlurredDisabled) "Tidak tersedia untuk Blurred Cover dengan warna inactive Hitam" else "Tema aktif di layar lirik lagu",
+                        checked = if (isBlurredDisabled) false else isThemeAppliedToLyrics,
+                        enabled = !isBlurredDisabled,
                         onCheckedChange = { onThemeAppliedToLyricsChange(it) }
                     )
                 }
@@ -518,16 +554,13 @@ fun MoreOptionsBottomSheet(
                 onActionClick = { onLyricsConfigChange(LyricsConfig()) }
             )
             SectionCard {
-                // Font Family
-                var fontMenuExpanded by remember { mutableStateOf(false) }
-                SettingDropdownRow(
-                    title = "Font Lirik",
-                    value = lyricsConfig.fontFamily.displayName,
-                    expanded = fontMenuExpanded,
-                    onExpandedChange = { fontMenuExpanded = it },
-                    items = LyricsFontFamily.values().toList(),
-                    itemLabel = { it.displayName },
-                    onItemSelected = { onLyricsConfigChange(lyricsConfig.copy(fontFamily = it)) }
+                // Font Family — Tap untuk buka LyricsFontBottomSheet
+                FontNavRow(
+                    selectedFontName = lyricsConfig.fontFamily.displayName,
+                    onClick = {
+                        onOpenFontPicker()
+                        onDismiss()
+                    }
                 )
 
                 ItemDivider()
@@ -692,12 +725,74 @@ fun MoreOptionsBottomSheet(
                     checked = lyricsConfig.clickLyricsToSeek,
                     onCheckedChange = { onLyricsConfigChange(lyricsConfig.copy(clickLyricsToSeek = it)) }
                 )
+
+                ItemDivider()
+
+                // Animate Active Lyric
+                SettingToggleRow(
+                    title = "Animasi Lirik Aktif",
+                    subtitle = "Perbesar dan beri jarak pada lirik yang sedang diputar",
+                    checked = lyricsConfig.animateActiveLyric,
+                    onCheckedChange = { onLyricsConfigChange(lyricsConfig.copy(animateActiveLyric = it)) }
+                )
+
+                ItemDivider()
+
+                // Inactive Lyrics Color
+                var inactiveColorMenuExpanded by remember { mutableStateOf(false) }
+                SettingDropdownRow(
+                    title = "Warna Lirik Inactive",
+                    value = lyricsConfig.inactiveLyricsColor.displayName,
+                    expanded = inactiveColorMenuExpanded,
+                    onExpandedChange = { inactiveColorMenuExpanded = it },
+                    items = InactiveLyricsColor.values().toList(),
+                    itemLabel = { it.displayName },
+                    onItemSelected = { onLyricsConfigChange(lyricsConfig.copy(inactiveLyricsColor = it)) }
+                )
             }
         }
     }
 }
 
 // --- REUSABLE UI COMPONENTS (Agar kode lebih bersih) ---
+
+@Composable
+private fun FontNavRow(
+    selectedFontName: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "Font Lirik",
+            color = TextPrimaryColor,
+            fontSize = 15.sp
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = selectedFontName,
+                color = TextSecondaryColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = TextSecondaryColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+
 
 @Composable
 private fun SectionTitle(title: String, actionText: String? = null, onActionClick: () -> Unit = {}) {
@@ -786,21 +881,28 @@ private fun MenuOptionItem(
 private fun CustomChip(
     selected: Boolean,
     text: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) Color.White else Color.White.copy(0.08f))
-            .clickable(onClick = onClick)
+            .background(
+                if (selected) Color.White 
+                else if (!enabled) Color.White.copy(alpha = 0.02f)
+                else Color.White.copy(alpha = 0.08f)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = if (selected) Color.Black else Color.White,
+            color = if (selected) Color.Black 
+                    else if (!enabled) Color.White.copy(alpha = 0.2f)
+                    else Color.White,
             fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
         )
     }
 }
@@ -810,26 +912,28 @@ private fun SettingToggleRow(
     title: String,
     subtitle: String?,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = TextPrimaryColor, fontSize = 15.sp)
+            Text(text = title, color = if (enabled) TextPrimaryColor else TextPrimaryColor.copy(alpha = 0.3f), fontSize = 15.sp)
             if (subtitle != null) {
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(text = subtitle, color = TextSecondaryColor, fontSize = 12.sp, lineHeight = 16.sp)
+                Text(text = subtitle, color = if (enabled) TextSecondaryColor else TextSecondaryColor.copy(alpha = 0.3f), fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
         Spacer(modifier = Modifier.width(16.dp))
         Switch(
             checked = checked,
+            enabled = enabled,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.Black,

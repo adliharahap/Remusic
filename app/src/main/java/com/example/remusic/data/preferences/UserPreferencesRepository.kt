@@ -22,7 +22,8 @@ enum class GradientStyle(val displayName: String) {
     VIBRANT("Vibrant"),
     MUTED("Muted"),
     DARK("Dark"),
-    LIGHT("Light")
+    LIGHT("Light"),
+    AUTO("Auto")
 }
 
 enum class PlayerBackgroundStyle(val displayName: String) {
@@ -109,6 +110,8 @@ class UserPreferencesRepository(private val context: Context) {
     private val LYRICS_TRANSLATE_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_translate_font_weight")
     private val LYRICS_MAIN_FONT_WEIGHT_KEY = stringPreferencesKey("lyrics_main_font_weight")
     private val LYRICS_CLICK_TO_SEEK_KEY = booleanPreferencesKey("lyrics_click_to_seek")
+    private val LYRICS_ANIMATE_ACTIVE_KEY = booleanPreferencesKey("lyrics_animate_active")
+    private val LYRICS_INACTIVE_COLOR_KEY = stringPreferencesKey("lyrics_inactive_color")
 
     val lyricsConfigFlow: Flow<com.example.remusic.ui.screen.playmusic.LyricsConfig> =
             context.dataStore.data.map { preferences ->
@@ -127,6 +130,8 @@ class UserPreferencesRepository(private val context: Context) {
                 val translateFontWeightName = preferences[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR.name
                 val mainFontWeightName = preferences[LYRICS_MAIN_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD.name
                 val clickLyricsToSeek = preferences[LYRICS_CLICK_TO_SEEK_KEY] ?: true
+                val animateActiveLyric = preferences[LYRICS_ANIMATE_ACTIVE_KEY] ?: true
+                val inactiveColorName = preferences[LYRICS_INACTIVE_COLOR_KEY] ?: com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.FADED_WHITE.name
 
                 val fontFamily =
                         try {
@@ -156,6 +161,12 @@ class UserPreferencesRepository(private val context: Context) {
                     com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD
                 }
 
+                val inactiveColor = try {
+                    com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.valueOf(inactiveColorName)
+                } catch (e: IllegalArgumentException) {
+                    com.example.remusic.ui.screen.playmusic.InactiveLyricsColor.FADED_WHITE
+                }
+
                 com.example.remusic.ui.screen.playmusic.LyricsConfig(
                         fontFamily = fontFamily,
                         fontSize = fontSize,
@@ -166,7 +177,9 @@ class UserPreferencesRepository(private val context: Context) {
                         translateFontSize = translateFontSize,
                         translationFontWeight = fontWeight,
                         mainFontWeight = mainWeight,
-                        clickLyricsToSeek = clickLyricsToSeek
+                        clickLyricsToSeek = clickLyricsToSeek,
+                        animateActiveLyric = animateActiveLyric,
+                        inactiveLyricsColor = inactiveColor
                 )
             }
 
@@ -182,6 +195,8 @@ class UserPreferencesRepository(private val context: Context) {
             settings[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] = config.translationFontWeight.name
             settings[LYRICS_MAIN_FONT_WEIGHT_KEY] = config.mainFontWeight.name
             settings[LYRICS_CLICK_TO_SEEK_KEY] = config.clickLyricsToSeek
+            settings[LYRICS_ANIMATE_ACTIVE_KEY] = config.animateActiveLyric
+            settings[LYRICS_INACTIVE_COLOR_KEY] = config.inactiveLyricsColor.name
         }
     }
 
@@ -192,6 +207,8 @@ class UserPreferencesRepository(private val context: Context) {
     private val GRADIENT_STYLE_KEY = stringPreferencesKey("gradient_style")
     private val GRADIENT_TOP_COLOR_INDEX_KEY = intPreferencesKey("gradient_top_color_index")
     private val GRADIENT_BOTTOM_COLOR_INDEX_KEY = intPreferencesKey("gradient_bottom_color_index")
+    private val PREVIOUS_GRADIENT_TOP_COLOR_INDEX_KEY = intPreferencesKey("previous_gradient_top_color_index")
+    private val PREVIOUS_GRADIENT_BOTTOM_COLOR_INDEX_KEY = intPreferencesKey("previous_gradient_bottom_color_index")
     private val PLAYER_BACKGROUND_STYLE_KEY = stringPreferencesKey("player_background_style")
 
     val playerBackgroundStyleFlow: Flow<PlayerBackgroundStyle> =
@@ -236,11 +253,11 @@ class UserPreferencesRepository(private val context: Context) {
 
     val gradientStyleFlow: Flow<GradientStyle> =
         context.dataStore.data.map { preferences ->
-            val styleName = preferences[GRADIENT_STYLE_KEY] ?: GradientStyle.PRIMARY.name
+            val styleName = preferences[GRADIENT_STYLE_KEY] ?: GradientStyle.AUTO.name
             try {
                 GradientStyle.valueOf(styleName)
             } catch (e: IllegalArgumentException) {
-                GradientStyle.PRIMARY
+                GradientStyle.AUTO
             }
         }
 
@@ -260,6 +277,20 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun saveGradientBottomColorIndex(index: Int) {
         context.dataStore.edit { settings -> settings[GRADIENT_BOTTOM_COLOR_INDEX_KEY] = index }
+    }
+
+    val previousGradientTopColorIndexFlow: Flow<Int> =
+        context.dataStore.data.map { preferences -> preferences[PREVIOUS_GRADIENT_TOP_COLOR_INDEX_KEY] ?: 0 }
+
+    val previousGradientBottomColorIndexFlow: Flow<Int> =
+        context.dataStore.data.map { preferences -> preferences[PREVIOUS_GRADIENT_BOTTOM_COLOR_INDEX_KEY] ?: 1 }
+
+    suspend fun savePreviousGradientTopColorIndex(index: Int) {
+        context.dataStore.edit { settings -> settings[PREVIOUS_GRADIENT_TOP_COLOR_INDEX_KEY] = index }
+    }
+
+    suspend fun savePreviousGradientBottomColorIndex(index: Int) {
+        context.dataStore.edit { settings -> settings[PREVIOUS_GRADIENT_BOTTOM_COLOR_INDEX_KEY] = index }
     }
 
     val lastSongIdFlow: Flow<String?> =

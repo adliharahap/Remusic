@@ -122,17 +122,40 @@ fun PlayMusicScreen(
         lyricsViewModel.updatePlaybackPosition(uiState.currentPosition)
     }
 
+    // 1. Logika Overriding Index Warna jika lirik Inactive adalah Hitam
+    val topIndex = uiState.gradientTopColorIndex
+    val bottomIndex = uiState.gradientBottomColorIndex
+    val inactiveColor = uiState.lyricsConfig.inactiveLyricsColor
+
+    val (finalTopIndex, finalBottomIndex) = if (inactiveColor == InactiveLyricsColor.BLACK) {
+        // Jika di 3 (index 2) -> turunkan ke 1 (index 0)
+        // Jika di 4 (index 3) -> turunkan ke 2 (index 1)
+        val t = when (topIndex) {
+            2 -> 0
+            3 -> 1
+            else -> topIndex
+        }
+        val b = when (bottomIndex) {
+            2 -> 0
+            3 -> 1
+            else -> bottomIndex
+        }
+        t to b
+    } else {
+        topIndex to bottomIndex
+    }
+
     // 2. ANIMASIKAN setiap warna secara terpisah
     // Animasi untuk warna atas (top color)
     val animatedTopColor by animateColorAsState(
-        targetValue = uiState.dominantColors.getOrElse(uiState.gradientTopColorIndex) { Color.DarkGray },
+        targetValue = uiState.dominantColors.getOrElse(finalTopIndex) { Color.DarkGray },
         animationSpec = tween(1000),
         label = "topColorAnimation"
     )
 
     // Animasi untuk warna bawah (bottom color)
     val animatedBottomColor by animateColorAsState(
-        targetValue = uiState.dominantColors.getOrElse(uiState.gradientBottomColorIndex) { Color.Black },
+        targetValue = uiState.dominantColors.getOrElse(finalBottomIndex) { Color.Black },
         animationSpec = tween(1000),
         label = "bottomColorAnimation"
     )
@@ -170,6 +193,10 @@ fun PlayMusicScreen(
     // --- MORE OPTIONS SHEET STATE ---
     var showMoreOptionsSheet by remember { mutableStateOf(false) }
     val moreOptionsSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+
+    // --- FONT PICKER SHEET STATE ---
+    var showFontPickerSheet by remember { mutableStateOf(false) }
+    val fontPickerSheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // --- SNACKBAR LOGIC (Moved here for scope) ---
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -211,6 +238,14 @@ fun PlayMusicScreen(
             .fillMaxSize()
             .background(brush = animatedGradientBrush)
     ) {
+        // Overlay Putih Halus untuk Lirik Hitam agar mata tidak sakit (mengurangi saturasi background)
+        if (inactiveColor == InactiveLyricsColor.BLACK) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.35f))
+            )
+        }
         val screenHeight = maxHeight
 
         // ==========================================
@@ -537,11 +572,25 @@ fun PlayMusicScreen(
             isThemeAppliedToNowPlaying = uiState.isThemeAppliedToNowPlaying,
             onThemeAppliedToNowPlayingChange = { playMusicViewModel.setThemeAppliedToNowPlaying(it) },
             isThemeAppliedToLyrics = uiState.isThemeAppliedToLyrics,
-            onThemeAppliedToLyricsChange = { playMusicViewModel.setThemeAppliedToLyrics(it) }
+            onThemeAppliedToLyricsChange = { playMusicViewModel.setThemeAppliedToLyrics(it) },
+            onOpenFontPicker = { showFontPickerSheet = true }
+        )
+    }
+
+    // --- Font Picker Sheet ---
+    if (showFontPickerSheet) {
+        LyricsFontBottomSheet(
+            sheetState = fontPickerSheetState,
+            selectedFont = uiState.lyricsConfig.fontFamily,
+            onFontSelected = { font ->
+                playMusicViewModel.updateLyricsConfig(uiState.lyricsConfig.copy(fontFamily = font))
+            },
+            onDismiss = { showFontPickerSheet = false }
         )
     }
 
     // --- Global Add To Playlist Bottom Sheet ---
+
     val songToAdd = uiState.selectedSongForAddToPlaylist
     if (songToAdd != null) {
         val addToPlaylistSheetState = androidx.compose.material3.rememberModalBottomSheetState()

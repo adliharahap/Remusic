@@ -132,6 +132,65 @@ suspend fun extractGradientColorsFromImageUrl(
                         }
                     }
                 }
+                GradientStyle.AUTO -> {
+                    // Gunakan SELURUH swatch yang digenerate oleh Palette (bisa sampai 24 warna)
+                    val candidates = palette.swatches
+
+                    var bestScore = -1.0f
+
+                    for (swatch in candidates) {
+                        val hsl = swatch.hsl
+                        val hue = hsl[0]
+                        val saturation = hsl[1]
+                        val lightness = hsl[2]
+
+                        // 1. Eliminasi Ekstrem: Hindari warna terlalu gelap (hitam) atau terlalu terang (putih)
+                        if (lightness < 0.25f || lightness > 0.85f || saturation < 0.15f) {
+                            continue
+                        }
+
+                        // 2. Base Score: Utamakan populasi pixel, tetapi beri bobot besar pada seberapa hidup warnanya
+                        var score = swatch.population.toFloat() * (0.5f + (saturation * 3f))
+
+                        // 3. Multiplier Estetik (Hue)
+                        var hueMultiplier = 1.0f
+
+                        if (hue in 190f..260f) {
+                            // [REWARD] Biru Langit & Biru Laut (Sangat Estetik)
+                            hueMultiplier += 1.5f
+                        } else if (hue in 260f..330f) {
+                            // [REWARD] Ungu & Pink
+                            hueMultiplier += 1.2f
+                        } else if (hue >= 340f || hue <= 15f) {
+                            // [REWARD/PENALTY] Merah Terang bagus, tapi Merah Gelap (Darah/Maroon) dihindari
+                            if (lightness > 0.4f) hueMultiplier += 0.8f
+                            else hueMultiplier -= 0.5f 
+                        }
+                        
+                        // [PENALTY] Coklat (Hue 15-40 tapi kecerahan rendah)
+                        if (hue in 15f..40f && lightness < 0.5f) {
+                            hueMultiplier -= 0.6f
+                        }
+                        
+                        // [PENALTY] Kuning kusam & Skin tone
+                        if (hue in 40f..70f) {
+                            hueMultiplier -= 0.5f
+                        }
+
+                        // Terapkan multiplier (pastikan minimal 0.1 agar tidak tembus negatif)
+                        score *= hueMultiplier.coerceAtLeast(0.1f)
+
+                        if (score > bestScore) {
+                            bestScore = score
+                            bestSwatch = swatch
+                        }
+                    }
+
+                    // Fallback jika cover album murni hitam putih (semua swatch tereliminasi)
+                    if (bestSwatch == null) {
+                        bestSwatch = palette.mutedSwatch ?: palette.dominantSwatch ?: palette.vibrantSwatch ?: candidates.maxByOrNull { it.population }
+                    }
+                }
             }
 
             // Jika ada pemenang, proses warnanya menjadi 4 warna gradient
