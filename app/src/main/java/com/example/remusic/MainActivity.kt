@@ -377,6 +377,153 @@ class MainActivity : ComponentActivity() {
                                             }
                                         )
                                     }
+
+                                    // 5. TEMPORARY EXOPLAYER TEST BUTTON
+                                    val context = androidx.compose.ui.platform.LocalContext.current
+                                    // Buat HttpDataSource factory yang bisa di-update User-Agent nya
+                                    val okHttpClient = remember {
+                                        okhttp3.OkHttpClient.Builder()
+                                            .followRedirects(true)
+                                            .followSslRedirects(true)
+                                            .build()
+                                    }
+                                    val dataSourceFactory = remember {
+                                        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient)
+                                            .setDefaultRequestProperties(mapOf(
+                                                "Origin" to "https://www.youtube.com",
+                                                "Referer" to "https://www.youtube.com/"
+                                            ))
+                                    }
+                                    val exoPlayer = remember { 
+                                        androidx.media3.exoplayer.ExoPlayer.Builder(context)
+                                            .setMediaSourceFactory(
+                                                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
+                                                    .setDataSourceFactory(dataSourceFactory)
+                                            )
+                                            .build().apply {
+                                            addListener(object : androidx.media3.common.Player.Listener {
+                                                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                                                    android.util.Log.e("ExoPlayerTest", "Player Error: ${error.message}", error)
+                                                }
+                                                override fun onPlaybackStateChanged(playbackState: Int) {
+                                                    val stateString = when (playbackState) {
+                                                        androidx.media3.common.Player.STATE_IDLE -> "STATE_IDLE"
+                                                        androidx.media3.common.Player.STATE_BUFFERING -> "STATE_BUFFERING"
+                                                        androidx.media3.common.Player.STATE_READY -> "STATE_READY"
+                                                        androidx.media3.common.Player.STATE_ENDED -> "STATE_ENDED"
+                                                        else -> "UNKNOWN"
+                                                    }
+                                                    android.util.Log.d("ExoPlayerTest", "Playback State: $stateString")
+                                                }
+                                            })
+                                        }
+                                    }
+                                    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+                                    androidx.compose.material3.FloatingActionButton(
+                                        onClick = {
+                                            if (exoPlayer.isPlaying) {
+                                                exoPlayer.pause()
+                                            } else {
+                                                Toast.makeText(context, "Mencari URL lagu...", Toast.LENGTH_SHORT).show()
+                                                android.util.Log.d("ExoPlayerTest", "Mulai mencari lagu...")
+                                                coroutineScope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        // LANGKAH 1: Fetch visitorData DULU sebelum player request
+                                                        // Ini wajib agar spc parameter di URL di-sign dengan visitorData yang sama
+                                                        if (com.metrolist.innertube.YouTube.visitorData == null) {
+                                                            try {
+                                                                val vd = com.metrolist.innertube.YouTube.visitorData().getOrNull()
+                                                                if (vd != null) {
+                                                                    com.metrolist.innertube.YouTube.visitorData = vd
+                                                                    android.util.Log.d("ExoPlayerTest", "✅ VisitorData disiapkan: ${vd.take(20)}...")
+                                                                }
+                                                            } catch (e: Exception) {
+                                                                android.util.Log.w("ExoPlayerTest", "⚠️ Gagal fetch visitorData: ${e.message}")
+                                                            }
+                                                        }
+                                                        
+                                                        // LANGKAH 2: Baru fetch stream URL
+                                                        val videoId = "uvXtC13GlxQ"
+                                                        
+                                                        if (videoId != null) {
+                                                            android.util.Log.d("ExoPlayerTest", "Menggunakan Video ID: $videoId")
+                                                            
+                                                            val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                                                            android.util.Log.d("ExoPlayerTest", "Memanggil YTPlayerUtils.playerResponseForPlayback...")
+                                                            
+                                                            val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
+                                                                videoId = videoId,
+                                                                playlistId = null,
+                                                                audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
+                                                                connectivityManager = connectivityManager
+                                                            )
+                                                            
+                                                            val streamUrl = playbackResult.getOrNull()?.streamUrl
+                                                            
+                                                            if (streamUrl != null) {
+                                                                android.util.Log.d("ExoPlayerTest", "Berhasil dapat URL dari YTPlayerUtils")
+                                                                android.util.Log.d("ExoPlayerTest", "URL: $streamUrl")
+                                                                
+
+                                                                // Deteksi client dari URL dan set User-Agent + header yang sesuai
+                                                                val userAgent = when {
+                                                                    streamUrl.contains("&c=IOS") || streamUrl.contains("c=IOS&") ->
+                                                                        "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)"
+                                                                    streamUrl.contains("&c=ANDROID") || streamUrl.contains("c=ANDROID&") ->
+                                                                        "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
+                                                                    streamUrl.contains("&c=ANDROID_VR") ->
+                                                                        "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)"
+                                                                    else ->
+                                                                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+                                                                }
+                                                                android.util.Log.d("ExoPlayerTest", "Menggunakan User-Agent: $userAgent")
+                                                                
+                                                                // Set headers termasuk X-Goog-Visitor-Id (wajib untuk URL dengan rqh=1)
+                                                                val requestHeaders = mutableMapOf(
+                                                                    "Origin" to "https://www.youtube.com",
+                                                                    "Referer" to "https://www.youtube.com/"
+                                                                )
+                                                                com.metrolist.innertube.YouTube.visitorData?.let { vd ->
+                                                                    requestHeaders["X-Goog-Visitor-Id"] = vd
+                                                                    android.util.Log.d("ExoPlayerTest", "Menambahkan X-Goog-Visitor-Id: $vd")
+                                                                }
+                                                                dataSourceFactory.setUserAgent(userAgent)
+                                                                dataSourceFactory.setDefaultRequestProperties(requestHeaders)
+                                                                
+                                                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                                    android.util.Log.d("ExoPlayerTest", "Menyiapkan ExoPlayer dengan URL")
+                                                                    val mediaItem = androidx.media3.common.MediaItem.fromUri(streamUrl)
+                                                                    exoPlayer.setMediaItem(mediaItem)
+                                                                    exoPlayer.prepare()
+                                                                    exoPlayer.play()
+                                                                    Toast.makeText(context, "Memutar audio YouTube...", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            } else {
+                                                                val errorMsg = playbackResult.exceptionOrNull()?.message ?: "Unknown error"
+                                                                android.util.Log.e("ExoPlayerTest", "Gagal mendapatkan stream URL: $errorMsg")
+                                                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                                    Toast.makeText(context, "Gagal mendapatkan stream URL", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            }
+                                                        } else {
+                                                            android.util.Log.e("ExoPlayerTest", "Gagal mencari lagu (Video ID null)")
+                                                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                                Toast.makeText(context, "Gagal mencari lagu", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("ExoPlayerTest", "Error saat proses: ${e.message}", e)
+                                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).padding(bottom = 80.dp)
+                                    ) {
+                                        Text("Play Test", modifier = Modifier.padding(16.dp))
+                                    }
                                 }
 
                                 // 2. Layer Bawah: Notifikasi Offline (Termakan Sedikit Layar)

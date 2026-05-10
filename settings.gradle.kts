@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "ReMusic"
 include(":app")
+include(":innertube")
  
