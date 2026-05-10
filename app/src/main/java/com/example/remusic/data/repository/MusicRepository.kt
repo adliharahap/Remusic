@@ -102,82 +102,113 @@ class MusicRepository(private val musicDao: MusicDao) {
         return musicDao.getAllLikedSongs()
     }
 
-    // --- LOGIC 1: RESOLVE URL (DIRECT TELEGRAM WITH RETRY) ---
+    // --- LOGIC 1: RESOLVE URL (MULTI-SOURCE: youtube / telegram / mp3 / offline) ---
     suspend fun getPlayableUrl(
             songId: String,
             title: String,
             telegramFileId: String?,
             fallbackUrl: String?,
-            artistId: String?
+            artistId: String?,
+            source: String? = null   // "youtube" | "telegram" | "mp3" | "offline" | null (auto)
     ): ResolvedSongUrl {
         Log.d(TAG, "================================================================")
-        Log.d(TAG, "🚀 [DIRECT MODE] Request Lagu: \"$title\"")
+        Log.d(TAG, "🚀 [RESOLVE] \"$title\" | source=$source | telegramFileId=$telegramFileId")
 
-        // 1. Validasi File ID Telegram
-        if (telegramFileId.isNullOrBlank()) {
-            Log.i(TAG, "⚠️ [NON-TELEGRAM] Lagu ini tidak memiliki Telegram File ID. Mencoba dari YouTube...")
-
-            var ytStreamUrl = ""
-            var ytExpiresInSeconds = 0
-            
-            try {
-                // Gunakan songId sebagai videoId untuk YouTube
-                val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
-                    videoId = songId,
-                    playlistId = null,
-                    audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
-                    connectivityManager = null
-                )
-                
-                val playbackData = playbackResult.getOrNull()
-                ytStreamUrl = playbackData?.streamUrl ?: ""
-                ytExpiresInSeconds = playbackData?.streamExpiresInSeconds ?: 0
-                if (ytStreamUrl.isNotBlank()) {
-                    Log.d(TAG, "✅ [YOUTUBE] Berhasil mendapatkan URL stream YouTube terdekripsi!")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ [YOUTUBE ERROR] Gagal fetch dari YouTube: ${e.message}")
-            }
-
-            val finalDirectUrl = ytStreamUrl.ifBlank { fallbackUrl ?: "" }
-
-            if (finalDirectUrl.isBlank()) {
-                Log.e(TAG, "❌ [ERROR] Fallback URL dan YouTube URL kosong.")
-                return ResolvedSongUrl("", "INVALID", ErrorType.NOT_FOUND)
-            }
-
-            val expiryTime = if (ytStreamUrl.isNotBlank() && ytExpiresInSeconds > 0) {
-                System.currentTimeMillis() + (ytExpiresInSeconds * 1000L)
-            } else {
-                Long.MAX_VALUE // Supabase URL abadi
-            }
-
-            // Simpan cache ke DB
-            val existingData = musicDao.getSongById(songId)
-            if (existingData != null) {
-                musicDao.updateSongUrl(songId, finalDirectUrl, expiryTime, System.currentTimeMillis())
-                Log.d(TAG, "💾 [SUCCESS] URL Non-Telegram diupdate di Database.")
-            } else {
-                val cacheDataToSave = CachedSong(
-                    id = songId,
-                    title = title,
-                    uploaderUserId = null,
-                    artistName = "Unknown",
-                    coverUrl = null,
-                    lyrics = null,
-                    telegramFileId = null,
-                    telegramDirectUrl = finalDirectUrl,
-                    urlExpiryTime = expiryTime,
-                    lastPlayedAt = System.currentTimeMillis(),
-                    artistId = artistId
-                )
-                musicDao.insertSong(cacheDataToSave)
-                Log.d(TAG, "💾 [SUCCESS] Lagu Non-Telegram baru dicatat di Database.")
-            }
-            
-            val sourceLabel = if (ytStreamUrl.isNotBlank()) "YOUTUBE" else "FALLBACK (Supabase)"
-            return ResolvedSongUrl(finalDirectUrl, sourceLabel)
+        // Deteksi source secara otomatis jika tidak eksplisit
+        val resolvedSource = when {
+            source == "offline" -> "offline"
+            source == "youtube" -> "youtube"
+            source == "mp3" -> "mp3"
+            source == "telegram" -> "telegram"
+            // Auto-detect (backward compatible):
+            !telegramFileId.isNullOrBlank() -> "telegram"       // Ada telegram file ID → telegram
+            fallbackUrl?.endsWith(".mp3") == true -> "mp3"      // URL berakhiran .mp3
+            else -> "youtube"                                    // Default: coba YouTube
         }
+        Log.d(TAG, "📍 Resolved source: $resolvedSource")
+
+        // ── OFFLINE ──────────────────────────────────────────────────────────────
+        if (resolvedSource == "offline") {
+            val cached = musicDao.getSongById(songId)
+            val offlineUrl = cached?.telegramDirectUrl ?: fallbackUrl ?: ""
+            if (offlineUrl.isNotBlank()) {
+                Log.d(TAG, "✅ [OFFLINE] Menggunakan file lokal: $offlineUrl")
+                return ResolvedSongUrl(offlineUrl, "OFFLINE")
+            }
+            Log.w(TAG, "⚠️ [OFFLINE] File lokal tidak ditemukan, fallback ke youtube")
+            // fallthrough ke youtube
+        }
+
+        // ── MP3 LINK ─────────────────────────────────────────────────────────────
+        if (resolvedSource == "mp3" && !fallbackUrl.isNullOrBlank()) {
+            Log.d(TAG, "✅ [MP3] Menggunakan direct MP3 link: $fallbackUrl")
+            return ResolvedSongUrl(fallbackUrl, "MP3_LINK")
+        }
+
+        // ── TELEGRAM ─────────────────────────────────────────────────────────────
+        if (resolvedSource == "telegram" && !telegramFileId.isNullOrBlank()) {
+            return resolveTelegramUrl(songId, title, telegramFileId, fallbackUrl, artistId)
+        }
+
+        // ── YOUTUBE ──────────────────────────────────────────────────────────────
+        Log.i(TAG, "🎵 [YOUTUBE] Mencoba stream YouTube untuk videoId: $songId")
+        var ytStreamUrl = ""
+        var ytExpiresInSeconds = 0
+
+        try {
+            val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
+                videoId = songId,
+                playlistId = null,
+                audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
+                connectivityManager = null
+            )
+            val playbackData = playbackResult.getOrNull()
+            ytStreamUrl = playbackData?.streamUrl ?: ""
+            ytExpiresInSeconds = playbackData?.streamExpiresInSeconds ?: 0
+            if (ytStreamUrl.isNotBlank()) {
+                Log.d(TAG, "✅ [YOUTUBE] Berhasil mendapatkan stream URL!")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [YOUTUBE ERROR] Gagal fetch dari YouTube: ${e.message}")
+        }
+
+        val finalUrl = ytStreamUrl.ifBlank { fallbackUrl ?: "" }
+
+        if (finalUrl.isBlank()) {
+            Log.e(TAG, "❌ [ERROR] Semua sumber gagal untuk lagu: $title")
+            return ResolvedSongUrl("", "INVALID", ErrorType.NOT_FOUND)
+        }
+
+        // Cache URL hasil YouTube ke DB
+        val expiryTime = if (ytStreamUrl.isNotBlank() && ytExpiresInSeconds > 0)
+            System.currentTimeMillis() + (ytExpiresInSeconds * 1000L)
+        else Long.MAX_VALUE
+
+        val existingData = musicDao.getSongById(songId)
+        if (existingData != null) {
+            musicDao.updateSongUrl(songId, finalUrl, expiryTime, System.currentTimeMillis())
+        } else {
+            musicDao.insertSong(CachedSong(
+                id = songId, title = title, uploaderUserId = null, artistName = "Unknown",
+                coverUrl = null, lyrics = null, telegramFileId = null,
+                telegramDirectUrl = finalUrl, urlExpiryTime = expiryTime,
+                lastPlayedAt = System.currentTimeMillis(), artistId = artistId,
+                source = "youtube"
+            ))
+        }
+
+        val sourceLabel = if (ytStreamUrl.isNotBlank()) "YOUTUBE" else "FALLBACK"
+        return ResolvedSongUrl(finalUrl, sourceLabel)
+    }
+
+    // ── Helper: Resolve Telegram URL dengan retry ─────────────────────────────
+    private suspend fun resolveTelegramUrl(
+            songId: String,
+            title: String,
+            telegramFileId: String,
+            fallbackUrl: String?,
+            artistId: String?
+    ): ResolvedSongUrl {
 
         // 2. Cek Cache Lokal (SQLite)
         val cachedSong = musicDao.getSongById(songId)

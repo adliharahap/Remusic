@@ -6,17 +6,18 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.example.remusic.utils.RemusicCache // Import file utils tadi
+import com.example.remusic.utils.RemusicCache
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 
 
 import kotlinx.coroutines.CoroutineScope
@@ -104,14 +105,23 @@ class MusicService : MediaSessionService() {
         // 1. Ambil Cache dari Singleton
         val simpleCache = RemusicCache.getInstance(this)
 
-        // 2. Siapkan HTTP Source (Internet)
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        // 2. Buat OkHttpClient untuk streaming (tanpa User-Agent hardcoded — akan di-set dinamis)
+        val streamingOkHttpClient = OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
 
-        // 2.5 Siapkan Default Data Source (Mendukung Content, File, HTTP, dll)
+        // 3. OkHttpDataSource.Factory — User-Agent & X-Goog-Visitor-Id di-set dinamis per lagu
+        val httpDataSourceFactory = OkHttpDataSource.Factory(streamingOkHttpClient)
+            .setDefaultRequestProperties(mapOf(
+                "Origin" to "https://www.youtube.com",
+                "Referer" to "https://www.youtube.com/"
+            ))
+
+        // 4. Siapkan Default Data Source (Mendukung Content, File, HTTP, dll)
         val defaultDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
 
-        // 3. Siapkan Cache Source (Gabungan Cache + Local + Internet)
+        // 5. Siapkan Cache Source (Gabungan Cache + Local + Internet)
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(simpleCache)
             .setUpstreamDataSourceFactory(defaultDataSourceFactory)
@@ -148,50 +158,79 @@ class MusicService : MediaSessionService() {
                     // Pause player sementara agar tidak error saat mencoba memutar url kosong
                     player.pause()
 
-                    serviceScope.launch {
-                        try {
-                            val songId = mediaItem.mediaId
-                            val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
-                            
-                            // Ambil detail song dari local DB untuk info fallback/telegramFileId
-                            val localSong = database.musicDao().getSongById(songId)
-                            val artistId = localSong?.artistId
-                            val telegramFileId = localSong?.telegramFileId
-                            val fallbackUrl = localSong?.telegramDirectUrl
-                            
-                            val result = repository.getPlayableUrl(
-                                songId = songId,
-                                title = songTitle,
-                                telegramFileId = telegramFileId,
-                                fallbackUrl = fallbackUrl,
-                                artistId = artistId
-                            )
-                            
-                            val newUrl = result.url
-                            if (newUrl.isNotBlank()) {
-                                Log.d("MusicService", "✅ URL Resolved in Service: $newUrl")
-                                // Rebuild MediaItem dengan URL yang valid
-                                val newItem = mediaItem.buildUpon()
-                                    .setUri(newUrl)
-                                    .build()
-                                
-                                withContext(Dispatchers.Main) {
-                                    val newIndex = player.currentMediaItemIndex
-                                    player.replaceMediaItem(newIndex, newItem)
-                                    // Memastikan ExoPlayer tahu kita me-replace data (Fix cascade issue)
-                                    player.seekTo(newIndex, C.TIME_UNSET) 
-                                    player.play()
-                                }
-                            } else {
-                                Log.e("MusicService", "❌ Gagal resolve URL in Service (Fatal). Melewati lagu.")
-                                withContext(Dispatchers.Main) {
-                                    if (player.hasNextMediaItem()) {
-                                        player.seekToNextMediaItem()
-                                    } else {
-                                        player.pause()
-                                    }
-                                }
-                            }
+                                    serviceScope.launch {
+                                        try {
+                                            val songId = mediaItem.mediaId
+                                            val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
+                                            
+                                            // Ambil detail song dari local DB
+                                            val localSong = database.musicDao().getSongById(songId)
+                                            val artistId = localSong?.artistId
+                                            val telegramFileId = localSong?.telegramFileId
+                                            val fallbackUrl = localSong?.telegramDirectUrl
+                                            val source = localSong?.source
+
+                                            // Pastikan visitorData YouTube sudah siap sebelum resolve
+                                            if (com.metrolist.innertube.YouTube.visitorData == null) {
+                                                try {
+                                                    val vd = com.metrolist.innertube.YouTube.visitorData().getOrNull()
+                                                    if (vd != null) com.metrolist.innertube.YouTube.visitorData = vd
+                                                } catch (_: Exception) {}
+                                            }
+                                            
+                                            val result = repository.getPlayableUrl(
+                                                songId = songId,
+                                                title = songTitle,
+                                                telegramFileId = telegramFileId,
+                                                fallbackUrl = fallbackUrl,
+                                                artistId = artistId,
+                                                source = source
+                                            )
+                                            
+                                            val newUrl = result.url
+                                            if (newUrl.isNotBlank()) {
+                                                Log.d("MusicService", "✅ URL Resolved: $newUrl (source=${result.source})")
+
+                                                // Set User-Agent dan header YouTube sesuai client jika sumber YouTube
+                                                if (result.source.startsWith("YOUTUBE")) {
+                                                    val userAgent = when {
+                                                        newUrl.contains("&c=IOS") || newUrl.contains("c=IOS&") ->
+                                                            "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)"
+                                                        newUrl.contains("&c=ANDROID_VR") ->
+                                                            "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)"
+                                                        newUrl.contains("&c=ANDROID") ->
+                                                            "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
+                                                        else -> "Mozilla/5.0"
+                                                    }
+                                                    val headers = mutableMapOf(
+                                                        "Origin" to "https://www.youtube.com",
+                                                        "Referer" to "https://www.youtube.com/"
+                                                    )
+                                                    com.metrolist.innertube.YouTube.visitorData?.let {
+                                                        headers["X-Goog-Visitor-Id"] = it
+                                                    }
+                                                    httpDataSourceFactory.setUserAgent(userAgent)
+                                                    httpDataSourceFactory.setDefaultRequestProperties(headers)
+                                                }
+
+                                                // Rebuild MediaItem dengan URL yang valid
+                                                val newItem = mediaItem.buildUpon()
+                                                    .setUri(newUrl)
+                                                    .build()
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    val newIndex = player.currentMediaItemIndex
+                                                    player.replaceMediaItem(newIndex, newItem)
+                                                    player.seekTo(newIndex, C.TIME_UNSET)
+                                                    player.play()
+                                                }
+                                            } else {
+                                                Log.e("MusicService", "❌ Gagal resolve URL. Melewati lagu.")
+                                                withContext(Dispatchers.Main) {
+                                                    if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+                                                    else player.pause()
+                                                }
+                                            }
                         } catch (e: Exception) {
                             Log.e("MusicService", "❌ Error resolving URL in Service: ${e.message}")
                             withContext(Dispatchers.Main) {

@@ -73,5 +73,11 @@ data class Song(
     val updatedAt: String? = null,
 
     @SerialName("lyrics_updated_at")
-    val lyricsUpdatedAt: String? = null
+    val lyricsUpdatedAt: String? = null,
+
+    // --- SUMBER PEMUTARAN ---
+    // Nilai: "youtube" | "telegram" | "mp3" | "offline" | null
+    // null = auto-detect (backward compatible dengan data lama)
+    @SerialName("source")
+    val source: String? = null
 ): Parcelable
