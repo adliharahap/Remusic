@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +53,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import com.example.remusic.ui.screen.RequestSongScreen
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import com.example.remusic.viewmodel.searchviewmodel.SearchViewModel
 
 // Data class lagu
 data class Song2(
@@ -190,6 +194,12 @@ fun SearchMainScreen(
     val foundArtists by searchViewModel.foundArtists.collectAsState()
     val foundPlaylists by searchViewModel.foundPlaylists.collectAsState()
     val foundUsers by searchViewModel.foundUsers.collectAsState()
+
+    // YouTube tab states
+    val activeTab by searchViewModel.activeTab.collectAsState()
+    val ytResults by searchViewModel.ytSearchResults.collectAsState()
+    val ytIsLoading by searchViewModel.ytIsLoading.collectAsState()
+    val ytError by searchViewModel.ytError.collectAsState()
 
     // Delay showing empty state to give search time to load
     LaunchedEffect(searchQuery, searchResults, foundArtists, foundPlaylists, foundUsers) {
@@ -340,6 +350,64 @@ fun SearchMainScreen(
                 )
             }
             
+            // Tab toggle Lokal / YouTube Music (hanya tampil saat search aktif & ada query)
+            if (searchQuery.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1A1A1A))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Tab: Lokal
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (activeTab == SearchViewModel.SearchTab.LOCAL)
+                                    Color(0xFFE53935)
+                                else Color(0xFF2A2A2A)
+                            )
+                            .clickable { searchViewModel.setActiveTab(SearchViewModel.SearchTab.LOCAL) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Lokal",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // Tab: YouTube Music
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (activeTab == SearchViewModel.SearchTab.YOUTUBE)
+                                    Color(0xFFE53935)
+                                else Color(0xFF2A2A2A)
+                            )
+                            .clickable { searchViewModel.setActiveTab(SearchViewModel.SearchTab.YOUTUBE) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎵 ", fontSize = 13.sp)
+                            Text(
+                                "YouTube Music",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
             // Hasil Pencarian atau Riwayat
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 
@@ -685,6 +753,137 @@ fun SearchMainScreen(
                             playMusicViewModel.showQueueOptions(song)
                         }
                     )
+                }
+
+                // ── YOUTUBE MUSIC RESULTS ─────────────────────────────────
+                if (activeTab == SearchViewModel.SearchTab.YOUTUBE) {
+                    // Loading
+                    if (ytIsLoading) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(
+                                        color = Color(0xFFE53935),
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "Mencari di YouTube Music...",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Error
+                    ytError?.let { err ->
+                        item {
+                            Text(
+                                err,
+                                color = Color(0xFFE53935),
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+
+                    // Results header
+                    if (ytResults.isNotEmpty()) {
+                        item {
+                            Text(
+                                "YouTube Music (${ytResults.size})",
+                                style = TextStyle(
+                                    fontSize = 18.sp,
+                                    fontFamily = AppFont.MontserratBold,
+                                    color = Color.White
+                                ),
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                            )
+                        }
+                    }
+
+                    // YouTube song list
+                    itemsIndexed(ytResults) { index, songItem ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val songWithArtist = searchViewModel.buildYouTubeSongWithArtist(songItem)
+                                    onSongClick(songWithArtist, searchQuery)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Thumbnail
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF2A2A2A))
+                            ) {
+                                coil.compose.AsyncImage(
+                                    model = songItem.thumbnail,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            // Title + Artist
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = songItem.title,
+                                    style = TextStyle(
+                                        fontSize = 15.sp,
+                                        fontFamily = AppFont.RobotoBold,
+                                        color = Color.White
+                                    ),
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = songItem.artists.joinToString(", ") { it.name },
+                                    style = TextStyle(
+                                        fontSize = 12.sp,
+                                        fontFamily = AppFont.RobotoRegular,
+                                        color = Color.Gray
+                                    ),
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            // Duration
+                            songItem.duration?.let { sec ->
+                                Text(
+                                    text = "%d:%02d".format(sec / 60, sec % 60),
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Empty state YouTube
+                    if (!ytIsLoading && ytResults.isEmpty() && ytError == null && searchQuery.isNotEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Ketik query lalu tunggu hasil...",
+                                    color = Color.Gray,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {

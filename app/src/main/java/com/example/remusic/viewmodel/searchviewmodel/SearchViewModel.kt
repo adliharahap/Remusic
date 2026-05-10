@@ -28,6 +28,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.example.remusic.data.model.SongWithArtistRpcResult
 import io.github.jan.supabase.postgrest.postgrest
+import com.metrolist.innertube.YouTube
+import com.metrolist.innertube.models.SongItem
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -60,6 +62,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     // History dari Room (Flow dikonversi ke StateFlow di UI atau collect langsung)
     val searchHistory = musicDao.getSearchHistory()
 
+    // --- YOUTUBE SEARCH STATE ---
+    enum class SearchTab { LOCAL, YOUTUBE }
+
+    private val _activeTab = MutableStateFlow(SearchTab.LOCAL)
+    val activeTab: StateFlow<SearchTab> = _activeTab.asStateFlow()
+
+    private val _ytSearchResults = MutableStateFlow<List<SongItem>>(emptyList())
+    val ytSearchResults: StateFlow<List<SongItem>> = _ytSearchResults.asStateFlow()
+
+    private val _ytIsLoading = MutableStateFlow(false)
+    val ytIsLoading: StateFlow<Boolean> = _ytIsLoading.asStateFlow()
+
+    private val _ytError = MutableStateFlow<String?>(null)
+    val ytError: StateFlow<String?> = _ytError.asStateFlow()
+
     private var searchJob: Job? = null
 
     init {
@@ -71,17 +88,56 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
         
-        // Debounce Logic (1000ms)
+        // Debounce Logic
         searchJob?.cancel()
         if (query.isBlank()) {
             _searchResults.value = emptyList()
             _topArtist.value = null
+            _ytSearchResults.value = emptyList()
             return
         }
 
         searchJob = viewModelScope.launch {
-            delay(300) // Reduced delay for faster results
-            performSearch(query)
+            delay(300)
+            if (_activeTab.value == SearchTab.LOCAL) {
+                performSearch(query)
+            } else {
+                searchYouTube(query)
+            }
+        }
+    }
+
+    fun setActiveTab(tab: SearchTab) {
+        _activeTab.value = tab
+        val query = _searchQuery.value
+        if (query.isBlank()) return
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            if (tab == SearchTab.LOCAL) {
+                performSearch(query)
+            } else {
+                searchYouTube(query)
+            }
+        }
+    }
+
+    fun searchYouTube(query: String) {
+        viewModelScope.launch {
+            _ytIsLoading.value = true
+            _ytError.value = null
+            _ytSearchResults.value = emptyList()
+            try {
+                android.util.Log.d("SearchVM", "🎵 [YT SEARCH] query: $query")
+                val result = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull()
+                val songs = result?.items?.filterIsInstance<SongItem>() ?: emptyList()
+                android.util.Log.d("SearchVM", "✅ [YT SEARCH] Found ${songs.size} songs")
+                _ytSearchResults.value = songs
+            } catch (e: Exception) {
+                android.util.Log.e("SearchVM", "❌ [YT SEARCH ERROR] ${e.message}")
+                _ytError.value = "Gagal mencari di YouTube: ${e.message}"
+            } finally {
+                _ytIsLoading.value = false
+            }
         }
     }
 
@@ -283,5 +339,47 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             musicDao.insertSong(cachedSong)
             musicDao.insertSearchHistory(SearchHistoryEntity(songId = song.id))
         }
+    }
+
+    // --- Konversi SongItem YouTube → SongWithArtist untuk diputar ---
+    fun buildYouTubeSongWithArtist(songItem: SongItem): com.example.remusic.data.model.SongWithArtist {
+        val artistName = songItem.artists.firstOrNull()?.name ?: "YouTube Music"
+        val song = com.example.remusic.data.model.Song(
+            id = songItem.id,
+            title = songItem.title,
+            coverUrl = songItem.thumbnail,
+            source = "youtube",         // ← routing key untuk MusicService
+            artistId = songItem.artists.firstOrNull()?.id,
+            telegramFileId = null,
+            audioUrl = null             // kosong — akan di-resolve MusicService
+        )
+        val artist = com.example.remusic.data.model.Artist(
+            id = songItem.artists.firstOrNull()?.id ?: "",
+            name = artistName
+        )
+
+        // Simpan ke cache lokal agar MusicService bisa resolve URL-nya
+        viewModelScope.launch {
+            val existingSong = musicDao.getSongById(songItem.id)
+            val cachedSong = com.example.remusic.data.local.entity.CachedSong(
+                id = songItem.id,
+                title = songItem.title,
+                artistName = artistName,
+                coverUrl = songItem.thumbnail,
+                lyrics = null,
+                uploaderUserId = null,
+                telegramFileId = null,
+                telegramDirectUrl = null,
+                urlExpiryTime = 0L,
+                lastPlayedAt = System.currentTimeMillis(),
+                artistId = songItem.artists.firstOrNull()?.id,
+                source = "youtube"
+            )
+            if (existingSong == null) musicDao.insertSong(cachedSong)
+            else musicDao.updateSongUrl(songItem.id, existingSong.telegramDirectUrl ?: "", existingSong.urlExpiryTime, System.currentTimeMillis())
+            musicDao.insertSearchHistory(SearchHistoryEntity(songId = songItem.id))
+        }
+
+        return com.example.remusic.data.model.SongWithArtist(song, artist)
     }
 }
