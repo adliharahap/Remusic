@@ -555,7 +555,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
 
 
-    fun updateLyricsConfig(config: com.example.remusic.ui.screen.playmusic.LyricsConfig) = lyricsManager.updateLyricsConfig(config)
+    fun updateLyricsConfig(config: com.example.remusic.ui.screen.playmusic.LyricsConfig) {
+        lyricsManager.updateLyricsConfig(config)
+        viewModelScope.launch {
+            userPreferencesRepository.saveLyricsConfig(config)
+        }
+    }
 
     // Overload for specific song (e.g. from Queue/Search)
     fun toggleLike(songWithArtist: SongWithArtist) {

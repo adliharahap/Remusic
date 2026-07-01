@@ -209,12 +209,35 @@ class MusicService : MediaSessionService() {
                         try {
                             val songId = mediaItem.mediaId
                             val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
+                            val artistName = mediaItem.mediaMetadata.artist?.toString() ?: "Unknown"
 
                             val extras = mediaItem.mediaMetadata.extras
                             val effectiveId = extras?.getString("effectiveId") ?: songId
                             val sourceFromExtras = extras?.getString("source")
 
-                            // Ambil detail song dari local DB
+                            // 1. Cek Cache Lokal dari Download DULU (Bypass API sepenuhnya)
+                            val localUri = com.example.remusic.utils.SongDownloader.getLocalFileUri(
+                                this@MusicService, 
+                                songTitle, 
+                                artistName
+                            )
+                            
+                            if (localUri != null) {
+                                Log.d("MusicService", "✅ LOCAL CACHE FOUND for $songId: $localUri")
+                                val newItem = mediaItem.buildUpon()
+                                    .setUri(localUri)
+                                    .build()
+
+                                withContext(Dispatchers.Main) {
+                                    val wasPlaying = player.playWhenReady
+                                    player.replaceMediaItem(player.currentMediaItemIndex, newItem)
+                                    player.prepare()
+                                    if (wasPlaying) player.play()
+                                }
+                                return@launch
+                            }
+
+                            // 2. Ambil detail song dari local DB (Jika tidak di-download)
                             val localSong = database.musicDao().getSongById(songId)
                             val artistId = localSong?.artistId
                             val telegramFileId = localSong?.telegramFileId
@@ -274,30 +297,30 @@ class MusicService : MediaSessionService() {
                                     // Simpan posisi sekarang — mungkin sudah ada buffering
                                     // sedikit tapi kalau masih 0, mulai dari awal
                                     val resumePos = player.currentPosition.coerceAtLeast(0L)
+                                    val wasPlaying = player.playWhenReady
+                                    
                                     player.replaceMediaItem(newIndex, newItem)
                                     // Jika sudah ada posisi bermakna, lanjutkan dari sana
                                     // Jika belum (auto-next baru saja terjadi), mulai dari 0
                                     if (resumePos > 500L) {
                                         player.seekTo(newIndex, resumePos)
                                     }
-                                    // Tidak perlu seekTo(C.TIME_UNSET) karena akan reset ke 0!
-                                    player.play()
+                                    
+                                    if (wasPlaying) {
+                                        player.play()
+                                    }
                                 }
                             } else {
-                                Log.e("MusicService", "❌ Gagal resolve URL. Melewati lagu.")
+                                Log.e("MusicService", "❌ Gagal resolve URL. Memberhentikan pemutaran.")
                                 withContext(Dispatchers.Main) {
-                                    if (player.hasNextMediaItem()) player.seekToNextMediaItem()
-                                    else player.pause()
+                                    // Jangan skip otomatis karena bisa menyebabkan infinite loop jika offline
+                                    player.pause()
                                 }
                             }
                         } catch (e: Exception) {
                             Log.e("MusicService", "❌ Error resolving URL in Service: ${e.message}")
                             withContext(Dispatchers.Main) {
-                                if (player.hasNextMediaItem()) {
-                                    player.seekToNextMediaItem()
-                                } else {
-                                    player.pause()
-                                }
+                                player.pause()
                             }
                         }
                     }

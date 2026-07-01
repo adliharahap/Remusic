@@ -266,4 +266,42 @@ object SongDownloader {
             false
         }
     }
+
+    fun getLocalFileUri(context: Context, songTitle: String, artistName: String): String? {
+        val safeTitle = songTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val safeArtist = artistName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val folderName = "$safeTitle - $safeArtist"
+        val mp3FileName = "$safeTitle.mp3"
+        val relativePathLike = "%$BASE_DIRECTORY/Remusic/$folderName%"
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+                val selectionArgs = arrayOf(mp3FileName, relativePathLike)
+
+                context.contentResolver.query(
+                    BASE_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                        val id = cursor.getLong(idColumn)
+                        return@use android.content.ContentUris.withAppendedId(BASE_URI, id).toString()
+                    }
+                    null
+                }
+            } else {
+                val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val folder = relativePathLike.replace("%", "").removePrefix("${Environment.DIRECTORY_DOWNLOADS}/")
+                val file = File(File(publicDir, folder), mp3FileName)
+                if (file.exists()) file.absolutePath else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 }

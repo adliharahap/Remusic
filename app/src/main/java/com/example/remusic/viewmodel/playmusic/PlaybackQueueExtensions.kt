@@ -196,6 +196,7 @@ import timber.log.Timber
                                 MediaItem.Builder()
                                         .setMediaId(s.song.id)
                                         .setUri(urlToUse)
+                                        .setCustomCacheKey(s.song.effectiveId)
                                         .setMediaMetadata(meta)
                                         .build()
 
@@ -1111,6 +1112,17 @@ import timber.log.Timber
             return MusicRepository.ResolvedSongUrl(song.song.audioUrl ?: "", "OFFLINE_STORAGE")
         }
 
+        // Cek Cache Lokal dari SongDownloader DULUAN (Bypass API sepenuhnya)
+        val localUri = com.example.remusic.utils.SongDownloader.getLocalFileUri(
+            getApplication(), 
+            song.song.title, 
+            song.artist?.name ?: "Unknown"
+        )
+        if (localUri != null) {
+            Timber.tag("DEBUG_PLAYER").d("✅ RESOLVED DARI LOCAL CACHE/DOWNLOAD: $localUri")
+            return MusicRepository.ResolvedSongUrl(localUri, "LOCAL_CACHE")
+        }
+
         // Logika disederhanakan: Serahkan ke Repository
         // Repository akan otomatis cek SQLite -> Cek Expired -> Request API jika perlu
         val result =
@@ -1148,7 +1160,7 @@ import timber.log.Timber
         return MediaItem.Builder()
                 .setMediaId(data.song.id)
                 .setUri(streamUrl) // URL bisa dari Telegram atau Supabase
-                .setCustomCacheKey(data.song.id)
+                .setCustomCacheKey(data.song.effectiveId) // ExoPlayer akan cache berdasarkan ID ini, bukan URL dinamis!
                 .setMediaMetadata(meta)
                 .build()
     }
@@ -1515,6 +1527,7 @@ import timber.log.Timber
                         MediaItem.Builder()
                                 .setMediaId(s.song.id)
                                 .setUri(s.song.audioUrl ?: s.song.telegramDirectUrl ?: "")
+                                .setCustomCacheKey(s.song.effectiveId)
                                 .setMediaMetadata(meta)
                                 .build()
                     }
