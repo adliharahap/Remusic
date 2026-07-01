@@ -37,8 +37,10 @@ class QueueRepository(private val musicDao: MusicDao) {
                 val song = songWA.song
                 val existing = musicDao.getSongById(song.id)
                 if (existing != null) {
-                    val needsUpdate = existing.coverUrl == null || existing.canvasUrl == null || 
-                                      (song.lyricsUpdatedAt != null && song.lyricsUpdatedAt != existing.lyricsUpdatedAt)
+                    val needsUpdate = existing.coverUrl == null || existing.canvasUrl == null ||
+                                      (song.lyricsUpdatedAt != null && song.lyricsUpdatedAt != existing.lyricsUpdatedAt) ||
+                                      (song.source != null && song.source != existing.source) ||
+                                      (song.youtubeId != null && song.youtubeId != existing.youtubeId)
                     if (needsUpdate) {
                        musicDao.updateSongDetails(
                            id = song.id,
@@ -51,7 +53,9 @@ class QueueRepository(private val musicDao: MusicDao) {
                            language = song.language ?: existing.language,
                            moods = (song.moods ?: emptyList()).ifEmpty { existing.moods },
                            artistId = song.artistId ?: existing.artistId,
-                           featuredArtists = song.featuredArtists.ifEmpty { existing.featuredArtists }
+                           featuredArtists = song.featuredArtists.ifEmpty { existing.featuredArtists },
+                           source = song.source ?: existing.source,
+                           youtubeId = song.youtubeId ?: existing.youtubeId
                        )
                     }
                 } else {
@@ -69,7 +73,9 @@ class QueueRepository(private val musicDao: MusicDao) {
                         language = song.language,
                         moods = song.moods ?: emptyList(),
                         artistId = song.artistId,
-                        featuredArtists = song.featuredArtists
+                        featuredArtists = song.featuredArtists,
+                        source = song.source,
+                        youtubeId = song.youtubeId
                     ))
                 }
             }
@@ -94,11 +100,13 @@ class QueueRepository(private val musicDao: MusicDao) {
             val cachedSongs = songIds.mapNotNull { id -> musicDao.getSongById(id) }
             val cachedSongMap = cachedSongs.associateBy { it.id }.toMutableMap()
 
-            val missingSongIds = songIds.filter { 
-                if (it.startsWith("offline_")) false 
+            val youtubeIdRegex = Regex("^[a-zA-Z0-9_-]{11}$")
+            val missingSongIds = songIds.filter {
+                if (it.startsWith("offline_")) false
                 else {
                     val cached = cachedSongMap[it]
-                    cached == null || cached.coverUrl == null 
+                    cached == null || cached.coverUrl == null ||
+                            (cached.youtubeId.isNullOrBlank() && !it.matches(youtubeIdRegex))
                 }
             }
 
@@ -125,7 +133,10 @@ class QueueRepository(private val musicDao: MusicDao) {
                             telegramDirectUrl = existing?.telegramDirectUrl, // 🔥 PERTAHANKAN DIRECT URL!
                             language = song.language ?: existing?.language,
                             moods = (song.moods ?: emptyList()).ifEmpty { existing?.moods ?: emptyList() },
-                            artistId = song.artistId ?: existing?.artistId
+                            artistId = song.artistId ?: existing?.artistId,
+                            featuredArtists = song.featuredArtists.ifEmpty { existing?.featuredArtists ?: emptyList() },
+                            source = song.source ?: existing?.source,
+                            youtubeId = song.youtubeId ?: existing?.youtubeId
                         )
                     }
 
@@ -213,7 +224,9 @@ class QueueRepository(private val musicDao: MusicDao) {
                 lyricsUpdatedAt = this.lyricsUpdatedAt,
                 language = this.language,
                 moods = this.moods ?: emptyList(),
-                featuredArtists = this.featuredArtists
+                featuredArtists = this.featuredArtists,
+                source = this.source,
+                youtubeId = this.youtubeId
         )
     }
 }

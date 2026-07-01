@@ -190,13 +190,32 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
         }
 
         // ── YOUTUBE ──────────────────────────────────────────────────────────────
-        Log.i(TAG, "🎵 [YOUTUBE] Mencoba stream YouTube untuk videoId: $songId")
+        var finalYtId = songId
+        if (resolvedSource == "youtube" && finalYtId.length == 36) {
+            Log.w(TAG, "⚠️ [YOUTUBE] songId berupa UUID ($songId), mencoba membaca youtube_id dari Supabase...")
+            try {
+                val dbSong = com.example.remusic.data.SupabaseManager.client.from("songs")
+                    .select(columns = io.github.jan.supabase.postgrest.query.Columns.list("youtube_id")) {
+                        filter { eq("id", songId) }
+                    }.decodeSingleOrNull<JsonObject>()
+                
+                val ytId = dbSong?.get("youtube_id")?.jsonPrimitive?.contentOrNull
+                if (!ytId.isNullOrBlank()) {
+                    finalYtId = ytId
+                    Log.i(TAG, "✅ [YOUTUBE] Berhasil resolve youtube_id: $finalYtId")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [YOUTUBE] Gagal resolve youtube_id: ${e.message}")
+            }
+        }
+
+        Log.i(TAG, "🎵 [YOUTUBE] Mencoba stream YouTube untuk videoId: $finalYtId")
         var ytStreamUrl = ""
         var ytExpiresInSeconds = 0
 
         try {
             val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
-                videoId = songId,
+                videoId = finalYtId,
                 playlistId = null,
                 audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
                 connectivityManager = null
@@ -232,7 +251,7 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                 coverUrl = null, lyrics = null, telegramFileId = null,
                 telegramDirectUrl = finalUrl, urlExpiryTime = expiryTime,
                 lastPlayedAt = System.currentTimeMillis(), artistId = artistId,
-                source = "youtube"
+                source = "youtube", youtubeId = songId
             ))
         }
 
@@ -365,7 +384,8 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                                             telegramDirectUrl = finalUrl,
                                             urlExpiryTime = expiryTime,
                                             lastPlayedAt = System.currentTimeMillis(),
-                                            artistId = artistId
+                                            artistId = artistId,
+                                            source = "telegram"
                                     )
                             musicDao.insertSong(newCacheData)
                         }
@@ -501,7 +521,7 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                             return if (cached != null) {
                                 cached.copy(lyrics = hubLyrics)
                             } else {
-                                CachedSong(id = songId, title = title, artistName = artist, lyrics = hubLyrics, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                                CachedSong(id = songId, title = title, artistName = artist, lyrics = hubLyrics, source = "youtube", youtubeId = songId, uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
                             }
                         }
                     } catch (e: Exception) {
@@ -547,7 +567,7 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                                     return if (cached != null) {
                                         cached.copy(lyrics = finalLrc)
                                     } else {
-                                        CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLrc, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                                        CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLrc, source = "youtube", youtubeId = songId, uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
                                     }
                                 } else if (!plainLyrics.isNullOrBlank()) {
                                     Log.w(TAG, "⚠️ [LRCLIB] Hanya ketemu PLAIN lyrics. Melanjutkan ke fallback lain.")
@@ -606,7 +626,7 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                         return if (cached != null) {
                             cached.copy(lyrics = finalLyrics)
                         } else {
-                            CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLyrics, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                            CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLyrics, source = "youtube", youtubeId = songId, uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
                         }
                     }
                 } catch (e: Exception) {
@@ -667,7 +687,9 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                         language = remoteLanguage,
                         moods = remoteVersion.moods ?: emptyList(),
                         artistId = cached.artistId,
-                        featuredArtists = cached.featuredArtists
+                        featuredArtists = cached.featuredArtists,
+                        source = cached.source,
+                        youtubeId = cached.youtubeId
                     )
                     val patchedCache = cached.copy(language = remoteLanguage, moods = remoteVersion.moods ?: emptyList())
                     return patchedCache
@@ -759,7 +781,9 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                             language = supabaseSong.language,
                             moods = supabaseSong.moods ?: emptyList(),
                             artistId = supabaseSong.artistId,
-                            featuredArtists = supabaseSong.featuredArtists
+                            featuredArtists = supabaseSong.featuredArtists,
+                            source = supabaseSong.source,
+                            youtubeId = supabaseSong.youtubeId
                     )
                     Log.d(TAG, "💾 [DETAILS SAVED] Detail & Lirik diperbarui.")
 
@@ -774,7 +798,9 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                             language = supabaseSong.language,
                             moods = supabaseSong.moods ?: emptyList(),
                             artistId = supabaseSong.artistId,
-                            featuredArtists = supabaseSong.featuredArtists
+                            featuredArtists = supabaseSong.featuredArtists,
+                            source = supabaseSong.source,
+                            youtubeId = supabaseSong.youtubeId
                     )
                 } else {
                     // INSERT BARU
@@ -793,7 +819,9 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                                     telegramDirectUrl = null,
                                     language = supabaseSong.language,
                                     moods = supabaseSong.moods ?: emptyList(),
-                                    artistId = supabaseSong.artistId
+                                    artistId = supabaseSong.artistId,
+                                    source = supabaseSong.source,
+                                    youtubeId = supabaseSong.youtubeId
                             )
                     musicDao.insertSong(newData)
                     Log.d(TAG, "💾 [NEW DATA] Lagu baru disimpan ke cache.")

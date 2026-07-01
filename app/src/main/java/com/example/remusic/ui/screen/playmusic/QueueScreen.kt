@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -28,14 +29,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.data.preferences.PlayerBackgroundStyle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import org.burnoutcrew.reorderable.rememberReorderableLazyListState
+import org.burnoutcrew.reorderable.reorderable
+import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +63,7 @@ fun QueueScreen(
     onDownload: (SongWithArtist) -> Unit = {},
     onAddToLiked: (SongWithArtist) -> Unit = {},
     onRemoveFromQueue: (SongWithArtist) -> Unit = {},
+    onMoveQueueItem: (from: Int, to: Int) -> Unit = { _, _ -> },
     topPlayerColor: Color = Color.Transparent,
     bottomPlayerColor: Color = Color.Transparent,
     gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
@@ -60,6 +72,7 @@ fun QueueScreen(
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
     val currentlyPlayingId = songWithArtist?.song?.id
+    var isEditMode by remember { mutableStateOf(false) }
 
     // --- Bottom Sheet State ---
     var showQueueOptions by remember { mutableStateOf(false) }
@@ -68,6 +81,17 @@ fun QueueScreen(
 
     // --- State untuk LazyColumn dan Drag-and-Drop ---
     val listState = rememberLazyListState()
+    val headerCount = if (songWithArtist != null) 4 else 3
+    val reorderableState = rememberReorderableLazyListState(
+        listState = listState,
+        onMove = { from, to ->
+            val fromIndex = from.index - headerCount
+            val toIndex = to.index - headerCount
+            if (fromIndex >= 0 && toIndex >= 0 && fromIndex < playlistQueue.size && toIndex < playlistQueue.size) {
+                onMoveQueueItem(fromIndex, toIndex)
+            }
+        }
+    )
 
     //untuk memberikan padding top
     val configuration = LocalConfiguration.current
@@ -82,7 +106,9 @@ fun QueueScreen(
 
         LazyColumn(
             state = listState,
-        modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .reorderable(reorderableState)
         ) {
         item {
             Spacer(modifier = Modifier.height(headerHeight).fillMaxWidth())
@@ -132,24 +158,47 @@ fun QueueScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Semua Antrian", color = Color.White, fontFamily = AppFont.RobotoBold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("${playlistQueue.size} Lagu", color = Color.White.copy(0.8f), fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${playlistQueue.size} Lagu", color = Color.White.copy(0.8f), fontSize = 14.sp)
+                    IconButton(onClick = { isEditMode = !isEditMode }) {
+                        if (isEditMode) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selesai Edit",
+                                tint = Color.White
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_drag_vertical),
+                                contentDescription = "Edit Antrian",
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        itemsIndexed(
-            playlistQueue,
-            // Gunakan kombinasi index + id agar key SELALU unik
-            // (YouTube API kadang mengembalikan lagu yang sama lebih dari sekali
-            //  sehingga crash jika hanya pakai song.id)
-            key = { index, songWithArtist -> "$index-${songWithArtist.song.id}" }
-        ) { index, songWithArtist ->
+        items(
+            playlistQueue.size,
+            key = { index -> "${playlistQueue[index].song.id}-${playlistQueue[index].hashCode()}" }
+        ) { index ->
+            val songWithArtist = playlistQueue[index]
+            val isDragging = reorderableState.draggingItemKey == "${songWithArtist.song.id}-${songWithArtist.hashCode()}"
+            val elevation = if (isDragging) 8.dp else 0.dp
+            
             QueueSongCard(
                 index = index,
                 songTitle = songWithArtist.song.title,
                 artistName = songWithArtist?.displayArtistName ?: "Unknown Artist",
                 posterUri = songWithArtist.song.coverUrl ?: "",
                 isCurrentlyPlaying = currentlyPlayingId != null && songWithArtist.song.id == currentlyPlayingId,
-                onClickListener = onClickListener,
+                isEditMode = isEditMode,
+                dragModifier = Modifier.detectReorderAfterLongPress(reorderableState),
+                modifier = Modifier
+                    .animateItem(), // Menggunakan animateItem() bawaan Compose 1.7
+                onClickListener = { onClickListener(it) },
                 onMoreClick = {
                     selectedSongForOptions = songWithArtist
                     showQueueOptions = true

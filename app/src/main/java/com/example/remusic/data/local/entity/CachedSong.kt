@@ -29,5 +29,8 @@ data class CachedSong(
 
     // --- SUMBER PEMUTARAN ---
     // null = auto-detect: jika telegramFileId != null → telegram, else → youtube
-    val source: String? = null
+    val source: String? = null,
+
+    // ID YouTube 11 karakter untuk lagu shadow Supabase yang primary key-nya UUID
+    val youtubeId: String? = null
 )

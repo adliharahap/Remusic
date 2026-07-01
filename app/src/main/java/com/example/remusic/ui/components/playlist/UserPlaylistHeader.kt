@@ -14,10 +14,15 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.jan.supabase.auth.auth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -53,7 +58,10 @@ fun UserPlaylistHeader(
     uiState: PlayerUiState?,
     sortedSongs: List<SongWithArtist>,
     filteredAndSortedSongs: List<SongWithArtist>,
-    playlistId: String? = null
+    playlistId: String? = null,
+    onDeleteComplete: () -> Unit = {},
+    isEditMode: Boolean = false,
+    onEditModeToggle: () -> Unit = {}
 ) {
     val playlist = uiState?.currentPlaylistDetails
     val owner = uiState?.playlistOwner
@@ -193,12 +201,15 @@ fun UserPlaylistHeader(
             }
 
             // 3. Action Buttons Row
+            var showOptionsBottomSheet by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            val currentUserId = com.example.remusic.data.UserManager.currentUser?.uid
+            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left Side Actions: Add Song, Download, More
+                // Left Side Actions: Add Song, Edit (Drag), More
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -220,22 +231,24 @@ fun UserPlaylistHeader(
                         )
                     }
 
-                    // Download Button
-                    IconButton(
-                        onClick = { /* TODO: Download */ },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download",
-                            tint = Color.White.copy(0.7f),
-                            modifier = Modifier.size(24.dp)
-                        )
+                    // Edit Button (Only for owner)
+                    if (currentUserId != null && owner?.uid == currentUserId) {
+                        IconButton(
+                            onClick = onEditModeToggle,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                painter = if (isEditMode) androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Check) else androidx.compose.ui.res.painterResource(com.example.remusic.R.drawable.ic_drag_vertical),
+                                contentDescription = if (isEditMode) "Selesai Edit" else "Edit Urutan",
+                                tint = if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     // Options Button
                     IconButton(
-                        onClick = { /* TODO: Options */ },
+                        onClick = { showOptionsBottomSheet = true },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -245,6 +258,16 @@ fun UserPlaylistHeader(
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
+                
+                if (showOptionsBottomSheet) {
+                    PlaylistOptionsBottomSheet(
+                        onDismiss = { showOptionsBottomSheet = false },
+                        playlist = playlist,
+                        isOwner = (currentUserId != null && owner?.uid == currentUserId),
+                        playMusicViewModel = playMusicViewModel,
+                        onDeleteComplete = onDeleteComplete
+                    )
                 }
 
                 // Right Side Actions: Shuffle & Play

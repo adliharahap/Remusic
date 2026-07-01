@@ -83,7 +83,8 @@ class LyricsManager(
                     coverUrl = currentSong.song.coverUrl,
                     uploaderUserId = currentSong.song.uploaderUserId,
                     telegramFileId = currentSong.song.telegramFileId,
-                    telegramDirectUrl = currentSong.song.telegramDirectUrl
+                    telegramDirectUrl = currentSong.song.telegramDirectUrl,
+                    youtubeId = currentSong.song.youtubeId ?: songId.takeIf { it.length == 11 }
                 )
                 dao.insertSong(cachedSong)
                 Timber.tag("DEBUG_PLAYER").d("💾 [SQLITE] Lirik alternatif BERHASIL disimpan untuk ID: $songId")

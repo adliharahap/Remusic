@@ -460,6 +460,7 @@ import timber.log.Timber
                                         telegramFileId = null,
                                         telegramDirectUrl = null,
                                         source = "youtube",
+                                        youtubeId = swa.song.youtubeId ?: swa.song.id,
                                         artistId = swa.song.artistId,
                                         urlExpiryTime = 0L,
                                         lastPlayedAt = 0L
@@ -1514,22 +1515,11 @@ import timber.log.Timber
                 return
             }
 
-            // Setup Media Items
+            // Setup Media Items through the shared helper so restored YouTube songs keep
+            // their effectiveId in extras. MusicService needs that to resolve UUID-backed songs.
             val mediaItems =
                     playlist.map { s ->
-                        val meta =
-                                MediaMetadata.Builder()
-                                        .setTitle(s.song.title)
-                                        .setArtist(s.artist?.name ?: "Unknown")
-                                        .setArtworkUri(s.song.coverUrl?.toUri())
-                                        .build()
-
-                        MediaItem.Builder()
-                                .setMediaId(s.song.id)
-                                .setUri(s.song.audioUrl ?: s.song.telegramDirectUrl ?: "")
-                                .setCustomCacheKey(s.song.effectiveId)
-                                .setMediaMetadata(meta)
-                                .build()
+                        createMediaItem(s, s.song.audioUrl ?: s.song.telegramDirectUrl ?: "")
                     }
 
             controller.setMediaItems(mediaItems, startIndex, lastPosition)
@@ -1574,4 +1564,3 @@ import timber.log.Timber
             }
         }
     }
-

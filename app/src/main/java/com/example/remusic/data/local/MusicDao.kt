@@ -28,7 +28,7 @@ interface MusicDao {
     suspend fun updateLyrics(id: String, lyrics: String)
 
     // Partial Update: Details (Lyrics Fetch)
-    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, canvasUrl = :canvas, uploaderUserId = :uploaderId, language = :language, moods = :moods, artistId = :artistId, featuredArtists = :featuredArtists WHERE id = :id")
+    @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, canvasUrl = :canvas, uploaderUserId = :uploaderId, language = :language, moods = :moods, artistId = :artistId, featuredArtists = :featuredArtists, source = :source, youtubeId = :youtubeId WHERE id = :id")
     suspend fun updateSongDetails(
         id: String, 
         title: String, 
@@ -40,7 +40,9 @@ interface MusicDao {
         language: String?,
         moods: List<String>,
         artistId: String?,
-        featuredArtists: List<String>
+        featuredArtists: List<String>,
+        source: String?,
+        youtubeId: String?
     )
 
     // Ambil 1 lagu untuk dicek expired-nya

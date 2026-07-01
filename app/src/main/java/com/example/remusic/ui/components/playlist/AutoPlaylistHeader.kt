@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,7 +49,10 @@ fun AutoPlaylistHeader(
     playMusicViewModel: PlayMusicViewModel?,
     uiState: PlayerUiState?,
     sortedSongs: List<SongWithArtist>,
-    filteredAndSortedSongs: List<SongWithArtist>
+    filteredAndSortedSongs: List<SongWithArtist>,
+    playlistId: String? = null,
+    isEditMode: Boolean = false,
+    onEditModeToggle: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -194,6 +199,21 @@ fun AutoPlaylistHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Edit Button (Only for Liked Songs)
+                if (playlistId == "LIKED_SONGS") {
+                    IconButton(
+                        onClick = onEditModeToggle,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            painter = if (isEditMode) androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Check) else androidx.compose.ui.res.painterResource(com.example.remusic.R.drawable.ic_drag_vertical),
+                            contentDescription = if (isEditMode) "Selesai Edit" else "Edit Urutan",
+                            tint = if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
                 // Shuffle Button (Large Circle - Secondary)
                 Box(
                     modifier = Modifier

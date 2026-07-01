@@ -148,6 +148,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     //ambil gambar dari http
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Reorderable list untuk drag and drop Queue Screen
+    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
     // --- GOOGLE CREDENTIAL MANAGER (Wajib untuk Google Sign In) ---
     implementation("androidx.credentials:credentials:1.5.0") // Gunakan versi stabil/terbaru jika ada
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")

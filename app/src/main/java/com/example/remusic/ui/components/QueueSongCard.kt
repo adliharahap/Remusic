@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +47,8 @@ fun QueueSongCard(
     isCurrentlyPlaying: Boolean,
     modifier: Modifier = Modifier,
     sourceLabel: String? = null,
+    isEditMode: Boolean = false,
+    dragModifier: Modifier = Modifier,
     onClickListener: (index: Int) -> Unit = {},
     onMoreClick: () -> Unit = {}
 ) {
@@ -63,7 +66,7 @@ fun QueueSongCard(
             .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = { onClickListener(index) },
-                onLongClick = { onMoreClick() }
+                onLongClick = if (isEditMode) null else { { onMoreClick() } }
             ),
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
@@ -73,6 +76,7 @@ fun QueueSongCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (isEditMode) dragModifier else Modifier)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -85,6 +89,13 @@ fun QueueSongCard(
                     barColor = Color.White,
                     animationDuration = 300,
                     modifier = Modifier.width(20.dp)
+                )
+            } else if (isEditMode) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag Handle",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(18.dp)
                 )
             } else {
                 Text(

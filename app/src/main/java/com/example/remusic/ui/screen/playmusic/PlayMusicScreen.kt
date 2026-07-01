@@ -271,6 +271,7 @@ fun PlayMusicScreen(
                         playlistQueue = uiState.playlist,
                         playMusicFromPlaylist = uiState.playingMusicFromPlaylist,
                         playlistSubtitle = uiState.playlistSubtitle, // Pass subtitle
+                        onMoveQueueItem = { from, to -> playMusicViewModel.moveQueueItem(from, to) },
                         onClickListener = { playMusicViewModel.playSongAt(it) },
                         onAddToQueue = { song ->
                             val message = playMusicViewModel.addToQueue(song)

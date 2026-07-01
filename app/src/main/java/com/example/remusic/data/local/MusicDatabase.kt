@@ -24,7 +24,7 @@ import com.example.remusic.data.local.entity.SearchHistoryEntity
                         CachedFollowedArtist::class,
                         PlaybackQueueEntity::class,
                         com.example.remusic.data.local.entity.CachedPlaylist::class],
-        version = 13,
+        version = 14,
         exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
@@ -155,6 +155,13 @@ abstract class MusicDatabase : RoomDatabase() {
                     }
                 }
 
+        val MIGRATION_13_14 =
+                object : Migration(13, 14) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE cached_songs ADD COLUMN youtubeId TEXT")
+                    }
+                }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE
                     ?: synchronized(this) {
@@ -175,7 +182,8 @@ abstract class MusicDatabase : RoomDatabase() {
                                                 MIGRATION_9_10,
                                                 MIGRATION_10_11,
                                                 MIGRATION_11_12,
-                                                MIGRATION_12_13
+                                                MIGRATION_12_13,
+                                                MIGRATION_13_14
                                         )
                                         .fallbackToDestructiveMigration(true)
                                         .build()

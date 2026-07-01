@@ -471,7 +471,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 urlExpiryTime = existingSong?.urlExpiryTime ?: 0L,
                 lastPlayedAt = System.currentTimeMillis(),
                 artistId = song.artistId ?: existingSong?.artistId,
-                source = song.source ?: existingSong?.source
+                source = song.source ?: existingSong?.source,
+                youtubeId = song.youtubeId ?: existingSong?.youtubeId
             )
 
             // --- 🛑 DEBUG LOG START (DATA KELUAR KE DB) 🛑 ---

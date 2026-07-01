@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,7 +89,9 @@ import com.example.remusic.ui.components.playlist.UserPlaylistHeader
 import com.example.remusic.ui.components.playlist.OfficialPlaylistHeader
 import com.example.remusic.ui.components.skeletons.PlaylistDetailSkeleton
 import io.github.jan.supabase.auth.auth
-
+import org.burnoutcrew.reorderable.reorderable
+import org.burnoutcrew.reorderable.rememberReorderableLazyListState
+import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 // --- REVISI: Enum dengan Ikon ---
 enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
     DEFAULT("Urutan Playlist", Icons.AutoMirrored.Filled.List), // Default option
@@ -127,14 +130,8 @@ fun PlaylistDetailScreen(
     // --- State Management ---
     val uiState = playMusicViewModel?.uiState?.collectAsState()?.value
 
-    var currentSort by remember(playlistType, playlistId) { 
-        mutableStateOf(
-            if (playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS")) {
-                SortOrder.NEWEST_FIRST
-            } else {
-                SortOrder.DEFAULT
-            }
-        ) 
+    var currentSort by remember(playlistType, playlistId) {
+        mutableStateOf(SortOrder.DEFAULT)
     }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -400,6 +397,37 @@ fun PlaylistDetailContent(
     onShowSortMenuChange: (Boolean) -> Unit,
     isInitialLoading: Boolean
 ) {
+    var isEditMode by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var hasEdited by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    
+    val mutableSongs = androidx.compose.runtime.remember(filteredAndSortedSongs) {
+        androidx.compose.runtime.mutableStateListOf(*filteredAndSortedSongs.toTypedArray())
+    }
+
+    val reorderableState = rememberReorderableLazyListState(
+        listState = listState,
+        onMove = { from, to ->
+            val headerCount = 2 // Search dummy + Header
+            val fromIndex = from.index - headerCount
+            val toIndex = to.index - headerCount
+            if (fromIndex >= 0 && toIndex >= 0 && fromIndex < mutableSongs.size && toIndex < mutableSongs.size) {
+                hasEdited = true
+                val item = mutableSongs.removeAt(fromIndex)
+                mutableSongs.add(toIndex, item)
+            }
+        }
+    )
+
+    androidx.compose.runtime.LaunchedEffect(isEditMode) {
+        if (!isEditMode && hasEdited) {
+            hasEdited = false
+            if (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") {
+                playMusicViewModel?.updateLikedSongsOrder(mutableSongs)
+            } else if (playlistType == PlaylistType.USER_CREATED && playlistId != null) {
+                playMusicViewModel?.updatePlaylistOrder(playlistId, mutableSongs)
+            }
+        }
+    }
 
     // We want to start at Index 1 (Header), hiding Index 0 (Search)
     LaunchedEffect(Unit) {
@@ -536,7 +564,9 @@ fun PlaylistDetailContent(
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .reorderable(reorderableState)
             ) {
                 // --- ITEM 0: SEARCH DUMMY (Pull-to-Reveal) ---
                 item {
@@ -635,7 +665,10 @@ fun PlaylistDetailContent(
                                         playMusicViewModel = playMusicViewModel,
                                         uiState = uiState,
                                         sortedSongs = sortedSongs,
-                                        filteredAndSortedSongs = filteredAndSortedSongs
+                                        filteredAndSortedSongs = filteredAndSortedSongs,
+                                        playlistId = playlistId,
+                                        isEditMode = isEditMode,
+                                        onEditModeToggle = { isEditMode = !isEditMode }
                                     )
                                 }
                                 PlaylistType.ARTIST, PlaylistType.UPLOADER -> {
@@ -680,7 +713,12 @@ fun PlaylistDetailContent(
                                         uiState = uiState,
                                         sortedSongs = sortedSongs,
                                         filteredAndSortedSongs = filteredAndSortedSongs,
-                                        playlistId = playlistId // Pass to access DB data
+                                        playlistId = playlistId, // Pass to access DB data
+                                        onDeleteComplete = {
+                                            (context as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()
+                                        },
+                                        isEditMode = isEditMode,
+                                        onEditModeToggle = { isEditMode = !isEditMode }
                                     )
                                 }
                                 PlaylistType.OFFICIAL -> {
@@ -737,10 +775,11 @@ fun PlaylistDetailContent(
                     }
                 } else {
                     // --- Daftar Lagu (Items 2+) ---
-                    itemsIndexed(
-                        items = filteredAndSortedSongs,
-                        key = { _, item -> item.song.id }
-                    ) { index, songWithArtist ->
+                    items(
+                        items = mutableSongs,
+                        key = { item -> item.song.id }
+                    ) { songWithArtist ->
+                    val index = mutableSongs.indexOf(songWithArtist)
                     val isPlaying = uiState?.currentSong?.song?.id == songWithArtist.song.id
 
                     QueueSongCard(
@@ -749,7 +788,9 @@ fun PlaylistDetailContent(
                         artistName = songWithArtist.displayArtistName,
                         posterUri = songWithArtist.song.coverUrl ?: "",
                         isCurrentlyPlaying = isPlaying, // Use ViewModel state
-                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp),
+                        isEditMode = isEditMode,
+                        dragModifier = if (isEditMode) Modifier.detectReorderAfterLongPress(reorderableState) else Modifier,
+                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp).animateItem(),
                         onClickListener = { _ ->
                             // Use sortedSongs (full list) instead of filteredAndSortedSongs
                             val originalIndex = sortedSongs.indexOfFirst { it.song.id == songWithArtist.song.id }
@@ -767,7 +808,7 @@ fun PlaylistDetailContent(
                             }
                         },
                         onMoreClick = {
-                             val currentUserId = SupabaseManager.client.auth.currentUserOrNull()?.id
+                             val currentUserId = com.example.remusic.data.UserManager.currentUser?.uid
                              val isUserPlaylist = playlistType == PlaylistType.USER_CREATED
                              val isOwner = uiState?.currentPlaylistDetails?.ownerUserId == currentUserId
                              val isOfficial = uiState?.currentPlaylistDetails?.isOfficial == true

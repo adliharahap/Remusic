@@ -525,9 +525,11 @@ import timber.log.Timber
 
                     try {
                        Timber.tag("DEBUG_PLAYER").d( "Fetching Liked Songs for user: $userId")
-                        // Fetch Liked Songs directly from Supabase to ensure accuracy
                         val likedSongsRel = SupabaseManager.client.from("user_song_likes")
-                            .select { filter { eq("user_id", userId) } }
+                            .select { 
+                                filter { eq("user_id", userId) } 
+                                order("position", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                            }
                             .decodeList<PlaylistSongRelation>()
 
                        Timber.tag("DEBUG_PLAYER").d( "Found ${likedSongsRel.size} liked songs relations")
@@ -627,7 +629,10 @@ import timber.log.Timber
 
                 // Fetch User Playlist Songs
                 val playlistSongsRelation = SupabaseManager.client.from("playlist_songs")
-                    .select { filter { eq("playlist_id", playlistId) } }
+                    .select { 
+                        filter { eq("playlist_id", playlistId) } 
+                        order("position", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                    }
                     .decodeList<PlaylistSongRelation>()
 
                 val songIds = playlistSongsRelation.map { it.songId }.distinct()

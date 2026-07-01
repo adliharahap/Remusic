@@ -46,6 +46,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -428,6 +430,41 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     // --- SLEEP TIMER ---
 
+
+    // --- FITUR DRAG AND DROP QUEUE ---
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        val currentPlaylist = _uiState.value.playlist.toMutableList()
+        if (fromIndex !in currentPlaylist.indices || toIndex !in currentPlaylist.indices) return
+
+        // 1. Pindahkan item di list UI State
+        val item = currentPlaylist.removeAt(fromIndex)
+        currentPlaylist.add(toIndex, item)
+
+        // Sesuaikan currentSongIndex secara manual jika lagu yang sedang diputar bergeser
+        var newCurrentIndex = _uiState.value.currentSongIndex
+        if (fromIndex == newCurrentIndex) {
+            newCurrentIndex = toIndex
+        } else if (fromIndex < newCurrentIndex && toIndex >= newCurrentIndex) {
+            newCurrentIndex--
+        } else if (fromIndex > newCurrentIndex && toIndex <= newCurrentIndex) {
+            newCurrentIndex++
+        }
+
+        _uiState.update { 
+            it.copy(
+                playlist = currentPlaylist,
+                currentSongIndex = newCurrentIndex
+            )
+        }
+
+        // 2. Sinkronkan dengan ExoPlayer
+        mediaController?.moveMediaItem(fromIndex, toIndex)
+
+        // 3. Simpan state antrean terbaru ke Room Database di background
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.queue.savePlaybackQueue(currentPlaylist, _uiState.value.playingMusicFromPlaylist)
+        }
+    }
 
     // --- FITUR LIKE / UNLIKE ---
     fun toggleLike() {
@@ -827,5 +864,160 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissAddToPlaylistSheet() {
         _uiState.update { it.copy(selectedSongForAddToPlaylist = null) }
+    }
+
+    // =========================================================================
+    //                      UPDATE PLAYLIST/LIKED SONGS ORDER
+    // =========================================================================
+
+    fun updatePlaylistOrder(playlistId: String, newOrderedSongs: List<SongWithArtist>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
+                        async {
+                            com.example.remusic.data.SupabaseManager.client.from("playlist_songs")
+                                .update({ set("position", index) }) {
+                                    filter {
+                                        eq("playlist_id", playlistId)
+                                        eq("song_id", songWithArtist.song.id)
+                                    }
+                                }
+                        }
+                    }
+                    kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
+                }
+                Timber.tag("DEBUG_PLAYER").d("Successfully updated playlist order in DB.")
+                _uiState.update { state ->
+                    val currentPlaylistId = state.currentPlaylistDetails?.id
+                    if (currentPlaylistId == playlistId) {
+                        state.copy(artistSongs = newOrderedSongs)
+                    } else {
+                        state
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e("Failed to update playlist order: ${e.message}", e)
+            }
+        }
+    }
+
+    fun updateLikedSongsOrder(newOrderedSongs: List<SongWithArtist>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val userId = com.example.remusic.data.UserManager.currentUser?.uid ?: return@launch
+                Timber.tag("DEBUG_PLAYER").d("Updating liked songs order for $userId. Total: ${newOrderedSongs.size}")
+                kotlinx.coroutines.coroutineScope {
+                    val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
+                        async {
+                            Timber.tag("DEBUG_PLAYER").d("Updating liked song ${songWithArtist.song.id} to position $index")
+                            com.example.remusic.data.SupabaseManager.client.from("user_song_likes")
+                                .update({ set("position", index) }) {
+                                    filter {
+                                        eq("user_id", userId)
+                                        eq("song_id", songWithArtist.song.id)
+                                    }
+                                }
+                        }
+                    }
+                    kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
+                }
+                Timber.tag("DEBUG_PLAYER").d("Successfully updated liked songs order in DB.")
+                _uiState.update { state ->
+                    state.copy(artistSongs = newOrderedSongs)
+                }
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e(e, "Failed to update liked songs order: ${e.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    //                      PLAYLIST CRUD
+    // =========================================================================
+
+    fun updatePlaylistVisibility(playlistId: String, newVisibility: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                com.example.remusic.data.SupabaseManager.client.from("playlists")
+                    .update({ set("visibility", newVisibility.lowercase()) }) {
+                        filter { eq("id", playlistId) }
+                    }
+                
+                // Update UI state if this is the currently viewed playlist
+                _uiState.update { state ->
+                    val currentPlaylist = state.currentPlaylistDetails
+                    if (currentPlaylist?.id == playlistId) {
+                        state.copy(
+                            currentPlaylistDetails = currentPlaylist.copy(visibility = newVisibility.lowercase())
+                        )
+                    } else {
+                        state
+                    }
+                }
+                Timber.tag("DEBUG_PLAYER").d("Successfully updated playlist visibility.")
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e("Failed to update playlist visibility: ${e.message}", e)
+            }
+        }
+    }
+
+    fun updatePlaylistProfile(playlistId: String, newTitle: String, newDescription: String, newCoverUrl: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                com.example.remusic.data.SupabaseManager.client.from("playlists")
+                    .update(
+                        {
+                            set("title", newTitle)
+                            set("description", newDescription)
+                            if (newCoverUrl.isNotBlank()) {
+                                set("cover_url", newCoverUrl)
+                            }
+                        }
+                    ) {
+                        filter { eq("id", playlistId) }
+                    }
+                
+                // Update UI state
+                _uiState.update { state ->
+                    val currentPlaylist = state.currentPlaylistDetails
+                    if (currentPlaylist?.id == playlistId) {
+                        state.copy(
+                            currentPlaylistDetails = currentPlaylist.copy(
+                                title = newTitle,
+                                description = newDescription,
+                                coverUrl = if (newCoverUrl.isNotBlank()) newCoverUrl else currentPlaylist.coverUrl
+                            )
+                        )
+                    } else {
+                        state
+                    }
+                }
+                Timber.tag("DEBUG_PLAYER").d("Successfully updated playlist profile.")
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e("Failed to update playlist profile: ${e.message}", e)
+            }
+        }
+    }
+
+    fun deletePlaylist(playlistId: String, onSuccess: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Delete playlist from Supabase
+                com.example.remusic.data.SupabaseManager.client.from("playlists")
+                    .delete {
+                        filter { eq("id", playlistId) }
+                    }
+                
+                Timber.tag("DEBUG_PLAYER").d("Successfully deleted playlist.")
+                
+                // Invoke callback on main thread to navigate back
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e("Failed to delete playlist: ${e.message}", e)
+            }
+        }
     }
 }
