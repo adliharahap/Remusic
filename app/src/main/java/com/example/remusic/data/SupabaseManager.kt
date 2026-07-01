@@ -28,7 +28,8 @@ object SupabaseManager {
                 // Auto-refresh access token sebelum expired (setiap ~50 menit dari expire 1 jam)
                 // Ini mencegah semua API call gagal hanya karena access token expired
                 // Library akan otomatis pakai refresh_token untuk dapatkan access_token baru
-                alwaysAutoRefresh = true
+                // Kita matikan alwaysAutoRefresh agar tidak jalan di background (mencegah bug Refresh Token Reuse saat Doze mode)
+                alwaysAutoRefresh = false
                 autoLoadFromStorage = true
             }
             install(Postgrest)

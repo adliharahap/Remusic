@@ -85,6 +85,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _ytError = MutableStateFlow<String?>(null)
     val ytError: StateFlow<String?> = _ytError.asStateFlow()
 
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+
     // --- SEARCH SUGGESTIONS ---
     private val _searchSuggestions = MutableStateFlow<List<String>>(emptyList())
     val searchSuggestions: StateFlow<List<String>> = _searchSuggestions.asStateFlow()
@@ -154,21 +157,26 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 android.util.Log.d("SearchVM", "🎵 [YT SEARCH] query: $query")
                 
                 // Fetch Songs, Videos, and Artists in parallel
-                val songsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull() }
-                val videosDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_VIDEO).getOrNull() }
-                val artistsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_ARTIST).getOrNull() }
+                val songsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG) }
+                val videosDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_VIDEO) }
+                val artistsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_ARTIST) }
 
                 val songsResult = songsDeferred.await()
                 val videosResult = videosDeferred.await()
                 val artistsResult = artistsDeferred.await()
 
-                val songs = songsResult?.items?.filterIsInstance<SongItem>() ?: emptyList()
-                val videos = videosResult?.items?.filterIsInstance<SongItem>() ?: emptyList()
+                // Throw if YouTube request failed, so it doesn't silently hide the error
+                if (songsResult.isFailure && videosResult.isFailure) {
+                    throw songsResult.exceptionOrNull() ?: Exception("Unknown YouTube Search Error")
+                }
+
+                val songs = songsResult.getOrNull()?.items?.filterIsInstance<SongItem>() ?: emptyList()
+                val videos = videosResult.getOrNull()?.items?.filterIsInstance<SongItem>() ?: emptyList()
                 
                 // Combine songs and videos, prioritizing songs
                 val combinedYtSongs = (songs + videos).distinctBy { it.id }
 
-                val ytArtists = artistsResult?.items?.filterIsInstance<com.metrolist.innertube.models.ArtistItem>()?.map { item ->
+                val ytArtists = artistsResult.getOrNull()?.items?.filterIsInstance<com.metrolist.innertube.models.ArtistItem>()?.map { item ->
                     Artist(
                         id = item.id,
                         name = item.title,
@@ -248,6 +256,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun performSearch(query: String) {
+        _searchError.value = null
         try {
             // Reset state
             _topArtist.value = null
@@ -363,6 +372,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
         } catch (e: Exception) {
             e.printStackTrace()
+            android.util.Log.e("SearchVM", "❌ [LOCAL SEARCH ERROR] ${e.message}")
+            _searchError.value = "Gagal mencari di database: ${e.message}"
         }
     }
 

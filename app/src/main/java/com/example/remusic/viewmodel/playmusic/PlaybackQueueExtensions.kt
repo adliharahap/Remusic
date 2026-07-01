@@ -261,7 +261,14 @@ import timber.log.Timber
             }
 
             // Fetch Smart Queue (List<Song>)
-            val relatedSongs = repository.fetchSmartQueue(seedSong.song)
+            val relatedSongs = try {
+                repository.fetchSmartQueue(seedSong.song)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "Gagal memuat antrean pintar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+                emptyList()
+            }
 
             if (relatedSongs.isNotEmpty()) {
                Timber.tag("DEBUG_PLAYER").d(
@@ -344,6 +351,9 @@ import timber.log.Timber
                 // 7. Prefetch lagu berikutnya (Index 1) agar siap dimainkan
                 prefetchSongAtIndex(1)
             } else {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "Gagal memuat antrean otomatis. Daftar kosong.", android.widget.Toast.LENGTH_LONG).show()
+                }
                 Timber.tag("DEBUG_PLAYER").w( "⚠️ Smart Queue returned empty list.")
             }
         }
@@ -479,6 +489,9 @@ import timber.log.Timber
                             return@withLock // This will exit the lock and loop again because finalUniqueNew is empty
                         } else {
                            Timber.tag("DEBUG_PLAYER").e( "❌ [YT RECO] FAILED even after session reset. Giving up.")
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(getApplication(), "Gagal memuat rekomendasi YouTube.", android.widget.Toast.LENGTH_LONG).show()
+                            }
                             return
                         }
                     }
@@ -499,6 +512,9 @@ import timber.log.Timber
 
                 } catch (e: Exception) {
                    Timber.tag("DEBUG_PLAYER").e( "❌ [YT RECO] fetchYouTubeRecommendations failed: ${e.message}")
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(getApplication(), "Gagal memuat rekomendasi YouTube: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    }
                     return
                 }
             } // end Mutex lock

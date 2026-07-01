@@ -986,9 +986,8 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
             results
         } catch (e: Exception) {
             Log.e(TAG, "❌ [SMART QUEUE ERROR]: ${e.message}")
-            // Fallback: Kembalikan list kosong agar player tidak error, nanti ViewModel handle
-            // logic fallbacknya
-            emptyList()
+            // Melempar error agar PlayMusicViewModel dapat menampilkannya di UI (Toast/Log)
+            throw Exception("Gagal memuat antrean pintar: ${e.message}", e)
         }
     }
 

@@ -216,6 +216,7 @@ fun SearchMainScreen(
     
     val ytIsLoading by searchViewModel.ytIsLoading.collectAsState()
     val ytError by searchViewModel.ytError.collectAsState()
+    val searchError by searchViewModel.searchError.collectAsState()
     val searchSuggestions by searchViewModel.searchSuggestions.collectAsState()
 
     // Delay showing empty state to give search time to load
@@ -847,7 +848,18 @@ fun SearchMainScreen(
                                 err,
                                 color = Color(0xFFE53935),
                                 fontSize = 14.sp,
-                                modifier = Modifier.padding(16.dp)
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    }
+
+                    searchError?.let { err ->
+                        item {
+                            Text(
+                                err,
+                                color = Color(0xFFE53935),
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
                     }

@@ -12,10 +12,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 
 class RemusicApplication : Application() {
 
     private val appScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var lastRefreshTime = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +39,32 @@ class RemusicApplication : Application() {
         // Jika refresh_token expired atau dicabut, Supabase akan emit SessionStatus.NotAuthenticated.
         // Kita tangkap ini dan trigger forced logout via SessionExpiredHandler.
         monitorSupabaseSession()
+        
+        // Atur lifecycle untuk mengelola Supabase auto-refresh
+        // Ini MENCEGAH bug "Refresh Token Reuse" (400 Invalid Grant) karena background timeout
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                // Aplikasi kembali ke layar (Foreground)
+                val now = System.currentTimeMillis()
+                // Refresh jika sudah lewat 45 menit (2700000 ms) dari refresh terakhir
+                if (now - lastRefreshTime > 45 * 60 * 1000L) {
+                    appScope.launch {
+                        try {
+                            // Tunggu Supabase init
+                            kotlinx.coroutines.delay(1500)
+                            val session = SupabaseManager.client.auth.currentSessionOrNull()
+                            if (session != null) {
+                                SupabaseManager.client.auth.refreshCurrentSession()
+                                lastRefreshTime = System.currentTimeMillis()
+                                Log.d("RemusicApp", "▶️ Supabase Session Refreshed (Foreground)")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("RemusicApp", "❌ Error refreshing Supabase session", e)
+                        }
+                    }
+                }
+            }
+        })
     }
 
     private fun initYouTubeSession() {
