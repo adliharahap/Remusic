@@ -45,6 +45,7 @@ class UserPreferencesRepository(private val context: Context) {
     private val REPEAT_MODE_KEY = intPreferencesKey("repeat_mode")
     private val TRANSLATE_LYRICS_KEY = booleanPreferencesKey("translate_lyrics_enabled")
     private val LAST_SONG_COLOR_KEY = stringPreferencesKey("last_song_primary_color")
+    private val FONT_SCALE_KEY = floatPreferencesKey("font_scale")
 
     // 2. Buat Flow untuk membaca state shuffle.
     // Jika data belum ada, akan mengembalikan `false` sebagai default.
@@ -58,6 +59,9 @@ class UserPreferencesRepository(private val context: Context) {
 
     val translateLyricsFlow: Flow<Boolean> =
             context.dataStore.data.map { preferences -> preferences[TRANSLATE_LYRICS_KEY] ?: false }
+
+    val fontScaleFlow: Flow<Float> =
+            context.dataStore.data.map { preferences -> preferences[FONT_SCALE_KEY] ?: 0.9f }
 
     val lastSongColorFlow: Flow<Color> =
             context.dataStore.data.map { preferences ->
@@ -84,6 +88,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setTranslateLyrics(isEnabled: Boolean) {
         context.dataStore.edit { settings -> settings[TRANSLATE_LYRICS_KEY] = isEnabled }
+    }
+
+    suspend fun saveFontScale(scale: Float) {
+        context.dataStore.edit { settings -> settings[FONT_SCALE_KEY] = scale }
     }
 
     suspend fun saveLastSongColor(color: Color) {

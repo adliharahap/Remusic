@@ -31,6 +31,10 @@
 -keep class com.example.remusic.data.network.Deezer** { *; }
 -keep interface com.example.remusic.data.network.DeezerApi { *; }
 
+# Keep LrcLib network models and interfaces
+-keep class com.example.remusic.data.network.LrcLib** { *; }
+-keep interface com.example.remusic.data.network.LrcLibApi { *; }
+
 # Keep Kotlinx Serialization annotations and runtime
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt

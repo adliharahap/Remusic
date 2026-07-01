@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.viewmodel.playmusic.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -43,15 +45,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.LaunchedEffect
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.model.displayArtistName
-import com.example.remusic.ui.components.QueueSongCard
+import com.example.remusic.ui.components.*
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
-import com.example.remusic.ui.screen.RequestSongScreen
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 // Data class lagu
 data class Song2(
@@ -125,6 +129,14 @@ fun SearchScreen(
                 },
                 onRequestSongClick = {
                     searchNavController.navigate("request_song") { launchSingleTop = true }
+                },
+                onUserClick = { userId ->
+                    searchNavController.navigate(
+                        com.example.remusic.navigation.SearchRoute.createRoute(
+                            id = userId,
+                            type = "UPLOADER"
+                        )
+                    )
                 }
             )
         }
@@ -174,10 +186,12 @@ fun SearchMainScreen(
     onSongClick: (com.example.remusic.data.model.SongWithArtist, String) -> Unit = { _, _ -> },
     onArtistClick: (String) -> Unit = {},
     onPlaylistClick: (com.example.remusic.data.model.Playlist) -> Unit = {},
-    onRequestSongClick: () -> Unit = {}
+    onRequestSongClick: () -> Unit = {},
+    onUserClick: (String) -> Unit = {}
 ) {
     // Local state for emptiness check only
     var showEmptyState by remember { mutableStateOf(false) }
+    var isArtistExpanded by remember { mutableStateOf(false) }
     
     // Collect State from ViewModel
     val searchQuery by searchViewModel.searchQuery.collectAsState()
@@ -191,12 +205,25 @@ fun SearchMainScreen(
     val foundPlaylists by searchViewModel.foundPlaylists.collectAsState()
     val foundUsers by searchViewModel.foundUsers.collectAsState()
 
+    // YouTube states
+    val ytResults by searchViewModel.ytSearchResults.collectAsState()
+    val ytFoundArtists by searchViewModel.ytFoundArtists.collectAsState()
+    
+    // Combined prioritized states
+    val combinedSongs by searchViewModel.combinedSongs.collectAsState()
+    val combinedVideos by searchViewModel.combinedVideos.collectAsState()
+    val combinedArtists by searchViewModel.combinedArtists.collectAsState()
+    
+    val ytIsLoading by searchViewModel.ytIsLoading.collectAsState()
+    val ytError by searchViewModel.ytError.collectAsState()
+    val searchSuggestions by searchViewModel.searchSuggestions.collectAsState()
+
     // Delay showing empty state to give search time to load
-    LaunchedEffect(searchQuery, searchResults, foundArtists, foundPlaylists, foundUsers) {
-        if (searchQuery.isNotEmpty() && searchResults.isEmpty() && foundArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
+    LaunchedEffect(searchQuery, combinedSongs, combinedArtists, foundPlaylists, foundUsers) {
+        if (searchQuery.isNotEmpty() && combinedSongs.isEmpty() && combinedArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
             showEmptyState = false
             kotlinx.coroutines.delay(2500) // 2.5 second delay
-            if (searchQuery.isNotEmpty() && searchResults.isEmpty() && foundArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
+            if (searchQuery.isNotEmpty() && combinedSongs.isEmpty() && combinedArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
                 showEmptyState = true
             }
         } else {
@@ -340,6 +367,50 @@ fun SearchMainScreen(
                 )
             }
             
+            // ── SEARCH SUGGESTIONS CHIPS ────────────────────────────────
+            // Tampil hanya saat ada query dan suggestions tersedia
+            if (searchQuery.isNotEmpty() && searchSuggestions.isNotEmpty()) {
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(searchSuggestions.size) { idx ->
+                        val suggestion = searchSuggestions[idx]
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .clickable {
+                                    searchViewModel.onSearchQueryChanged(suggestion)
+                                }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = suggestion,
+                                    color = Color.White.copy(0.9f),
+                                    fontSize = 13.sp,
+                                    fontFamily = AppFont.RobotoRegular,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Hasil Pencarian atau Riwayat
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 
@@ -377,7 +448,8 @@ fun SearchMainScreen(
                             artistId = historyItem.artistId,
                             telegramFileId = historyItem.telegramFileId,
                             canvasUrl = historyItem.canvasUrl,
-                            featuredArtists = historyItem.featuredArtists
+                            featuredArtists = historyItem.featuredArtists,
+                            source = historyItem.source
                         )
 
                         // 2. Reconstruct Artist (Nama Primary)
@@ -472,92 +544,171 @@ fun SearchMainScreen(
                         }
                     }
                 }
-                
-                // --- SEARCH RESULT HEADER ---
-                if (searchQuery.isNotEmpty() && (searchResults.isNotEmpty() || foundArtists.isNotEmpty() || foundPlaylists.isNotEmpty() || foundUsers.isNotEmpty())) {
-                     item {
-                        Text(
-                            text = "Hasil pencarian",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontFamily = AppFont.RobotoBold,
-                                color = Color.White
-                            ),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-                        )
-                    }
-                }
 
-                // --- MIXED RESULT CHECK ---
-                val hasMixedResults = foundPlaylists.isNotEmpty() || foundUsers.isNotEmpty()
-
-                // --- TOP RESULT (ARTIST) - Large Card ---
-                if (topArtist != null) {
-                    item {
-                        // Artist Card - Large/Top Result Style
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                                .clickable { 
-                                    // Navigate to Artist Playlist Detail Screen
-                                    onArtistClick(topArtist!!.id)
-                                }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            coil.compose.AsyncImage(
-                                model = topArtist!!.photoUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .clip(androidx.compose.foundation.shape.CircleShape),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                // --- SEARCH RESULT SECTIONS ---
+                if (searchQuery.isNotEmpty()) {
+                    
+                    // --- SEARCH RESULT HEADER ---
+                    if (combinedSongs.isNotEmpty() || combinedArtists.isNotEmpty() || foundPlaylists.isNotEmpty() || foundUsers.isNotEmpty()) {
+                         item {
+                            Text(
+                                text = "Hasil pencarian",
+                                style = TextStyle(
+                                    fontSize = 20.sp,
+                                    fontFamily = AppFont.RobotoBold,
+                                    color = Color.White
+                                ),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
                             )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = topArtist!!.name,
-                                    style = TextStyle(
-                                        fontSize = 20.sp,
-                                        fontFamily = AppFont.MontserratBold,
-                                        color = Color.White
-                                    )
-                                )
-                                Text(
-                                    text = "Artist",
-                                    style = TextStyle(
-                                        fontSize = 14.sp,
-                                        fontFamily = AppFont.RobotoRegular,
-                                        color = Color.Gray
-                                    )
-                                )
-                            }
                         }
                     }
-                }
 
-                // --- ARTISTS LIST SECTION (Only if Mixed Results) ---
-                if (hasMixedResults && foundArtists.isNotEmpty()) {
-                     item {
-                        Text(
-                            text = "Artists",
-                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
-                        )
-                    }
-                    itemsIndexed(foundArtists) { _, artist ->
-                        if (artist.id != topArtist?.id) { // Don't duplicate top artist
+                    // --- TOP RESULT (ARTIST) - Large Card ---
+                    if (topArtist != null) {
+                        item {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onArtistClick(artist.id) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                                    .clickable { onArtistClick(topArtist!!.id) }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                coil.compose.AsyncImage(
+                                    model = topArtist!!.photoUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = topArtist!!.name,
+                                        style = TextStyle(
+                                            fontSize = 20.sp,
+                                            fontFamily = AppFont.MontserratBold,
+                                            color = Color.White
+                                        )
+                                    )
+                                    Text(
+                                        text = if (topArtist!!.source == "youtube") "Artist from Extended" else "Artist from Uploader",
+                                        style = TextStyle(
+                                            fontSize = 14.sp,
+                                            fontFamily = AppFont.RobotoRegular,
+                                            color = if (topArtist!!.source == "youtube") Color(0xFF90CAF9) else Color.Gray
+                                        )
+                                    )
+                                }
+                                if (topArtist!!.source == "youtube") {
+                                    Icon(
+                                        imageVector = androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Show More",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // --- ARTISTS LIST SECTION ---
+                    if (combinedArtists.isNotEmpty()) {
+                        val displayArtists = if (isArtistExpanded) combinedArtists else combinedArtists.take(2)
+                        
+                        item {
+                            Text(
+                                text = "Artists",
+                                style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 12.dp)
+                            )
+                        }
+                        
+                        itemsIndexed(displayArtists) { _, artist ->
+                            if (artist.id != topArtist?.id || isArtistExpanded) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onArtistClick(artist.id) }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    coil.compose.AsyncImage(
+                                        model = artist.photoUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(50.dp)
+                                            .clip(androidx.compose.foundation.shape.CircleShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = artist.name,
+                                            style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                        )
+                                        Text(
+                                            text = if (artist.source == "youtube") "Artist from Extended" else "Artist from Uploader",
+                                            style = TextStyle(
+                                                fontSize = 12.sp, 
+                                                fontFamily = AppFont.RobotoRegular, 
+                                                color = if (artist.source == "youtube") Color(0xFF90CAF9) else Color.Gray
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (combinedArtists.size > 1) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { isArtistExpanded = !isArtistExpanded }
+                                        .padding(vertical = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = if (isArtistExpanded) "Show Less" else "Show More",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp,
+                                        fontFamily = AppFont.RobotoMedium
+                                    )
+                                    Icon(
+                                        imageVector = if (isArtistExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // --- USERS / UPLOADERS SECTION ---
+                    if (foundUsers.isNotEmpty()) {
+                        item {
+                             Text(
+                                text = "Profiles",
+                                style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                            )
+                        }
+                        itemsIndexed(foundUsers) { _, user ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { 
+                                        onUserClick(user.uid)
+                                    }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                  coil.compose.AsyncImage(
-                                    model = artist.photoUrl,
+                                    model = user.photoUrl,
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(50.dp)
@@ -566,125 +717,140 @@ fun SearchMainScreen(
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Text(
-                                    text = artist.name,
+                                    text = user.displayName ?: "User",
                                     style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
                                 )
                             }
                         }
                     }
-                }
 
-                // --- USERS / UPLOADERS SECTION ---
-                if (foundUsers.isNotEmpty()) {
-                    item {
-                         Text(
-                            text = "Profiles",
-                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
-                        )
-                    }
-                    itemsIndexed(foundUsers) { _, user ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { /* TODO: Go to User Profile */ }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                             coil.compose.AsyncImage(
-                                model = user.photoUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(androidx.compose.foundation.shape.CircleShape),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    // --- PLAYLISTS SECTION ---
+                    if (foundPlaylists.isNotEmpty()) {
+                        item {
+                             Text(
+                                text = "Playlists",
+                                style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
                             )
-                            Spacer(modifier = Modifier.width(16.dp))
-                             Column {
-                                Text(
-                                    text = user.displayName ?: "Unknown",
-                                    style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
-                                )
-                                Text(
-                                    text = "Profile",
-                                    style = TextStyle(fontSize = 12.sp, fontFamily = AppFont.RobotoRegular, color = Color.Gray)
-                                )
-                            }
                         }
-                    }
-                }
-                
-                // --- PLAYLISTS SECTION ---
-                if (foundPlaylists.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Playlists",
-                            style = TextStyle(fontSize = 18.sp, fontFamily = AppFont.MontserratBold, color = Color.White),
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
-                        )
-                    }
-                    itemsIndexed(foundPlaylists) { _, playlist ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPlaylistClick(playlist) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                             coil.compose.AsyncImage(
-                                model = playlist.coverUrl,
-                                contentDescription = null,
+                        itemsIndexed(foundPlaylists) { _, playlist ->
+                            Row(
                                 modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)), // Playlist square
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                             Column {
-                                Text(
-                                    text = playlist.title,
-                                    style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                    .fillMaxWidth()
+                                    .clickable { onPlaylistClick(playlist) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                 coil.compose.AsyncImage(
+                                    model = playlist.coverUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)), // Playlist square
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                 )
-                                Text(
-                                    text = "Playlist",
-                                    style = TextStyle(fontSize = 12.sp, fontFamily = AppFont.RobotoRegular, color = Color.Gray)
-                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                 Column {
+                                    Text(
+                                        text = playlist.title,
+                                        style = TextStyle(fontSize = 16.sp, fontFamily = AppFont.MontserratBold, color = Color.White)
+                                    )
+                                    Text(
+                                        text = "Playlist",
+                                        style = TextStyle(fontSize = 12.sp, fontFamily = AppFont.RobotoRegular, color = Color.Gray)
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                // --- SONGS SECTION ---
-                if (searchResults.isNotEmpty() && (hasMixedResults || topArtist != null)) {
-                     item {
-                        Text(
-                            text = "Songs",
-                            style = TextStyle(
-                                fontSize = 18.sp,
-                                fontFamily = AppFont.MontserratBold,
-                                color = Color.White
-                            ),
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
-                        )
-                    }
-                }
-
-                // --- SONGS LIST ---
-                itemsIndexed(searchResults) { index, song ->
-                    QueueSongCard(
-                        index = index,
-                        songTitle = song.song.title,
-                        artistName = song.displayArtistName,
-                        posterUri = song.song.coverUrl ?: "",
-                        isCurrentlyPlaying = false,
-                        onClickListener = {
-                            searchViewModel.onSongPlayed(song)
-                            onSongClick(song, searchQuery)
-                        },
-                        onMoreClick = {
-                            playMusicViewModel.showQueueOptions(song)
+                    // --- SONGS SECTION ---
+                    if (combinedSongs.isNotEmpty()) {
+                         item {
+                            Text(
+                                text = "Songs",
+                                style = TextStyle(
+                                    fontSize = 18.sp,
+                                    fontFamily = AppFont.MontserratBold,
+                                    color = Color.White
+                                ),
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                            )
                         }
-                    )
+                        
+                        itemsIndexed(combinedSongs) { index, song ->
+                            QueueSongCard(
+                                index = index,
+                                songTitle = song.song.title,
+                                artistName = song.displayArtistName,
+                                posterUri = song.song.coverUrl ?: "",
+                                isCurrentlyPlaying = false,
+                                sourceLabel = when(song.song.source) {
+                                    "youtube" -> "Extended"
+                                    "youtube_video" -> "Video"
+                                    else -> "Uploader"
+                                },
+                                onClickListener = {
+                                    searchViewModel.onSongPlayed(song)
+                                    onSongClick(song, searchQuery)
+                                },
+                                onMoreClick = {
+                                    playMusicViewModel.showQueueOptions(song)
+                                }
+                            )
+                        }
+                    }
+
+                    // --- VIDEOS SECTION ---
+                    if (combinedVideos.isNotEmpty()) {
+                         item {
+                            Text(
+                                text = "Videos",
+                                style = TextStyle(
+                                    fontSize = 18.sp,
+                                    fontFamily = AppFont.MontserratBold,
+                                    color = Color.White
+                                ),
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                            )
+                        }
+                        
+                        itemsIndexed(combinedVideos) { index, song ->
+                            QueueSongCard(
+                                index = index,
+                                songTitle = song.song.title,
+                                artistName = song.displayArtistName,
+                                posterUri = song.song.coverUrl ?: "",
+                                isCurrentlyPlaying = false,
+                                sourceLabel = "Video",
+                                onClickListener = {
+                                    searchViewModel.onSongPlayed(song)
+                                    onSongClick(song, searchQuery)
+                                },
+                                onMoreClick = {
+                                    playMusicViewModel.showQueueOptions(song)
+                                }
+                            )
+                        }
+                    }
+
+                    // --- LOADING & ERROR (YT) ---
+                    if (ytIsLoading) {
+                        items(5) {
+                            QueueSongCardSkeleton()
+                        }
+                    }
+
+                    ytError?.let { err ->
+                        item {
+                            Text(
+                                err,
+                                color = Color(0xFFE53935),
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
                 }
 
                 item {

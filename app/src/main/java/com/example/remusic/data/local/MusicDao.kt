@@ -24,6 +24,9 @@ interface MusicDao {
     @Query("UPDATE cached_songs SET telegramDirectUrl = :url, urlExpiryTime = :expiry, lastPlayedAt = :lastPlayed WHERE id = :id")
     suspend fun updateSongUrl(id: String, url: String, expiry: Long, lastPlayed: Long)
 
+    @Query("UPDATE cached_songs SET lyrics = :lyrics WHERE id = :id")
+    suspend fun updateLyrics(id: String, lyrics: String)
+
     // Partial Update: Details (Lyrics Fetch)
     @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, canvasUrl = :canvas, uploaderUserId = :uploaderId, language = :language, moods = :moods, artistId = :artistId, featuredArtists = :featuredArtists WHERE id = :id")
     suspend fun updateSongDetails(
@@ -52,6 +55,9 @@ interface MusicDao {
     @Query("SELECT id FROM cached_songs ORDER BY lastPlayedAt DESC LIMIT :limit")
     suspend fun getRecentlyPlayedIds(limit: Int): List<String>
 
+    @Query("SELECT * FROM cached_songs WHERE title = :title AND artistName = :artist LIMIT 1")
+    suspend fun getSongByTitleAndArtist(title: String, artist: String): CachedSong?
+
     // --- LIKED SONGS ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -59,6 +65,9 @@ interface MusicDao {
 
     @Query("DELETE FROM liked_songs WHERE songId = :songId")
     suspend fun deleteLikedSong(songId: String)
+
+    @Query("DELETE FROM liked_songs")
+    suspend fun clearLikedSongs()
 
     // Cek apakah lagu ini di-like?
     @Query("SELECT EXISTS(SELECT 1 FROM liked_songs WHERE songId = :songId)")

@@ -152,7 +152,7 @@ fun NotificationScreen(
                             }
                             // Spacer agar tidak tertutup Bottom Navigation
                             item {
-                                Spacer(modifier = Modifier.height(120.dp))
+                                Spacer(modifier = Modifier.height(150.dp))
                             }
                         }
                     }

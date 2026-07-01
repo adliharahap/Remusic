@@ -138,7 +138,10 @@ fun QueueScreen(
 
         itemsIndexed(
             playlistQueue,
-            key = { _, songWithArtist -> songWithArtist.song.id } // key unik
+            // Gunakan kombinasi index + id agar key SELALU unik
+            // (YouTube API kadang mengembalikan lagu yang sama lebih dari sekali
+            //  sehingga crash jika hanya pakai song.id)
+            key = { index, songWithArtist -> "$index-${songWithArtist.song.id}" }
         ) { index, songWithArtist ->
             QueueSongCard(
                 index = index,

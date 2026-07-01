@@ -1,5 +1,6 @@
 package com.example.remusic.viewmodel
 
+import com.example.remusic.viewmodel.playmusic.*
 import android.app.Application
 import android.util.Log
 import androidx.compose.runtime.snapshotFlow
@@ -257,7 +258,7 @@ class PlaylistScreenViewModel(application: Application) : AndroidViewModel(appli
             telegramDirectUrl = this.telegramDirectUrl,
             lyricsUpdatedAt = this.lyricsUpdatedAt,
             language = this.language,
-            moods = this.moods,
+            moods = this.moods ?: emptyList(),
             featuredArtists = this.featuredArtists
         )
     }

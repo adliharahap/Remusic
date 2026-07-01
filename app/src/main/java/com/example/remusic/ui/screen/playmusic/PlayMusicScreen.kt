@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen.playmusic
 
+import com.example.remusic.viewmodel.playmusic.*
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -118,8 +119,8 @@ fun PlayMusicScreen(
     }
 
     // 3. Sync Position: Pass playback position to LyricsVM
-    LaunchedEffect(uiState.currentPosition) {
-        lyricsViewModel.updatePlaybackPosition(uiState.currentPosition)
+    LaunchedEffect(uiState.currentPosition, uiState.lyricsOffset) {
+        lyricsViewModel.updatePlaybackPosition(uiState.currentPosition, uiState.lyricsOffset)
     }
 
     // 1. Logika Overriding Index Warna jika lirik Inactive adalah Hitam
@@ -198,6 +199,12 @@ fun PlayMusicScreen(
     var showFontPickerSheet by remember { mutableStateOf(false) }
     val fontPickerSheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // --- GAME MODE SHEET STATE ---
+    var showGameModeSheet by remember { mutableStateOf(false) }
+    val gameModeSheetState = androidx.compose.material3.rememberModalBottomSheetState()
+    
+    // --- AUDIO SWITCH SHEET STATE ---
+    var showAudioSwitchSheet by remember { mutableStateOf(false) }
     // --- SNACKBAR LOGIC (Moved here for scope) ---
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     
@@ -278,7 +285,7 @@ fun PlayMusicScreen(
                             }
                         },
                         onAddToLiked = { song ->
-                            playMusicViewModel.toggleLike(song.song.id)
+                            playMusicViewModel.toggleLike(song)
                         },
                         onDownload = { song ->
                             playMusicViewModel.downloadSong(song)
@@ -342,7 +349,15 @@ fun PlayMusicScreen(
                     isExiting = isExiting,
                     playbackSpeed = uiState.playbackSpeed,
                     playerBackgroundStyle = if (uiState.isThemeAppliedToNowPlaying) uiState.playerBackgroundStyle
-                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT
+                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+                    currentAudioDevice = uiState.currentAudioDevice,
+                    onAddToPlaylistClick = { 
+                        uiState.currentSong?.let { playMusicViewModel.showAddToPlaylistSheet(it) } 
+                    },
+                    onGameModeClick = { showGameModeSheet = true },
+                    isGameModeEnabled = uiState.isGameModeActive,
+                    gameModeVolume = uiState.gameModeVolume,
+                    onAudioDeviceClick = { showAudioSwitchSheet = true }
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -363,7 +378,15 @@ fun PlayMusicScreen(
                     playbackSpeed = uiState.playbackSpeed,
                     playerBackgroundStyle = if (uiState.isThemeAppliedToLyrics) uiState.playerBackgroundStyle
                         else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
-                    gradientBrush = animatedGradientBrush
+                    gradientBrush = animatedGradientBrush,
+                    onRetryClick = { playMusicViewModel.retryFetchLyrics() },
+                    lyricsOffset = uiState.lyricsOffset,
+                    onOffsetChange = { playMusicViewModel.setLyricsOffset(it) },
+                    onSearchLyrics = { playMusicViewModel.searchAlternativeLyrics(it) },
+                    isSearching = uiState.isSearchingLyrics,
+                    searchResults = uiState.alternativeLyricsResults,
+                    onApplyLyrics = { playMusicViewModel.applyAlternativeLyrics(it) },
+                    isFetchingSyncedLyrics = uiState.isFetchingSyncedLyrics
                 )
             }
         }
@@ -527,6 +550,29 @@ fun PlayMusicScreen(
         )
     }
 
+    if (showGameModeSheet) {
+        GameModeBottomSheet(
+            sheetState = gameModeSheetState,
+            isGameModeActive = uiState.isGameModeActive,
+            gameModeVolume = uiState.gameModeVolume,
+            dominantColors = uiState.dominantColors,
+            onDismiss = { showGameModeSheet = false },
+            onToggleGameMode = { playMusicViewModel.toggleGameMode() },
+            onVolumeChange = { volume -> playMusicViewModel.setGameModeVolume(volume) }
+        )
+    }
+
+    if (showAudioSwitchSheet) {
+        AudioSwitchBottomSheet(
+            availableDevices = uiState.availableAudioDevices,
+            currentDevice = uiState.currentAudioDevice,
+            onDeviceSelected = { selectedDevice ->
+                playMusicViewModel.setAudioOutputDevice(selectedDevice)
+            },
+            onDismiss = { showAudioSwitchSheet = false }
+        )
+    }
+
     if (showMoreOptionsSheet) {
         MoreOptionsBottomSheet(
             sheetState = moreOptionsSheetState,
@@ -602,7 +648,7 @@ fun PlayMusicScreen(
             playlists = uiState.userPlaylists,
             isLoading = uiState.isFetchingUserPlaylists,
             onPlaylistSelected = { playlist ->
-                playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id) { success, message ->
+                playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id, songToAdd) { success, message ->
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                     if (success) {
                         playMusicViewModel.dismissAddToPlaylistSheet()

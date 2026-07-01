@@ -19,6 +19,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
+import io.github.jan.supabase.postgrest.query.filter.*
 import kotlinx.coroutines.async
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -230,6 +231,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 put("max_limit", 20)
             }
         ).decodeList<Song>()
+            .filter { it.source == "telegram" }
 
         // Update timestamp setelah berhasil fetch online
         prefs.edit().putLong("last_quick_pick_time", currentTime).apply()
@@ -247,6 +249,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     "language", "moods"
                 )
             ) {
+                filter {
+                    eq("source", "telegram")
+                }
                 order(column = "created_at", order = Order.DESCENDING)
                 limit(20)
             }
@@ -264,7 +269,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     "language", "moods"
                 )
             ) {
-                filter { gt("like_count", 0) }
+                filter {
+                    gt("like_count", 0)
+                    eq("source", "telegram")
+                }
                 order(column = "like_count", order = Order.DESCENDING)
                 limit(50)
             }
@@ -282,7 +290,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     "language", "moods"
                 )
             ) {
-                filter { gt("play_count", 0) }
+                filter {
+                    gt("play_count", 0)
+                    eq("source", "telegram")
+                }
                 order(column = "play_count", order = Order.DESCENDING)
                 limit(50)
             }

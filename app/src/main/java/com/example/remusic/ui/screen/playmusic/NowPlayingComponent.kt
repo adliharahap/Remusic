@@ -44,6 +44,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -65,7 +69,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,7 +77,13 @@ import androidx.media3.common.Player
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Speaker
+import com.example.remusic.data.model.AudioOutputDevice
 import coil.compose.AsyncImage
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
@@ -122,7 +131,13 @@ fun NowPlaying(
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
     isExiting: Boolean = false,
     playbackSpeed: Float = 1.0f,
-    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
+    currentAudioDevice: AudioOutputDevice? = null,
+    onAddToPlaylistClick: () -> Unit = {},
+    onGameModeClick: () -> Unit = {},
+    isGameModeEnabled: Boolean = false,
+    gameModeVolume: Float = 0.2f,
+    onAudioDeviceClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -212,10 +227,11 @@ fun NowPlaying(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(screenHeight)
-                    .padding(bottom = if (isCanvasMode) 0.dp else 60.dp),
+                    .padding(
+                        bottom = 0.dp
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                // UBAH DARI SpaceBetween KE Top AGAR SEMUA KE ATAS
-                verticalArrangement = Arrangement.Bottom
+                verticalArrangement = Arrangement.Top
             ) {
                 if (isCanvasMode) {
                     val canvasUrl = songWithArtist.song.canvasUrl
@@ -259,7 +275,7 @@ fun NowPlaying(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .fillMaxHeight(0.32f)
+                                .fillMaxHeight(0.35f)
                                 .align(Alignment.BottomCenter),
                             verticalArrangement = Arrangement.Top,
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -423,7 +439,17 @@ fun NowPlaying(
                                 }
 
                                 Text(
-                                    text = statusText,
+                                    text = buildAnnotatedString {
+                                        append(statusText)
+                                        if (isGameModeEnabled) {
+                                            withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
+                                                append(" • ")
+                                            }
+                                            withStyle(style = SpanStyle(color = Color.Green)) {
+                                                append("Game Mode ${(gameModeVolume * 100).toInt()}%")
+                                            }
+                                        }
+                                    },
                                     color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
                                     fontFamily = AppFont.Helvetica,
                                     fontWeight = FontWeight.Bold,
@@ -577,16 +603,88 @@ fun NowPlaying(
                                     )
                                 }
                             }
+
+                            // --- NEW: Audio Device & Action Row ---
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Left: Device Info
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            onAudioDeviceClick()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = currentAudioDevice?.icon ?: Icons.Default.Speaker,
+                                        contentDescription = "Device",
+                                        tint = Color.White.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = currentAudioDevice?.label ?: "Speaker",
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontFamily = AppFont.Helvetica,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 120.dp)
+                                    )
+                                }
+
+                                // Right: Actions
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = onAddToPlaylistClick,
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PlaylistAdd,
+                                            contentDescription = "Add to Playlist",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = onGameModeClick,
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.SportsEsports,
+                                            contentDescription = "Game Mode",
+                                            tint = if (isGameModeEnabled) Color.Green else Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            // Spacer kecil di paling bawah column 1
+                            Spacer(modifier = Modifier.height(5.dp))
                         }
                     }
                 }else {
                     // --- Bagian Atas (Album Art) ---
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f), // Mengisi sisa ruang vertikal
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Bottom // Dorong isi ke bawah (mendekati kontrol)
                     ) {
-                        // Padding top di sini (misal 50dp + margin status bar)
-                        Spacer(modifier = Modifier.height(70.dp))
+                        // Letakkan ruang fleksibel di ATAS gambar agar gambar turun ke bawah
+                        Spacer(modifier = Modifier.height(headerHeight))
+                        Spacer(modifier = Modifier.weight(1f)) 
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         AnimatedContent(
                             targetState = posterAnimation,
@@ -610,14 +708,15 @@ fun NowPlaying(
                             }
                         ) { targetvalue ->
                             val isRunning by remember { derivedStateOf { transition.isRunning } }
-                            AsyncImage(
+                             AsyncImage(
                                 model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                                     .data(songWithArtist?.song?.coverUrl)
                                     .crossfade(true)
                                     .build(),
                                 contentDescription = "Cover Album $targetvalue",
                                 modifier = Modifier
-                                    .fillMaxWidth(0.9f)
+                                    .padding(horizontal = 16.dp) // Jarak dari pinggir layar
+                                    .fillMaxHeight(0.9f)
                                     .aspectRatio(1f)
                                     .shadow(
                                         elevation = if (isRunning) 0.dp else 6.dp,
@@ -631,7 +730,7 @@ fun NowPlaying(
                             )
                         }
                         // Jarak antara Album Art dan Judul
-                        Spacer(modifier = Modifier.height(60.dp))
+                        Spacer(modifier = Modifier.height(5.dp))
                     }
 
                     // --- Bagian Tengah (Judul & Info Lagu) ---
@@ -682,16 +781,16 @@ fun NowPlaying(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 Icon(
-                                    if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                    "Fav",
-                                    Modifier.size(25.dp).clickable {
+                                    imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    contentDescription = "Fav",
+                                    modifier = Modifier.size(25.dp).clickable {
                                         if (isOfflineSong) {
                                             Toast.makeText(context, "Mendengarkan lagu offline tidak bisa like", Toast.LENGTH_SHORT).show()
                                         } else {
                                             onLikeClick()
                                         }
                                     },
-                                    if (isLiked) Color.Red else Color.White
+                                    tint = if (isLiked) Color.Red else Color.White
                                 )
                                 Icon(
                                     Icons.Outlined.Timer,
@@ -704,7 +803,7 @@ fun NowPlaying(
                     }
 
                     // Jarak antara Judul dan Slider/Kontrol
-                    Spacer(modifier = Modifier.height(30.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
                     // --- Bagian Bawah (Slider & Controls) ---
                     Column(
@@ -763,7 +862,17 @@ fun NowPlaying(
                             }
 
                             Text(
-                                text = statusText,
+                                text = buildAnnotatedString {
+                                    append(statusText)
+                                    if (isGameModeEnabled) {
+                                        withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
+                                            append(" • ")
+                                        }
+                                        withStyle(style = SpanStyle(color = Color.Green)) {
+                                            append("Game Mode ${(gameModeVolume * 100).toInt()}%")
+                                        }
+                                    }
+                                },
                                 color = if (errorMsg != null) Color.Red else Color.White.copy(alpha = 0.8f),
                                 fontFamily = AppFont.Helvetica,
                                 fontWeight = FontWeight.Bold,
@@ -912,8 +1021,74 @@ fun NowPlaying(
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(23.dp))
+
+                        // --- NEW: Audio Device & Action Row ---
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Left: Device Info
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onAudioDeviceClick()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = currentAudioDevice?.icon ?: Icons.Default.Speaker,
+                                    contentDescription = "Device",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = currentAudioDevice?.label ?: "Speaker",
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontFamily = AppFont.Helvetica,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 120.dp)
+                                )
+                            }
+
+                            // Right: Actions
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = onAddToPlaylistClick,
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.PlaylistAdd,
+                                        contentDescription = "Add to Playlist",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onGameModeClick,
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.SportsEsports,
+                                        contentDescription = "Game Mode",
+                                        tint = if (isGameModeEnabled) Color.Green else Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         // Spacer kecil di paling bawah column 1
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(30.dp))
                     }
                 }
             }
@@ -933,6 +1108,7 @@ fun NowPlaying(
                 if (songWithArtist != null && !isOfflineSong) {
                     UploaderBoxAndArtist(
                         artist = songWithArtist.artist,
+                        artistNameFallback = songWithArtist.displayArtistName,
                         uploader = uploader,
                         isFollowed = isArtistFollowed,
                         onToggleFollow = onToggleFollowArtist,

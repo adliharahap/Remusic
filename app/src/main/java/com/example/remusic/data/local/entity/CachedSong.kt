@@ -25,5 +25,9 @@ data class CachedSong(
     val urlExpiryTime: Long = 0, // Kapan URL ini basi (Epoch timestamp)
 
     // --- TAMBAHAN UTK HISTORY ---
-    val lastPlayedAt: Long = System.currentTimeMillis() // Untuk sorting "Recently Played"
+    val lastPlayedAt: Long = System.currentTimeMillis(), // Untuk sorting "Recently Played"
+
+    // --- SUMBER PEMUTARAN ---
+    // null = auto-detect: jika telegramFileId != null → telegram, else → youtube
+    val source: String? = null
 )

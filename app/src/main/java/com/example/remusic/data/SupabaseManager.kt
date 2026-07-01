@@ -25,6 +25,11 @@ object SupabaseManager {
             install(Auth) {
                 // INI KUNCINYA: Pasang Session Manager yang tadi kita buat
                 sessionManager = AndroidSessionManager(context)
+                // Auto-refresh access token sebelum expired (setiap ~50 menit dari expire 1 jam)
+                // Ini mencegah semua API call gagal hanya karena access token expired
+                // Library akan otomatis pakai refresh_token untuk dapatkan access_token baru
+                alwaysAutoRefresh = true
+                autoLoadFromStorage = true
             }
             install(Postgrest)
             install(Storage)

@@ -73,6 +73,15 @@ object UserManager {
     // FCM Token Local Cache
     // ──────────────────────────────────────────────────
 
+    /**
+     * Cek apakah ada data user tersimpan di SharedPreferences.
+     * Offline-safe: tidak butuh network sama sekali.
+     * Digunakan untuk keputusan routing awal (splash → main vs login).
+     */
+    fun hasCachedUser(): Boolean {
+        return prefs?.contains(KEY_USER) == true
+    }
+
     fun getCachedFcmToken(): String? {
         return prefs?.getString(KEY_FCM_TOKEN, null)
     }

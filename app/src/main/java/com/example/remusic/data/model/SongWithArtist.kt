@@ -14,17 +14,22 @@ data class SongWithArtist(
 
 val SongWithArtist.displayArtistName: String
     get() {
-        // 1. Nama Artis Utama (Default "Unknown" jika null)
-        val mainName = artist?.name ?: "Unknown Artist"
+        // 1. Coba ambil nama dari objek Artist (jika ada relasi di DB)
+        val mainName = artist?.name
 
-        // 2. List Featured Artists (Dari tabel Songs)
-        val featuredNames = song.featuredArtists // Ini List<String>
+        // 2. Jika tidak ada objek Artist, coba ambil dari featuredArtists (biasanya shadow entry YouTube simpan di sini)
+        val fallbackName = if (mainName == null) song.featuredArtists.firstOrNull() else null
+        
+        // Final name untuk artist utama
+        val artistTitle = mainName ?: fallbackName ?: "Unknown Artist"
 
-        // 3. Jika tidak ada featured, langsung return main name
-        if (featuredNames.isEmpty()) {
-            return mainName
+        // 3. Ambil featured artists lainnya
+        // Kita filter agar nama artis utama tidak muncul lagi di list featured
+        val otherFeatured = song.featuredArtists.filter { it.trim().lowercase() != artistTitle.trim().lowercase() }
+        
+        if (otherFeatured.isEmpty()) {
+            return artistTitle
         }
 
-        // 4. Jika ada, gabungkan: "Main, Feat1, Feat2"
-        return "$mainName, ${featuredNames.joinToString(", ")}"
+        return "$artistTitle, ${otherFeatured.joinToString(", ")}"
     }

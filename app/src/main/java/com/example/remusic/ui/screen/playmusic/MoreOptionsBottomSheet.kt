@@ -129,6 +129,32 @@ enum class LyricsFontFamily(
     RALEWAY("Raleway",         isOnline = true, googleFontName = "Raleway"),
     JOSEFIN_SANS("Josefin Sans", isOnline = true, googleFontName = "Josefin_Sans"),
     PACIFICO("Pacifico",       isOnline = true, googleFontName = "Pacifico"),
+    FJALLA_ONE("Fjalla One",   isOnline = true, googleFontName = "Fjalla_One"),
+    GOOGLE_SANS("Google Sans", isOnline = true, googleFontName = "Google_Sans"),
+    UBUNTU("Ubuntu",           isOnline = true, googleFontName = "Ubuntu"),
+    BUNGEE("Bungee",           isOnline = true, googleFontName = "Bungee"),
+    PASSION_ONE("Passion One", isOnline = true, googleFontName = "Passion_One"),
+    QUANDO("Quando",           isOnline = true, googleFontName = "Quando"),
+    
+    // --- Tambahan Font Populer Lainnya ---
+    OPEN_SANS("Open Sans",     isOnline = true, googleFontName = "Open_Sans"),
+    OSWALD("Oswald",           isOnline = true, googleFontName = "Oswald"),
+    MERRIWEATHER("Merriweather", isOnline = true, googleFontName = "Merriweather"),
+    DANCING_SCRIPT("Dancing Script", isOnline = true, googleFontName = "Dancing_Script"),
+    CAVEAT("Caveat",           isOnline = true, googleFontName = "Caveat"),
+    SATISFY("Satisfy",         isOnline = true, googleFontName = "Satisfy"),
+    LOBSTER("Lobster",         isOnline = true, googleFontName = "Lobster"),
+    COMFORTAA("Comfortaa",     isOnline = true, googleFontName = "Comfortaa"),
+    KANIT("Kanit",             isOnline = true, googleFontName = "Kanit"),
+    TEKO("Teko",               isOnline = true, googleFontName = "Teko"),
+    ABRIL_FATFACE("Abril Fatface", isOnline = true, googleFontName = "Abril_Fatface"),
+    GREAT_VIBES("Great Vibes", isOnline = true, googleFontName = "Great_Vibes"),
+    LEXEND("Lexend",           isOnline = true, googleFontName = "Lexend"),
+    PRESS_START_2P("Press Start 2P", isOnline = true, googleFontName = "Press_Start_2P"),
+    RIGHTEOUS("Righteous",     isOnline = true, googleFontName = "Righteous"),
+    BEBAS_NEUE("Bebas Neue",   isOnline = true, googleFontName = "Bebas_Neue"),
+    TITIPILLIUM_WEB("Titillium Web", isOnline = true, googleFontName = "Titillium_Web"),
+    SOURCE_CODE_PRO("Source Code Pro", isOnline = true, googleFontName = "Source_Code_Pro"),
 }
 
 enum class LyricsAlign {

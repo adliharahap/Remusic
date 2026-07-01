@@ -16,6 +16,7 @@ import com.example.remusic.data.UserManager
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.*
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -28,6 +29,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.example.remusic.data.model.SongWithArtistRpcResult
 import io.github.jan.supabase.postgrest.postgrest
+import com.metrolist.innertube.YouTube
+import com.metrolist.innertube.models.SongItem
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -60,7 +63,34 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     // History dari Room (Flow dikonversi ke StateFlow di UI atau collect langsung)
     val searchHistory = musicDao.getSearchHistory()
 
+    private val _ytSearchResults = MutableStateFlow<List<SongItem>>(emptyList())
+    val ytSearchResults: StateFlow<List<SongItem>> = _ytSearchResults.asStateFlow()
+
+    private val _ytFoundArtists = MutableStateFlow<List<Artist>>(emptyList())
+    val ytFoundArtists: StateFlow<List<Artist>> = _ytFoundArtists.asStateFlow()
+
+    // --- COMBINED RESULTS (PRIORITIZED) ---
+    private val _combinedSongs = MutableStateFlow<List<SongWithArtist>>(emptyList())
+    val combinedSongs: StateFlow<List<SongWithArtist>> = _combinedSongs.asStateFlow()
+
+    private val _combinedVideos = MutableStateFlow<List<SongWithArtist>>(emptyList())
+    val combinedVideos: StateFlow<List<SongWithArtist>> = _combinedVideos.asStateFlow()
+
+    private val _combinedArtists = MutableStateFlow<List<Artist>>(emptyList())
+    val combinedArtists: StateFlow<List<Artist>> = _combinedArtists.asStateFlow()
+
+    private val _ytIsLoading = MutableStateFlow(false)
+    val ytIsLoading: StateFlow<Boolean> = _ytIsLoading.asStateFlow()
+
+    private val _ytError = MutableStateFlow<String?>(null)
+    val ytError: StateFlow<String?> = _ytError.asStateFlow()
+
+    // --- SEARCH SUGGESTIONS ---
+    private val _searchSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val searchSuggestions: StateFlow<List<String>> = _searchSuggestions.asStateFlow()
+
     private var searchJob: Job? = null
+    private var suggestionsJob: Job? = null
 
     init {
         fetchRecentSongs()
@@ -71,18 +101,150 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
         
-        // Debounce Logic (1000ms)
+        // Debounce Logic
         searchJob?.cancel()
+        suggestionsJob?.cancel()
         if (query.isBlank()) {
             _searchResults.value = emptyList()
             _topArtist.value = null
+            _ytSearchResults.value = emptyList()
+            _ytFoundArtists.value = emptyList()
+            _combinedSongs.value = emptyList()
+            _combinedVideos.value = emptyList()
+            _combinedArtists.value = emptyList()
+            _searchSuggestions.value = emptyList()
             return
         }
 
-        searchJob = viewModelScope.launch {
-            delay(300) // Reduced delay for faster results
-            performSearch(query)
+        // Fetch suggestions fast (150ms debounce)
+        suggestionsJob = viewModelScope.launch {
+            delay(150)
+            fetchSearchSuggestions(query)
         }
+
+        searchJob = viewModelScope.launch {
+            delay(300)
+            // Lakukan pencarian lokal dan YouTube secara bersamaan
+            launch { performSearch(query) }
+            launch { searchYouTube(query) }
+        }
+    }
+
+    private fun fetchSearchSuggestions(query: String) {
+        viewModelScope.launch {
+            try {
+                val result = YouTube.searchSuggestions(query).getOrNull()
+                _searchSuggestions.value = result?.queries?.take(8) ?: emptyList()
+            } catch (e: Exception) {
+                // Suggestions are non-critical, silently ignore
+                android.util.Log.w("SearchVM", "⚠️ searchSuggestions failed: ${e.message}")
+            }
+        }
+    }
+
+    fun searchYouTube(query: String) {
+        viewModelScope.launch {
+            _ytIsLoading.value = true
+            _ytError.value = null
+            // Reset YT search results
+            _ytSearchResults.value = emptyList()
+            _ytFoundArtists.value = emptyList()
+
+            try {
+                android.util.Log.d("SearchVM", "🎵 [YT SEARCH] query: $query")
+                
+                // Fetch Songs, Videos, and Artists in parallel
+                val songsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull() }
+                val videosDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_VIDEO).getOrNull() }
+                val artistsDeferred = async { YouTube.search(query, YouTube.SearchFilter.FILTER_ARTIST).getOrNull() }
+
+                val songsResult = songsDeferred.await()
+                val videosResult = videosDeferred.await()
+                val artistsResult = artistsDeferred.await()
+
+                val songs = songsResult?.items?.filterIsInstance<SongItem>() ?: emptyList()
+                val videos = videosResult?.items?.filterIsInstance<SongItem>() ?: emptyList()
+                
+                // Combine songs and videos, prioritizing songs
+                val combinedYtSongs = (songs + videos).distinctBy { it.id }
+
+                val ytArtists = artistsResult?.items?.filterIsInstance<com.metrolist.innertube.models.ArtistItem>()?.map { item ->
+                    Artist(
+                        id = item.id,
+                        name = item.title,
+                        photoUrl = item.thumbnail,
+                        source = "youtube"
+                    )
+                } ?: emptyList()
+
+                android.util.Log.d("SearchVM", "✅ [YT SEARCH] Found ${songs.size} songs, ${videos.size} videos, and ${ytArtists.size} artists")
+                
+                _ytSearchResults.value = combinedYtSongs
+                _ytFoundArtists.value = ytArtists
+                
+                // Update combined states after YT results are in
+                updateCombinedResults(query)
+            } catch (e: Exception) {
+                android.util.Log.e("SearchVM", "❌ [YT SEARCH ERROR] ${e.message}")
+                _ytError.value = "Gagal mencari di YouTube: ${e.message}"
+            } finally {
+                _ytIsLoading.value = false
+            }
+        }
+    }
+
+    private fun updateCombinedResults(query: String) {
+        val q = query.lowercase().trim()
+        
+        // --- 1. COMBINE ARTISTS ---
+        val localArtists = _foundArtists.value
+        val youtubeArtists = _ytFoundArtists.value
+        
+        val allArtists = (localArtists + youtubeArtists).distinctBy { it.id }
+        
+        val sortedArtists = allArtists.sortedByDescending { artist ->
+            val name = artist.name.lowercase()
+            when {
+                name == q -> 100
+                name.startsWith(q) -> 80
+                name.contains(q) -> 60
+                else -> 40
+            }
+        }
+        
+        _combinedArtists.value = sortedArtists
+        _topArtist.value = sortedArtists.firstOrNull()
+
+        // --- 2. COMBINE SONGS ---
+        val localSongs = _searchResults.value
+        val youtubeSongs = _ytSearchResults.value.map { buildYouTubeSongWithArtist(it) }
+        
+        val allSongs = (localSongs + youtubeSongs)
+        
+
+        
+        // Sort by accuracy AND source priority
+        val sortedSongs = allSongs.sortedWith(
+            compareByDescending<SongWithArtist> { songWithArtist ->
+                val title = songWithArtist.song.title.lowercase()
+                when {
+                    title == q -> 100
+                    title.startsWith(q) -> 80
+                    title.contains(q) -> 60
+                    else -> 40
+                }
+            }.thenByDescending { songWithArtist ->
+                // Prioritas: 3 (Uploader), 2 (YouTube Music), 1 (YouTube Video)
+                when {
+                    songWithArtist.song.source != "youtube" && songWithArtist.song.source != "youtube_video" -> 3
+                    songWithArtist.song.source == "youtube" -> 2
+                    else -> 1
+                }
+            }
+        )
+        
+        _combinedSongs.value = sortedSongs.filter { it.song.source != "youtube_video" }
+        _combinedVideos.value = sortedSongs.filter { it.song.source == "youtube_video" }
     }
 
     private suspend fun performSearch(query: String) {
@@ -128,13 +290,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             
             // 3. Search Users (ByName) - Exclude Self
             val usersDeferred = viewModelScope.async {
+                val trimmedQuery = query.trim()
+                val isUuid = trimmedQuery.matches(Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"))
+                
                 SupabaseManager.client
                     .from("users")
                     .select {
                         filter {
-                            ilike("display_name", "%$query%")
-                            neq("id", currentUserId)
-                            // eq("role", "uploader") // Optional: if want to restrict to uploader role
+                            if (isUuid) {
+                                or {
+                                    ilike("display_name", "%$query%")
+                                    eq("id", trimmedQuery)
+                                }
+                            } else {
+                                ilike("display_name", "%$query%")
+                            }
                         }
                         limit(5)
                     }
@@ -175,12 +345,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             _foundUsers.value = foundUsersList
             _topArtist.value = foundArtistsList.firstOrNull() // Keep top artist logic if needed for header
 
-            // Convert RPC results
+            // Convert RPC results & FILTER OUT YouTube Shadow Entries
+            // Shadow entries (source=youtube) tidak boleh muncul di pencarian lokal
+            // Lagu uploader asli HARUS punya uploader_user_id, telegram_id, atau audio_url
             val songsWithArtists = rpcResults.map { it.toSongWithArtist() }
+                .filter { 
+                    val s = it.song
+                    s.uploaderUserId != null || s.telegramFileId != null || !s.audioUrl.isNullOrBlank()
+                }
             
             android.util.Log.d("SearchVM", "Final Mapped Songs: ${songsWithArtists.size}")
 
             _searchResults.value = songsWithArtists
+            
+            // Initial combined results from local only
+            updateCombinedResults(query)
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -199,6 +378,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                             "canvas_url", "duration_ms", "telegram_audio_file_id", "created_at", "featured_artists"
                         )
                     ) {
+                        filter {
+                            or {
+                                eq("source", "telegram")
+                                eq("source", "uploader")
+                                // Cara aman filter NOT NULL tanpa keyword 'not'
+                                neq("uploader_user_id", "00000000-0000-0000-0000-000000000000")
+                            }
+                        }
                         order("created_at", Order.DESCENDING)
                         limit(10)
                     }
@@ -261,17 +448,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 artistName = artist?.name ?: "Unknown Artist",
                 
                 // Pasang log di sini untuk memastikan assignment
-                featuredArtists = song.featuredArtists,
+                featuredArtists = song.featuredArtists.ifEmpty { existingSong?.featuredArtists ?: emptyList() },
                 
-                coverUrl = song.coverUrl,
-                canvasUrl = song.canvasUrl,
-                lyrics = song.lyrics,
-                uploaderUserId = song.uploaderUserId,
-                telegramFileId = song.telegramFileId,
+                coverUrl = song.coverUrl ?: existingSong?.coverUrl,
+                canvasUrl = song.canvasUrl ?: existingSong?.canvasUrl,
+                lyrics = existingSong?.lyrics ?: song.lyrics, // 🔥 KRITIKAL: Jangan timpa lirik lokal!
+                lyricsUpdatedAt = existingSong?.lyricsUpdatedAt ?: song.lyricsUpdatedAt,
+                uploaderUserId = song.uploaderUserId ?: existingSong?.uploaderUserId,
+                telegramFileId = song.telegramFileId ?: existingSong?.telegramFileId,
                 telegramDirectUrl = existingSong?.telegramDirectUrl,
                 urlExpiryTime = existingSong?.urlExpiryTime ?: 0L,
                 lastPlayedAt = System.currentTimeMillis(),
-                artistId = song.artistId,
+                artistId = song.artistId ?: existingSong?.artistId,
+                source = song.source ?: existingSong?.source
             )
 
             // --- 🛑 DEBUG LOG START (DATA KELUAR KE DB) 🛑 ---
@@ -283,5 +472,28 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             musicDao.insertSong(cachedSong)
             musicDao.insertSearchHistory(SearchHistoryEntity(songId = song.id))
         }
+    }
+
+    // --- Konversi SongItem YouTube → SongWithArtist untuk diputar ---
+    fun buildYouTubeSongWithArtist(songItem: SongItem): com.example.remusic.data.model.SongWithArtist {
+        val artistName = songItem.artists.firstOrNull()?.name ?: "YouTube Music"
+        val featured = songItem.artists.drop(1).map { it.name }
+        
+        val song = com.example.remusic.data.model.Song(
+            id = songItem.id,
+            title = songItem.title,
+            coverUrl = songItem.thumbnail,
+            source = if (songItem.isVideoSong) "youtube_video" else "youtube",
+            artistId = songItem.artists.firstOrNull()?.id,
+            featuredArtists = listOf(artistName) + featured, // Simpan artist utama di list agar terbawa saat sync
+            telegramFileId = null,
+            audioUrl = null             // kosong — akan di-resolve MusicService
+        )
+        val artist = com.example.remusic.data.model.Artist(
+            id = songItem.artists.firstOrNull()?.id ?: "",
+            name = artistName
+        )
+
+        return com.example.remusic.data.model.SongWithArtist(song, artist)
     }
 }

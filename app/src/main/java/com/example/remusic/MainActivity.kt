@@ -1,5 +1,6 @@
 package com.example.remusic
 
+import com.example.remusic.viewmodel.playmusic.*
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -44,9 +45,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,6 +55,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -74,8 +75,10 @@ import androidx.navigation.compose.rememberNavController
 import com.example.remusic.data.HomeCacheManager
 import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.UserManager
+import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.navigation.AppNavGraph
 import com.example.remusic.ui.theme.ReMusicTheme
+import com.example.remusic.utils.AssetUrlConverter
 import com.example.remusic.utils.ConnectivityObserver
 import com.example.remusic.utils.NetworkConnectivityObserver
 import com.example.remusic.utils.NotificationUtils
@@ -85,10 +88,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.IDToken
-import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +116,13 @@ class MainActivity : ComponentActivity() {
             Log.d("MainActivity", "🚀 onNewIntent received route: $route")
             pendingNavigationRoute = route
         }
+
+        val action = intent.action
+        val uri = intent.data
+        if (action == android.content.Intent.ACTION_VIEW && uri != null) {
+            Log.d("MainActivity", "Dapat lagu dari luar nih! URI: $uri di onNewIntent")
+            playMusicViewModel.playAudioFromUri(uri)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +135,13 @@ class MainActivity : ComponentActivity() {
         credentialManager = CredentialManager.create(this)
         NotificationUtils.createNotificationChannel(this)
         val notificationRoute = intent.getStringExtra("destination_route")
+
+        val action = intent.action
+        val uri = intent.data
+        if (action == android.content.Intent.ACTION_VIEW && uri != null) {
+            Log.d("MainActivity", "Dapat lagu dari luar nih! URI: $uri")
+            playMusicViewModel.playAudioFromUri(uri)
+        }
 
         // --- COIL GLOBAL IMAGE LOADER CONFIGURATION ---
         val imageLoader = coil.ImageLoader.Builder(this)
@@ -149,17 +163,14 @@ class MainActivity : ComponentActivity() {
                     var attempt = 0
                     val maxRetries = 5
 
-                    // Retry loop
+                    // ── FASE 1: Retry ke URL utama (CDN jsDelivr) ──
                     while (attempt < maxRetries) {
                         attempt++
                         try {
-                            // Coba jalankan request
                             response = chain.proceed(chain.request)
-                            // Jika sukses (SuccessResult), keluar loop
                             if (response is coil.request.SuccessResult) {
                                 break
                             } else if (response is coil.request.ErrorResult) {
-                                // Jika error, lempar exception untuk ditangkap dan di-retry
                                 throw response.throwable
                             }
                         } catch (e: Exception) {
@@ -168,7 +179,6 @@ class MainActivity : ComponentActivity() {
                                 "Attempt $attempt/$maxRetries failed for ${chain.request.data}: ${e.message}"
                             )
                             if (attempt >= maxRetries) {
-                                // Jika sudah maksimal, kembalikan ErrorResult
                                 response = coil.request.ErrorResult(
                                     drawable = chain.request.error,
                                     request = chain.request,
@@ -176,20 +186,45 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        // Jika belum sukses dan masih ada sisa attempt, tunggu dengan jeda bertahap
                         if (response == null || response is coil.request.ErrorResult) {
                             if (attempt < maxRetries) {
-                                // Jeda: 1 detik, 2 detik, ..., maks 5 detik
-                                val delaySeconds = attempt
-                                val retryDelayMillis = delaySeconds * 1000L
-                                delay(retryDelayMillis) // Suspend properly without blocking the thread
+                                val retryDelayMillis = attempt * 1000L
+                                delay(retryDelayMillis)
                             }
                         }
                     }
+
+                    // ── FASE 2: Fallback ke raw GitHub jika CDN jsDelivr gagal ──
+                    if (response == null || response is coil.request.ErrorResult) {
+                        val originalUrl = chain.request.data.toString()
+                        val fallbackUrl = AssetUrlConverter.getFallbackUrl(originalUrl)
+
+                        if (fallbackUrl != null) {
+                            Log.w(
+                                "CoilFallback",
+                                "CDN gagal untuk $originalUrl\n➡ Mencoba raw GitHub: $fallbackUrl"
+                            )
+                            try {
+                                val fallbackRequest = chain.request.newBuilder()
+                                    .data(fallbackUrl)
+                                    .build()
+                                val fallbackResponse = chain.proceed(fallbackRequest)
+                                if (fallbackResponse is coil.request.SuccessResult) {
+                                    Log.d("CoilFallback", "✅ Berhasil dari raw GitHub: $fallbackUrl")
+                                    response = fallbackResponse
+                                } else {
+                                    Log.e("CoilFallback", "❌ Raw GitHub juga gagal: $fallbackUrl")
+                                }
+                            } catch (e: Exception) {
+                                Log.e("CoilFallback", "❌ Exception saat fallback ke raw GitHub: ${e.message}")
+                            }
+                        }
+                    }
+
                     response ?: coil.request.ErrorResult(
                         drawable = chain.request.error,
                         request = chain.request,
-                        throwable = IllegalStateException("Unknown Error after $maxRetries attempts")
+                        throwable = IllegalStateException("Unknown Error after $maxRetries attempts + fallback")
                     )
                 }
             }
@@ -207,29 +242,26 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
+            val userPreferencesRepository = remember { UserPreferencesRepository(applicationContext) }
+            val fontScale by userPreferencesRepository.fontScaleFlow.collectAsState(initial = 0.9f)
+
             val currentDensity = LocalDensity.current
-            val customDensity = Density(
-                density = currentDensity.density,
-                fontScale = 0.9f
-            )
+            val customDensity = remember(currentDensity.density, fontScale) {
+                Density(
+                    density = currentDensity.density,
+                    fontScale = fontScale
+                )
+            }
             CompositionLocalProvider(LocalDensity provides customDensity) {
                 ReMusicTheme {
                 val navController = rememberNavController()
-
-                // State untuk menyimpan tujuan awal (default null dulu)
-                var startDestination by remember { mutableStateOf<String?>(null) }
-
-
-
-                // State untuk loading screen (biar layar gak putih doang)
-                var isLoadingSession by remember { mutableStateOf(true) }
 
                 // Ambil status koneksi secara real-time
                 val status by connectivityObserver.observe().collectAsState(
                     initial = ConnectivityObserver.Status.Lost
                 )
 
-                // LOGIKA SMART RETRY: Player Check
+                // Smart Retry: saat internet pulih, trigger player retry
                 LaunchedEffect(status) {
                     if (status == ConnectivityObserver.Status.Available) {
                         Log.d("MainActivity", "🌐 Main: Internet Available -> Triggering Player Retry")
@@ -237,151 +269,68 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // LOGIKA BARU: Cek Login secara Asynchronous
-                LaunchedEffect (Unit) {
-                    val TAG = "RemusicAuth" // Tag khusus debug auth
-                    try {
-                        // KITA PAKSA LOAD DARI STORAGE
-                        Log.d(TAG, "🚀 [MainActivity] LaunchedEffect triggered. Mencoba membaca sesi dari penyimpanan HP...")
-                        val isSessionRestored = SupabaseManager.client.auth.loadFromStorage()
-                        Log.d(TAG, "📦 [MainActivity] Apakah sesi berhasil di-restore dari storage? $isSessionRestored")
-
-                        if (isSessionRestored) {
-                            // --- FIX: WAIT FOR SESSION STATUS ---
-                            Log.d(TAG, "⏳ [MainActivity] Menunggu status sesi stabil (bukan Initializing)...")
-                            
-                            // Tunggu status berubah dari Initializing (Maks 10 detik)
-                            val finalStatus = withTimeoutOrNull(10000) {
-                                SupabaseManager.client.auth.sessionStatus.first { status ->
-                                    Log.d(TAG, "👀 [MainActivity] Observing Status: $status")
-                                    status !is SessionStatus.Initializing
-                                }
-                            }
-
-                            Log.d(TAG, "🔔 [MainActivity] Status Akhir (setelah wait): $finalStatus")
-
-                            if (finalStatus is SessionStatus.Authenticated) {
-                                // Jika sesi ketemu dan Authenticated, ambil data user
-                                val user = SupabaseManager.client.auth.currentUserOrNull()
-                                Log.d(TAG, "👤 [MainActivity] User Login Session: ${user?.email} (ID: ${user?.id})")
-                                
-                                // --- PERBAIKAN: WAJIB TUNGGU SAMPAI USER DATA TERLOAD ---
-                                if (user != null) {
-                                    try {
-                                        Log.d(TAG, "🔄 [MainActivity] Fetching user data lengkap dari database...")
-                                        // BLOCKING: tunggu sampai user data berhasil di-fetch
-                                        try {
-                                            UserManager.fetchCurrentUser(user.id)
-                                        } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ [MainActivity] Gagal fetch user detail: ${e.message}. Tetap lanjut karena sesi valid.")
-                                        }
-                                        
-                                        // Cek apakah berhasil
-                                        if (UserManager.currentUser != null) {
-                                            Log.d(TAG, "✅ [MainActivity] User data berhasil dimuat: ${UserManager.currentUser?.displayName}")
-                                            updateFcmToken()
-                                            startDestination = "splash" // Langsung masuk splash/main
+                // Langsung render NavGraph — SplashScreen yang handle logika cek sesi
+                // Tidak ada blocking wait di sini, sehingga splash tampil instan tanpa layar putih
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                ) { innerPadding ->
+                    Box(modifier = Modifier.padding(innerPadding)) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            val isOffline = status == ConnectivityObserver.Status.Lost ||
+                                    status == ConnectivityObserver.Status.Unavailable
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .let {
+                                        if (isOffline) {
+                                            it.consumeWindowInsets(WindowInsets.navigationBars)
                                         } else {
-                                            Log.w(TAG, "⚠️ [MainActivity] User data null setelah fetch. Masuk sebagai User tanpa profil lengkap.")
-                                            // JANGAN LOGOUT! Tetap masuk.
-                                            startDestination = "splash"
+                                            it
                                         }
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ [MainActivity] Error tidak terduga saat fetch user: ${e.message}")
-                                        // Tetap lanjut, jangan logout sembarangan
-                                        startDestination = "splash"
                                     }
-                                } else {
-                                    Log.e(TAG, "❌ [MainActivity] Session Authenticated tapi user null. Logout paksa.")
-                                    SupabaseManager.client.auth.signOut()
-                                    startDestination = "login"
-                                }
-                            } else {
-                                Log.w(TAG, "⛔ [MainActivity] Status sesi tidak valid ($finalStatus). Masuk Login.")
-                                startDestination = "login"
-                            }
-                        } else {
-                            Log.d(TAG, "🔓 [MainActivity] Tidak ada sesi tersimpan (loadFromStorage false). Masuk ke Login.")
-                            startDestination = "login"
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "💥 [MainActivity] Error CRITICAL saat load sesi", e)
-                        startDestination = "login"
-                    } finally {
-                        Log.d(TAG, "🏁 [MainActivity] Selesai cek sesi. Destination: $startDestination")
-                        isLoadingSession = false
-                    }
-                }
-
-                // TAMPILAN UI
-                if (isLoadingSession || startDestination == null) {
-//                    // Tampilkan Loading Screen sementara menunggu pengecekan file selesai
-//                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-//                        CircularProgressIndicator()
-//                    }
-                } else {
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    ) { innerPadding ->
-                        Box(modifier = Modifier.padding(innerPadding)) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                val isOffline = status == ConnectivityObserver.Status.Lost || status == ConnectivityObserver.Status.Unavailable
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .let {
-                                            if (isOffline) {
-                                                it.consumeWindowInsets(WindowInsets.navigationBars)
-                                            } else {
-                                                it
-                                            }
+                            ) {
+                                AppNavGraph(
+                                    navController = navController,
+                                    startDestination = "splash",
+                                    onGoogleSignInClick = { signInWithGoogle {
+                                        navController.navigate("main") {
+                                            popUpTo("login") { inclusive = true }
                                         }
-                                ) {
-                                    AppNavGraph(
-                                        navController = navController,
-                                        startDestination = startDestination!!,
-                                        onGoogleSignInClick = { signInWithGoogle {
-                                            navController.navigate("main") {
-                                                popUpTo("login") { inclusive = true }
-                                            }
-                                        } },
-                                        // Prioritaskan pendingNavigationRoute (dari onNewIntent) jika ada,
-                                        // jika tidak, pakai notificationRoute (dari intent awal)
-                                        notificationRoute = pendingNavigationRoute ?: notificationRoute,
-                                        onRouteConsumed = {
-                                            pendingNavigationRoute = null
-                                            intent.removeExtra("destination_route") // Optional: bersihkan intent lama juga
-                                        },
-                                        playMusicViewModel = playMusicViewModel,
-                                        connectivityObserver = connectivityObserver
+                                    } },
+                                    notificationRoute = pendingNavigationRoute ?: notificationRoute,
+                                    onRouteConsumed = {
+                                        pendingNavigationRoute = null
+                                        intent.removeExtra("destination_route")
+                                    },
+                                    playMusicViewModel = playMusicViewModel,
+                                    connectivityObserver = connectivityObserver
+                                )
+
+                                // Dialog Error Login (Overlay)
+                                if (showDialog) {
+                                    LoginErrorDialog(
+                                        show = showDialog,
+                                        errorMessage = errorMessage,
+                                        onDismiss = { showDialog = false }
                                     )
-
-                                    // 3. Layer Paling Atas: Dialog Error (Tetap Overlay)
-                                    if (showDialog) {
-                                        LoginErrorDialog(
-                                            show = showDialog,
-                                            errorMessage = errorMessage,
-                                            onDismiss = { showDialog = false }
-                                        )
-                                    }
-
-                                    // 4. Banned Modal
-                                    val currentUser = UserManager.currentUser
-                                    if (currentUser?.bannedUntil != null) {
-                                        BannedUserDialog(
-                                            bannedUntil = currentUser.bannedUntil,
-                                            banReason = currentUser.banReason,
-                                            onLogoutClick = {
-                                                com.example.remusic.utils.AuthUtils.logout(this@MainActivity, navController)
-                                            }
-                                        )
-                                    }
                                 }
 
-                                // 2. Layer Bawah: Notifikasi Offline (Termakan Sedikit Layar)
-                                OfflineBanner(status = status)
+                                // Banned Modal
+                                val currentUser = UserManager.currentUser
+                                if (currentUser?.bannedUntil != null) {
+                                    BannedUserDialog(
+                                        bannedUntil = currentUser.bannedUntil,
+                                        banReason = currentUser.banReason,
+                                        onLogoutClick = {
+                                            com.example.remusic.utils.AuthUtils.logout(this@MainActivity, navController)
+                                        }
+                                    )
+                                }
                             }
+
+                            // Banner Offline (bawah layar)
+                            OfflineBanner(status = status)
                         }
                     }
                 }

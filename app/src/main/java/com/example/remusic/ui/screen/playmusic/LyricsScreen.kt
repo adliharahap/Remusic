@@ -7,7 +7,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -21,9 +20,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +43,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -54,27 +56,30 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.example.remusic.data.network.LrcLibResponse
+
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -106,11 +111,9 @@ import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlin.math.sin
-import androidx.compose.ui.geometry.Offset
 
 @SuppressLint("ConfigurationScreenWidthHeight")
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LyricsScreen(
     lyricsViewModel: LyricsViewModel,
@@ -121,13 +124,21 @@ fun LyricsScreen(
     totalDuration: Long,
     isLoading: Boolean,
     headerHeight: Dp,
-    onSeek: (Float) -> Unit,
     onPlayPauseClick: () -> Unit,
+    onSeek: (Float) -> Unit,
+    onRetryClick: () -> Unit,
+    lyricsOffset: Long,
+    onOffsetChange: (Long) -> Unit,
+    onSearchLyrics: (String) -> Unit,
+    isSearching: Boolean = false,
+    searchResults: List<LrcLibResponse> = emptyList(),
+    onApplyLyrics: (LrcLibResponse) -> Unit = {},
     lyricsConfig: LyricsConfig = LyricsConfig(),
     onSeekToMs: (Long) -> Unit = {},
     playbackSpeed: Float = 1.0f,
     playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
-    gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+    gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
+    isFetchingSyncedLyrics: Boolean = false
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -145,6 +156,8 @@ fun LyricsScreen(
     val screenHeight = configuration.screenHeightDp.dp
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    
+    var showLyricsOptions by remember { mutableStateOf(false) }
 
     // 🔥 2. PERBAIKAN OFFSET TENGAH (Mencegah bug lirik terlalu ke bawah/atas)
     val topPadding = 200.dp
@@ -162,6 +175,26 @@ fun LyricsScreen(
     // 🎯 STATE: Apakah auto-scroll sedang aktif
     var isAutoScrollEnabled by remember { mutableStateOf(true) }
     var isProgrammaticScroll by remember { mutableStateOf(false) }
+
+    // 🎯 STATE: Pelacakan Sync Lyrics Gagal / Tidak Ditemukan
+    var wasFetching by remember { mutableStateOf(false) }
+    var showUnavailableBanner by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isFetchingSyncedLyrics) {
+        if (isFetchingSyncedLyrics) {
+            wasFetching = true
+        } else if (wasFetching) {
+            wasFetching = false
+            val snapSongId = currentSongId
+            // Beri jeda 600ms agar LyricsViewModel selesai mem-parsing lirik synced yang baru
+            delay(600)
+            if (currentSongId == snapSongId && !lyrics.isSynced() && lyrics.isNotEmpty() && !isLoading) {
+                showUnavailableBanner = true
+                delay(3000)
+                showUnavailableBanner = false
+            }
+        }
+    }
 
     // 🔝 SMART AUTO-SCROLL TO TOP
     LaunchedEffect(currentPosition, lyrics, hasAutoScrolledToTop) {
@@ -251,36 +284,90 @@ fun LyricsScreen(
                     LyricsSkeletonLoader()
                 }
                 "EMPTY" -> {
-                    EmptyLyricsView()
+                    EmptyLyricsView(onRetryClick = onRetryClick)
                 }
                 "CONTENT" -> {
-                    LazyColumn(
-                        state = lazyListState,
-                        modifier = Modifier.fillMaxSize(),
-                        // Pastikan top padding-nya menggunakan variabel topPadding (200.dp)
-                        contentPadding = PaddingValues(top = topPadding, bottom = screenHeight / 2),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        itemsIndexed(
-                            items = lyrics,
-                            key = { index, line -> "${currentSongId}_${index}_${line.originalText.hashCode()}" }
-                        ) { index, line ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                                horizontalAlignment = Alignment.Start
+                    val hasSynced = lyrics.isSynced()
+                    Crossfade(
+                        targetState = hasSynced,
+                        animationSpec = tween(450),
+                        label = "LyricsContentTransition"
+                    ) { synced ->
+                        if (synced) {
+                            LazyColumn(
+                                state = lazyListState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = topPadding, bottom = screenHeight / 2),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                LyricLineItem(
-                                    line = line,
-                                    isActive = index == activeIndex,
-                                    isPassed = index <= activeIndex,
-                                    isTranslateLyrics = isTranslateLyrics,
-                                    lyricsConfig = lyricsConfig,
-                                    lazyListState = lazyListState,
-                                    index = index,
-                                    onSeekToMs = onSeekToMs
-                                )
+                                itemsIndexed(
+                                    items = lyrics,
+                                    key = { index, line -> "${currentSongId}_synced_${index}_${line.originalText.hashCode()}" }
+                                ) { index, line ->
+                                    Column(
+                                        horizontalAlignment = Alignment.Start,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                                    ) {
+                                        LyricLineItem(
+                                            line = line,
+                                            isActive = index == activeIndex,
+                                            isPassed = index <= activeIndex,
+                                            isTranslateLyrics = isTranslateLyrics,
+                                            lyricsConfig = lyricsConfig,
+                                            lazyListState = lazyListState,
+                                            index = index,
+                                            onSeekToMs = onSeekToMs
+                                        )
+                                    }
+                                }
+
+                                // --- LYRICS ATTRIBUTION FOOTER ---
+                                item {
+                                    val rawLyrics = songWithArtist?.song?.lyrics ?: ""
+                                    if (rawLyrics.contains("lyrics from lrclib", ignoreCase = true)) {
+                                        Text(
+                                            text = "lyrics from lrclib",
+                                            color = Color.White.copy(alpha = 0.3f),
+                                            fontSize = 11.sp,
+                                            fontFamily = AppFont.RobotoRegular,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 32.dp, bottom = 16.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = topPadding, bottom = screenHeight / 2),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                itemsIndexed(
+                                    items = lyrics,
+                                    key = { index, line -> "${currentSongId}_plain_${index}_${line.originalText.hashCode()}" }
+                                ) { index, line ->
+                                    Column(
+                                        horizontalAlignment = Alignment.Start,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                                    ) {
+                                        LyricLineItem(
+                                            line = line,
+                                            isActive = false,
+                                            isPassed = false,
+                                            isTranslateLyrics = isTranslateLyrics,
+                                            lyricsConfig = lyricsConfig,
+                                            lazyListState = null,
+                                            index = index,
+                                            onSeekToMs = onSeekToMs
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -338,9 +425,88 @@ fun LyricsScreen(
             onPlayPauseClick = onPlayPauseClick,
             isTranslateLyrics = isTranslateLyrics,
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
+            onShowOptions = { showLyricsOptions = true },
             lyrics = lyrics,
             playbackSpeed = playbackSpeed
         )
+
+
+        // 🔄 FLOATING BADGE "Menunggu Lirik Sinkron..."
+        AnimatedVisibility(
+            visible = isFetchingSyncedLyrics && !lyrics.isSynced() && !isLoading && isAutoScrollEnabled,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 155.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.dp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Menyinkronkan lirik...",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        fontFamily = AppFont.RobotoMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // ❌ FLOATING BANNER "Lirik synced tidak ditemukan"
+        AnimatedVisibility(
+            visible = showUnavailableBanner && isAutoScrollEnabled,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 155.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color.Black.copy(alpha = 0.25f))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE53935)) // Sleek warning red
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Lirik synced tidak ditemukan",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 11.sp,
+                        fontFamily = AppFont.RobotoMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
 
         // ↩ FLOATING BUTTON "Kembali ke Lirik"
         AnimatedVisibility(
@@ -391,6 +557,23 @@ fun LyricsScreen(
                 }
             }
         }
+
+        // --- LYRICS OPTIONS BOTTOM SHEET ---
+        if (showLyricsOptions) {
+            LyricsOptionsBottomSheet(
+                onDismiss = { showLyricsOptions = false },
+                lyricsOffset = lyricsOffset,
+                onOffsetChange = onOffsetChange,
+                onSearchLyrics = onSearchLyrics,
+                isSearching = isSearching,
+                searchResults = searchResults,
+                onApplyLyrics = onApplyLyrics,
+                topPlayerColor = topPlayerColor,
+                trackName = songWithArtist?.song?.title ?: "",
+                artistName = songWithArtist?.displayArtistName ?: "",
+                isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null
+            )
+        }
     }
 }
 
@@ -432,7 +615,7 @@ fun LyricsSkeletonLoader() {
 }
 
 @Composable
-fun EmptyLyricsView() {
+fun EmptyLyricsView(onRetryClick: () -> Unit = {}) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -447,16 +630,44 @@ fun EmptyLyricsView() {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Lirik tidak tersedia",
-                color = Color.White.copy(alpha = 0.7f),
+                color = Color.White.copy(alpha = 0.9f),
                 fontFamily = AppFont.RobotoMedium,
                 fontSize = 18.sp
             )
             Text(
-                text = "Tenang saja, kami akan menambahkannya nanti.",
-                color = Color.White.copy(alpha = 0.4f),
+                text = "Atau lirik belum disinkronisasi.",
+                color = Color.White.copy(alpha = 0.5f),
                 fontFamily = AppFont.RobotoRegular,
                 fontSize = 14.sp
             )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Try Again Button
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.15f))
+                    .clickable { onRetryClick() }
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Refresh,
+                        contentDescription = "Retry",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Coba Lagi",
+                        color = Color.White,
+                        fontFamily = AppFont.RobotoMedium,
+                        fontSize = 14.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -477,23 +688,62 @@ fun LyricLineItem(
 
     val context = LocalContext.current
 
-    val fontFamily = when {
-        lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
-        lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
-        lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
-        lyricsConfig.fontFamily.isOnline -> {
-            // Load font dari cache file (filesDir/fonts/<name>.ttf)
-            val typeface = GoogleFontDownloader.loadCachedTypeface(
-                context, lyricsConfig.fontFamily.googleFontName
-            )
-            if (typeface != null) {
-                androidx.compose.ui.text.font.FontFamily(typeface)
-            } else {
-                // Fallback ke Poppins jika belum diunduh
-                AppFont.Poppins
+    val fontFamily = remember(lyricsConfig.fontFamily, lyricsConfig.mainFontWeight) {
+        when {
+            lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
+            lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
+            lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
+            lyricsConfig.fontFamily.isOnline -> {
+                val baseTypeface = GoogleFontDownloader.loadCachedTypeface(
+                    context, lyricsConfig.fontFamily.googleFontName
+                )
+                if (baseTypeface != null) {
+                    val weightValue = lyricsConfig.mainFontWeight.weight.weight
+                    val resolvedTypeface = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        android.graphics.Typeface.create(baseTypeface, weightValue, false)
+                    } else {
+                        val style = when {
+                            weightValue >= 700 -> android.graphics.Typeface.BOLD
+                            else -> android.graphics.Typeface.NORMAL
+                        }
+                        android.graphics.Typeface.create(baseTypeface, style)
+                    }
+                    androidx.compose.ui.text.font.FontFamily(resolvedTypeface)
+                } else {
+                    AppFont.Poppins
+                }
             }
+            else -> AppFont.Poppins
         }
-        else -> AppFont.Poppins
+    }
+
+    val translationFontFamily = remember(lyricsConfig.fontFamily, lyricsConfig.translationFontWeight) {
+        when {
+            lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
+            lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
+            lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
+            lyricsConfig.fontFamily.isOnline -> {
+                val baseTypeface = GoogleFontDownloader.loadCachedTypeface(
+                    context, lyricsConfig.fontFamily.googleFontName
+                )
+                if (baseTypeface != null) {
+                    val weightValue = lyricsConfig.translationFontWeight.weight.weight
+                    val resolvedTypeface = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                        android.graphics.Typeface.create(baseTypeface, weightValue, false)
+                    } else {
+                        val style = when {
+                            weightValue >= 700 -> android.graphics.Typeface.BOLD
+                            else -> android.graphics.Typeface.NORMAL
+                        }
+                        android.graphics.Typeface.create(baseTypeface, style)
+                    }
+                    androidx.compose.ui.text.font.FontFamily(resolvedTypeface)
+                } else {
+                    AppFont.Poppins
+                }
+            }
+            else -> AppFont.Poppins
+        }
     }
 
     val textAlign = when (lyricsConfig.align) {
@@ -545,7 +795,9 @@ fun LyricLineItem(
         LyricsAlign.RIGHT -> TransformOrigin(1f, 0.5f)
     }
 
-    val targetFontColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
+    val isPlainLyrics = line.timestamp == -1L
+    
+    val targetFontColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics) || isPlainLyrics) {
         Color.White
     } else {
         if (lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK) {
@@ -561,7 +813,7 @@ fun LyricLineItem(
         label = "fontColorAnimation"
     )
 
-    val targetTranslatedColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics)) {
+    val targetTranslatedColor = if (isActive || (isPassed && lyricsConfig.markPassedLyrics) || isPlainLyrics) {
         Color.White.copy(alpha = 0.9f)
     } else {
         if (lyricsConfig.inactiveLyricsColor == InactiveLyricsColor.BLACK) {
@@ -661,7 +913,7 @@ fun LyricLineItem(
                     text = line.translatedText,
                     color = translatedColor,
                     fontSize = lyricsConfig.translateFontSize.sp,
-                    fontFamily = fontFamily,
+                    fontFamily = translationFontFamily,
                     fontWeight = lyricsConfig.translationFontWeight.weight,
                     textAlign = textAlign,
                     modifier = Modifier
@@ -677,7 +929,7 @@ fun LyricLineItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LyricsBottomPanel(
     modifier: Modifier = Modifier,
@@ -689,6 +941,7 @@ fun LyricsBottomPanel(
     onPlayPauseClick: () -> Unit,
     isTranslateLyrics: Boolean,
     onToggleTranslateLyrics: () -> Unit,
+    onShowOptions: () -> Unit,
     lyrics: List<LyricLine>,
     playbackSpeed: Float = 1.0f
 ) {
@@ -793,28 +1046,36 @@ fun LyricsBottomPanel(
                 .fillMaxHeight()
                 .padding(end = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
             ) {
                 val hasTranslation = lyrics.any { it.translatedText != null }
+                
                 Icon(
                     imageVector = Icons.Filled.Translate,
                     contentDescription = "Translate",
                     tint = if (isTranslateLyrics && hasTranslation) Color.White else Color.White.copy(0.6f),
-                    modifier = Modifier.size(26.dp).clickable(
+                    modifier = Modifier.size(26.dp).combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        if (hasTranslation) {
-                            onToggleTranslateLyrics()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                "Lirik terjemahan tidak tersedia",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        indication = null,
+                        onClick = {
+                            if (hasTranslation) {
+                                onToggleTranslateLyrics()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Lirik terjemahan tidak tersedia",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        onLongClick = {
+                            onShowOptions()
                         }
-                    }
+                    )
                 )
+                
+                Spacer(modifier = Modifier.width(16.dp))
+
                 Icon(
                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = "Play / Pause",
@@ -898,4 +1159,12 @@ fun LyricsBottomPanel(
         }
         Spacer(modifier = Modifier.height(25.dp).fillMaxWidth())
     }
+}
+
+
+
+fun List<LyricLine>.isSynced(): Boolean {
+    if (isEmpty()) return false
+    if (size == 1 && first().originalText == "[Instrumental]") return true
+    return any { it.timestamp != -1L }
 }

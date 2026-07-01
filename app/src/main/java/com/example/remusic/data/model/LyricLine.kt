@@ -48,7 +48,7 @@ fun parseLrc(lrcString: String?): List<LyricLine> {
         while (matcher.find()) {
             try {
                 val fullText = matcher.group(4)?.trim() ?: ""
-                if (isMetadata(fullText, matcher.group(0))) continue
+                if (isMetadata(fullText, matcher.group(0) ?: "")) continue
 
                 val timestamp = parseTimestamp(matcher.group(1), matcher.group(2), matcher.group(3))
                 addLyricLine(lyricLines, timestamp, fullText)
@@ -58,7 +58,11 @@ fun parseLrc(lrcString: String?): List<LyricLine> {
 
     // Menambahkan baris tanpa timestamp (jika ada)
     if (lyricLines.isEmpty() && !lrcString.contains("[")) {
-        lyricLines.add(LyricLine(-1, lrcString.trim(), null))
+        lrcString.lines().forEach { line ->
+            if (line.trim().isNotEmpty()) {
+                lyricLines.add(LyricLine(-1, line.trim(), null))
+            }
+        }
     }
 
     return lyricLines.sortedBy { if (it.timestamp == -1L) Long.MAX_VALUE else it.timestamp }

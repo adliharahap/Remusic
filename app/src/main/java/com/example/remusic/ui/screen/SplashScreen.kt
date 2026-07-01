@@ -43,13 +43,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.remusic.R
+import com.example.remusic.data.HomeCacheManager
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.UserManager
 import com.example.remusic.utils.LockScreenOrientationPortrait
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // --- Design Tokens ---
 private val BgDark = Color(0xFF0A0A0C) // Hampir hitam legam yang premium
@@ -82,26 +85,169 @@ fun SplashScreen(navController: NavController) {
     val proceedToApp = {
         CoroutineScope(Dispatchers.Main).launch {
             val TAG = "RemusicAuth"
-            val session = SupabaseManager.client.auth.currentSessionOrNull()
-            Log.d(TAG, "🔍 [SplashScreen] Memeriksa sesi... Session ID: ${session?.user?.id}")
 
-            if (session != null) {
-                Log.d(TAG, "🔐 [SplashScreen] Session ditemukan. Memastikan user data tersedia...")
-                val user = com.example.remusic.data.UserManager.ensureUserLoaded()
+            // ── STEP 1: Cek cache lokal (ZERO network, instan) ──────────────────
+            val hasCachedUser = UserManager.hasCachedUser()
+            Log.d(TAG, "🗄️ [SplashScreen] Ada user di cache lokal? $hasCachedUser")
 
-                if (user != null) {
-                    Log.d(TAG, "✅ [SplashScreen] User siap: ${user.displayName}. Navigasi ke Main.")
-                    navController.navigate("main") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                } else {
-                    Log.w(TAG, "⚠️ [SplashScreen] User data null. Masuk sebagai auth-only.")
-                    navController.navigate("main") {
-                        popUpTo("splash") { inclusive = true }
+            // ── STEP 2: Coba load session dari storage lokal Supabase ───────────
+            // loadFromStorage() membaca dari SharedPreferences Supabase — tidak hit network
+            val hasStoredSession = try {
+                SupabaseManager.client.auth.loadFromStorage()
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ [SplashScreen] Gagal loadFromStorage: ${e.message}")
+                false
+            }
+            Log.d(TAG, "📦 [SplashScreen] Ada session tersimpan di storage? $hasStoredSession")
+
+            if (hasStoredSession || hasCachedUser) {
+                // User pernah login sebelumnya — coba load data user dengan timeout pendek
+                Log.d(TAG, "🔐 [SplashScreen] Indikasi user pernah login. Memuat data user...")
+
+                // ── STEP 3: Validasi session secara aktif ────────────────────────
+                // Strategi berlapis:
+                // Coba 1: refreshCurrentSession() → token baru dari Supabase
+                // Coba 2: retrieveUserForCurrentSession() → validasi dari server tanpa refresh
+                // Coba 3: Offline/timeout → pakai cache lokal jika ada
+                // Hanya redirect login jika server secara eksplisit menolak (401 token revoked/hangus)
+                var sessionValid = false
+                var isExplicitAuthError = false
+
+                val validationResult = withTimeoutOrNull(8000L) {
+                    // ── Percobaan 1: Refresh session (dapatkan access token baru) ─────────
+                    try {
+                        SupabaseManager.client.auth.refreshCurrentSession()
+                        Log.d(TAG, "✅ [SplashScreen] Session berhasil di-refresh.")
+                        "valid"
+                    } catch (e1: Exception) {
+                        val msg1 = (e1.message?.lowercase() ?: "") + " " + (e1.cause?.message?.lowercase() ?: "")
+                        Log.w(TAG, "⚠️ [SplashScreen] refreshCurrentSession gagal: ${e1.message}")
+
+                        val isNetworkError = msg1.contains("unable to resolve host") ||
+                                msg1.contains("failed to connect") ||
+                                msg1.contains("no route to host") ||
+                                msg1.contains("connection refused") ||
+                                msg1.contains("network is unreachable") ||
+                                msg1.contains("socketexception") ||
+                                msg1.contains("unknownhostexception") ||
+                                msg1.contains("java.net.connect") ||
+                                e1 is java.net.UnknownHostException ||
+                                e1 is java.net.ConnectException ||
+                                e1 is java.net.SocketException ||
+                                e1.cause is java.net.UnknownHostException ||
+                                e1.cause is java.net.ConnectException
+
+                        if (isNetworkError) {
+                            Log.w(TAG, "🌐 [SplashScreen] Offline saat refresh. Pakai cache.")
+                            "offline"
+                        } else {
+                            // Refresh gagal — tapi ini BUKAN berarti langsung logout!
+                            // Refresh token mungkin sudah mati, tapi access token yang tersimpan
+                            // masih bisa dipakai. Coba validasi user secara langsung.
+                            Log.w(TAG, "🔄 [SplashScreen] Refresh gagal. Coba retrieveUser...")
+                            try {
+                                // retrieveUser dengan updateSession=true akan me-re-use access token
+                                // yang tersimpan untuk hit endpoint /user, membuktikan session masih ada.
+                                SupabaseManager.client.auth.retrieveUserForCurrentSession(updateSession = true)
+                                Log.d(TAG, "✅ [SplashScreen] Session valid via retrieveUser.")
+                                "valid"
+                            } catch (e2: Exception) {
+                                val msg2 = (e2.message?.lowercase() ?: "") + " " + (e2.cause?.message?.lowercase() ?: "")
+                                Log.e(TAG, "❌ [SplashScreen] retrieveUser juga gagal: ${e2.message}")
+
+                                val isNetworkError2 = msg2.contains("unable to resolve host") ||
+                                        msg2.contains("failed to connect") ||
+                                        msg2.contains("no route to host") ||
+                                        msg2.contains("socketexception") ||
+                                        msg2.contains("unknownhostexception") ||
+                                        e2 is java.net.UnknownHostException ||
+                                        e2 is java.net.ConnectException ||
+                                        e2 is java.net.SocketException
+
+                                if (isNetworkError2) {
+                                    Log.w(TAG, "🌐 [SplashScreen] Offline di percobaan 2. Pakai cache.")
+                                    "offline"
+                                } else {
+                                    // Kedua cara gagal dengan auth error → cek apakah ini
+                                    // benar-benar token revoked/hangus atau hanya error sementara
+                                    val isHardAuthError = msg2.contains("invalid refresh token") ||
+                                            msg2.contains("token is expired") ||
+                                            msg2.contains("refresh_token_not_found") ||
+                                            msg2.contains("user not found") ||
+                                            msg2.contains("invalid token") ||
+                                            msg2.contains("jwt expired") ||
+                                            msg2.contains("401") ||
+                                            msg2.contains("403")
+
+                                    if (isHardAuthError) {
+                                        Log.e(TAG, "🚫 [SplashScreen] Token DITOLAK server. Harus login ulang.")
+                                        isExplicitAuthError = true
+                                        "auth_error"
+                                    } else {
+                                        // Error tidak dikenal (server error, dll) → jangan logout paksa!
+                                        // Anggap offline dan pakai cache untuk keamanan user experience
+                                        Log.w(TAG, "❓ [SplashScreen] Error tidak dikenal. Anggap offline, pakai cache.")
+                                        "offline"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+
+                when (validationResult) {
+                    "valid" -> {
+                        sessionValid = true
+                    }
+                    "offline", null -> {
+                        // null = timeout → anggap offline, pakai cache
+                        Log.w(TAG, "⏱️ [SplashScreen] Offline/timeout. Pakai session cache lokal.")
+                        // Hanya izinkan masuk jika memang ada cached user (pernah login)
+                        sessionValid = hasCachedUser
+                    }
+                    else -> {
+                        // "auth_error" → session hangus (hanya jika isExplicitAuthError = true)
+                        sessionValid = false
+                    }
+                }
+
+                if (!sessionValid) {
+                    // Session expired/revoked → bersihkan semua data stale
+                    Log.w(TAG, "🧹 [SplashScreen] Membersihkan session & cache stale...")
+                    try { SupabaseManager.client.auth.signOut() } catch (_: Exception) {}
+                    UserManager.clearUser()
+                    UserManager.saveCachedFcmToken(null)
+                    HomeCacheManager.clear()
+
+                    navController.navigate("login") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                    return@launch
+                }
+
+                // ── STEP 4: Session valid, load data user ───────────────────────
+                val networkUser = withTimeoutOrNull(5000L) {
+                    UserManager.ensureUserLoaded()
+                }
+
+                val finalUser = networkUser ?: UserManager.currentUser
+
+                if (finalUser != null) {
+                    Log.d(TAG, "✅ [SplashScreen] User siap: ${finalUser.displayName}. Navigasi ke Main.")
+                } else {
+                    // Session valid tapi data user tidak bisa diambil
+                    // (kemungkinan offline total dan cache belum ada profil lengkap)
+                    // Tetap masuk main agar musik offline bisa diputar!
+                    Log.w(TAG, "⚠️ [SplashScreen] User data null tapi session valid. Masuk Main (offline mode).")
+                }
+
+                navController.navigate("main") {
+                    popUpTo("splash") { inclusive = true }
+                }
+
             } else {
-                Log.d(TAG, "🔓 [SplashScreen] Tidak ada session. Navigasi ke Login.")
+                // Benar-benar belum pernah login — tidak ada session & tidak ada cache
+                Log.d(TAG, "🔓 [SplashScreen] Tidak ada sesi & tidak ada cache. Navigasi ke Login.")
                 navController.navigate("login") {
                     popUpTo("splash") { inclusive = true }
                 }

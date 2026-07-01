@@ -1,6 +1,10 @@
 package com.example.remusic.ui.components.searchcomponents
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +58,7 @@ fun RecentlyPlayedSection(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListItem(
     song: Song2,
@@ -61,7 +66,16 @@ fun SongListItem(
     onMoreOptionsClick: () -> Unit = {}
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable { onSongClick() }.padding(start = 16.dp).padding(bottom = 5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onSongClick() },
+                onLongClick = { onMoreOptionsClick() }
+            )
+            .padding(start = 16.dp)
+            .padding(bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(

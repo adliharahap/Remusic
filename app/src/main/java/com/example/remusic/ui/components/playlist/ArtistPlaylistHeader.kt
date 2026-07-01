@@ -1,5 +1,6 @@
 package com.example.remusic.ui.components.playlist
 
+import com.example.remusic.viewmodel.playmusic.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -57,13 +58,14 @@ fun ArtistPlaylistHeader(
     uiState: PlayerUiState?,
     sortedSongs: List<SongWithArtist>,
     filteredAndSortedSongs: List<SongWithArtist>,
-    artistId: String? = null
+    artistId: String? = null,
+    playlistType: com.example.remusic.ui.screen.PlaylistType = com.example.remusic.ui.screen.PlaylistType.ARTIST
 ) {
     // 1. Trigger Fetching if needed
     val targetArtistId = artistId ?: songs.firstOrNull()?.artist?.id
 
     LaunchedEffect(targetArtistId) {
-        if (targetArtistId != null && playMusicViewModel != null) {
+        if (targetArtistId != null && playMusicViewModel != null && playlistType != com.example.remusic.ui.screen.PlaylistType.UPLOADER) {
             // Only fetch if data is missing or different
             if (uiState?.artistDetails?.id != targetArtistId) {
                 playMusicViewModel.fetchArtistDetailsForHeader(targetArtistId)
@@ -151,6 +153,18 @@ fun ArtistPlaylistHeader(
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,
                 color = Color.White.copy(0.4f)
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            val isExtended = artistDetails.id.startsWith("UC") || artistDetails.id.startsWith("U")
+            Text(
+                text = if (isExtended) "* Data from Extended" else "From Uploader",
+                fontFamily = AppFont.Helvetica,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = if (isExtended) Color(0xFFFF4D4D) else Color(0xFF1DB954), // Red for Extended, Green for Uploader
+                letterSpacing = 0.5.sp
             )
 
             Spacer(modifier = Modifier.height(28.dp))

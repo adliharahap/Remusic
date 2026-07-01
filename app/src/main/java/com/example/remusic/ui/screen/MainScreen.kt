@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.viewmodel.playmusic.*
 import com.example.remusic.utils.ConnectivityObserver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -289,7 +290,7 @@ fun MainScreen(
             BottomPlayerCard(
                 uiState = playerUiState,
                 onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
-                onLikeClick = { playMusicViewModel.toggleLike() },
+                onNextClick = { playMusicViewModel.nextSong() },
                 onCardClick = {
                     rootNavController.navigate("playmusic")
                 }
@@ -422,7 +423,7 @@ fun MainScreen(
                     playMusicViewModel.dismissQueueOptions()
                 },
                 onAddToLiked = {
-                    playMusicViewModel.toggleLike(selectedSong.song.id)
+                    playMusicViewModel.toggleLike(selectedSong)
                 },
                 showRemoveFromPlaylist = playerUiState.playlistIdToRemoveFromQueueOptions != null,
                 onRemoveFromPlaylist = {
@@ -451,7 +452,7 @@ fun MainScreen(
                 playlists = playerUiState.userPlaylists,
                 isLoading = playerUiState.isFetchingUserPlaylists,
                 onPlaylistSelected = { playlist ->
-                    playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id) { success, message ->
+                    playMusicViewModel.addSongToPlaylist(playlist.id, songToAdd.song.id, songToAdd) { success, message ->
                         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         if (success) {
                             playMusicViewModel.dismissAddToPlaylistSheet()

@@ -20,6 +20,9 @@ data class Artist(
     @SerialName("description")
     val description: String? = null,
 
+    @SerialName("youtube_id")
+    val youtubeId: String? = null,
+
     @SerialName("normalized_name") // Nama kolom di DB: normalized_name
     val normalizedName: String? = null,
 
@@ -30,5 +33,8 @@ data class Artist(
     val createdAt: String? = null,
 
     @SerialName("updated_at")
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+
+    @SerialName("source")
+    val source: String? = null
 ): Parcelable

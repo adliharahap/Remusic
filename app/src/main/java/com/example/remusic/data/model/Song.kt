@@ -40,7 +40,7 @@ data class Song(
 
     // Menggunakan List<String> karena tipe di DB adalah ARRAY
     @SerialName("moods")
-    val moods: List<String> = emptyList(),
+    val moods: List<String>? = emptyList(),
 
     // --- KOLOM STREAMING & MEDIA ---
 
@@ -73,5 +73,19 @@ data class Song(
     val updatedAt: String? = null,
 
     @SerialName("lyrics_updated_at")
-    val lyricsUpdatedAt: String? = null
-): Parcelable
+    val lyricsUpdatedAt: String? = null,
+
+    // --- SUMBER PEMUTARAN ---
+    // Nilai: "youtube" | "telegram" | "mp3" | "offline" | null
+    // null = auto-detect (backward compatible dengan data lama)
+    @SerialName("source")
+    val source: String? = null,
+
+    @SerialName("youtube_id")
+    val youtubeId: String? = null
+) : Parcelable {
+    // Properti pembantu untuk mendapatkan ID yang benar saat pemutaran
+    // Jika lagu berasal dari YouTube, kita harus pakai ID 11 karakter, bukan UUID Supabase
+    val effectiveId: String
+        get() = youtubeId ?: id
+}

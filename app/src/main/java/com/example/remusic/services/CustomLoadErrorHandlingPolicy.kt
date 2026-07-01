@@ -10,8 +10,9 @@ import java.io.IOException
  * Custom Load Error Handling Policy untuk ExoPlayer
  * 
  * Tujuan: Agar ExoPlayer tidak mudah menyerah saat ada masalah jaringan.
- * - Network errors (IOException) akan di-retry unlimited dengan exponential backoff
- * - Non-network errors tetap menggunakan default behavior (stop after 3 retries)
+ * - 4xx HTTP errors (404, 403, 410): STOP retry segera → trigger onPlayerError → app re-resolve URL
+ * - Network errors (IOException) akan di-retry dengan exponential backoff cepat
+ * - Non-network errors tetap menggunakan default behavior
  */
 @OptIn(UnstableApi::class)
 class CustomLoadErrorHandlingPolicy : DefaultLoadErrorHandlingPolicy() {
@@ -26,41 +27,48 @@ class CustomLoadErrorHandlingPolicy : DefaultLoadErrorHandlingPolicy() {
                 "CustomLoadErrorPolicy",
                 "❌ URL Format Invalid: ${exception.message}. STOP retry (bukan network issue)."
             )
-            // Return C.TIME_UNSET agar ExoPlayer STOP retry
             return androidx.media3.common.C.TIME_UNSET
         }
         
-        // Cek apakah ini adalah network error (IOException atau subclass-nya, kecuali MalformedURLException)
+        // KRITIS: Deteksi 4xx HTTP errors (404, 403, 410, dll)
+        // Ini artinya URL sudah EXPIRED atau TIDAK VALID — retrying dengan URL yang sama sia-sia!
+        // Return C.TIME_UNSET agar ExoPlayer STOP retry dan throw PlaybackException
+        // sehingga onPlayerError di ViewModel bisa re-resolve URL fresh.
+        if (exception is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+            val responseCode = exception.responseCode
+            if (responseCode in 400..499) {
+                android.util.Log.e(
+                    "CustomLoadErrorPolicy",
+                    "❌ HTTP $responseCode: URL expired/invalid. STOP retry — app harus re-resolve URL!"
+                )
+                return androidx.media3.common.C.TIME_UNSET
+            }
+        }
+        // Cek apakah ini adalah network error (IOException atau subclass-nya, kecuali yang sudah ditangani di atas)
         if (exception is IOException) {
-            // Network errors: UnknownHostException, SocketException, HttpDataSourceException, dll
-            // Exponential backoff: 1s -> 2s -> 4s -> 8s -> max 10s
-            val baseDelayMs = 1000L
+            // Network errors: UnknownHostException, SocketException, dll
+            // Exponential backoff cepat: 500ms -> 1s -> 2s -> 4s -> max 5s
+            val baseDelayMs = 500L
             val attempt = loadErrorInfo.errorCount
-            
-            // Formula: baseDelay * 2^attempt, dengan max 10 detik
-            // attempt 0: 1s, attempt 1: 2s, attempt 2: 4s, attempt 3: 8s, attempt 4+: 10s
             val calculatedDelay = baseDelayMs * (1 shl attempt.coerceAtMost(4))
-            val finalDelay = calculatedDelay.coerceAtMost(10000L)
+            val finalDelay = calculatedDelay.coerceAtMost(5000L)
             
             android.util.Log.d(
                 "CustomLoadErrorPolicy",
-                "🔄 Network error detected (attempt ${attempt + 1}). Retrying in ${finalDelay}ms. Error: ${exception.message}"
+                "🔄 Network error (attempt ${attempt + 1}). Retry in ${finalDelay}ms. Error: ${exception.message}"
             )
             
             return finalDelay
         }
         
-        // Untuk error non-network (format error, decoder error, dll), gunakan default
         android.util.Log.w(
             "CustomLoadErrorPolicy",
-            "❌ Non-network error detected: ${exception::class.simpleName}. Using default retry policy."
+            "❌ Non-network error: ${exception::class.simpleName}. Using default retry policy."
         )
         return super.getRetryDelayMsFor(loadErrorInfo)
     }
 
     override fun getMinimumLoadableRetryCount(dataType: Int): Int {
-        // Retry unlimited untuk semua data types (audio, video, dll)
-        // ExoPlayer akan terus retry selama getRetryDelayMsFor() tidak return C.TIME_UNSET
         return Int.MAX_VALUE
     }
 }

@@ -1,5 +1,6 @@
 package com.example.remusic.navigation
 
+import com.example.remusic.viewmodel.playmusic.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -7,11 +8,16 @@ import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.remusic.data.HomeCacheManager
+import com.example.remusic.data.SessionExpiredHandler
+import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.UserManager
 import com.example.remusic.ui.screen.LoginScreen
 import com.example.remusic.ui.screen.MainScreen
 import com.example.remusic.ui.screen.SplashScreen
 import com.example.remusic.ui.screen.playmusic.PlayMusicScreen
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -28,6 +34,26 @@ fun AppNavGraph(
     val connectivityStatus by connectivityObserver.observe().collectAsState(
         initial = com.example.remusic.utils.ConnectivityObserver.Status.Available
     )
+
+    // ── GLOBAL SESSION EXPIRED HANDLER ─────────────────────────────────────────
+    // Jika refresh_token habis dan Supabase tidak bisa refresh access_token lagi,
+    // RemusicApplication akan emit event ini. Kita tangkap di sini dan paksa logout.
+    LaunchedEffect(Unit) {
+        SessionExpiredHandler.sessionExpiredEvent.collect {
+            android.util.Log.w("AppNavGraph", "🔐 Session expired event diterima! Memaksa logout ke login screen...")
+            try { SupabaseManager.client.auth.signOut() } catch (_: Exception) {}
+            UserManager.clearUser()
+            UserManager.saveCachedFcmToken(null)
+            HomeCacheManager.clear()
+            playMusicViewModel.stopPlaybackOnLogout()
+            SessionExpiredHandler.reset()
+
+            navController.navigate("login") {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
     LaunchedEffect(notificationRoute) {
         if (notificationRoute != null) {
             if (notificationRoute == "playmusic") {

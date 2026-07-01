@@ -24,16 +24,16 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition = _currentPosition.asStateFlow()
 
+    private val _lyricsOffset = MutableStateFlow(0L)
+    val lyricsOffset = _lyricsOffset.asStateFlow()
+
     // Cari index terakhir di `lyrics` yang timestamp <= posisi sekarang
     // DEBUG FIX: Tambah offset 150ms agar lirik muncul sedikit lebih cepat (kompensasi lag debug build)
-    val activeLyricIndex = lyrics.combine(currentPosition) { list, pos ->
+    val activeLyricIndex = combine(lyrics, currentPosition, lyricsOffset) { list, pos, offset ->
         if (list.isEmpty()) return@combine -1
         
-        // OFFSET: +50ms untuk kompensasi debug build lag (ULTRA MINIMAL)
-        // Position update setiap 50ms, lag konsisten -60ms to -80ms
-        // 50ms offset memberikan timing paling akurat
-        // Di release build, bisa jadi 0ms (no offset)
-        val adjustedPos = pos + 50
+        // OFFSET: +50ms (internal lag compensation) + manual user offset
+        val adjustedPos = pos + 50 + offset
         
         var idx = -1
         for (i in list.indices) {
@@ -41,14 +41,11 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
             if (ts != -1L && ts <= adjustedPos) {
                 idx = i
             } else if (ts != -1L && ts > adjustedPos) {
-                // sudah melewati timestamp yang lebih besar -> stop
                 break
             }
-            // baris tanpa timestamp (ts == -1) diabaikan untuk index aktif
         }
-        
         idx
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), -1)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
 
     fun loadLyrics(lrcString: String) {
         val parsed = parseLrc(lrcString)
@@ -56,8 +53,9 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // dipanggil dari UI tiap kali currentPosition berubah
-    fun updatePlaybackPosition(position: Long) {
+    fun updatePlaybackPosition(position: Long, offset: Long = 0L) {
         _currentPosition.value = position
+        _lyricsOffset.value = offset
     }
 
     val isTranslateLyrics: StateFlow<Boolean> =

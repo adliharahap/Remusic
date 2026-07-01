@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.viewmodel.playmusic.*
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -106,7 +107,8 @@ enum class PlaylistType {
     ARTIST,
     USER_CREATED,
     OFFICIAL,
-    AUTO // Top Hits, Most Loved, etc.
+    AUTO, // Top Hits, Most Loved, etc.
+    UPLOADER // Songs uploaded by a specific user
 }
 
 @Composable
@@ -143,8 +145,8 @@ fun PlaylistDetailScreen(
     var headersColors by remember { mutableStateOf(listOf(Color(0xFF202020), Color(0xFF000000))) }
 
     // --- Pagination Logic (Artist/User Playlist) ---
-    // For Artist, User, Liked Songs (AUTO), & Official playlists, we use fetched data from ViewModel
-    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL) {
+    // For Artist, User, Liked Songs (AUTO), Official, & UPLOADER playlists, we use fetched data from ViewModel
+    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL || playlistType == PlaylistType.UPLOADER) {
         uiState?.artistSongs ?: emptyList()
     } else {
         songs
@@ -225,6 +227,8 @@ fun PlaylistDetailScreen(
     LaunchedEffect(playlistType, playlistId) {
         if (playlistType == PlaylistType.ARTIST && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchArtistSongs(playlistId)
+        } else if (playlistType == PlaylistType.UPLOADER && !playlistId.isNullOrBlank()) {
+             playMusicViewModel?.fetchUploaderSongs(playlistId)
         } else if ((playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL) && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchPlaylistDetails(playlistId)
         }
@@ -234,7 +238,7 @@ fun PlaylistDetailScreen(
     // Show skeleton until BOTH artist details AND songs are loaded
     val isInitialLoading = remember(playlistType, playlistId, uiState, effectiveSongs) {
         when (playlistType) {
-            PlaylistType.ARTIST -> {
+            PlaylistType.ARTIST, PlaylistType.UPLOADER -> {
                  val isLoadingSongs = uiState?.isArtistSongsLoading == true
                  val isLoadingDetails = uiState?.isLoadingArtistDetails == true
                  val hasSongs = effectiveSongs.isNotEmpty()
@@ -634,7 +638,7 @@ fun PlaylistDetailContent(
                                         filteredAndSortedSongs = filteredAndSortedSongs
                                     )
                                 }
-                                PlaylistType.ARTIST -> {
+                                PlaylistType.ARTIST, PlaylistType.UPLOADER -> {
                                     ArtistPlaylistHeader(
                                         songs = effectiveSongs,
                                         playlistName = playlistName,
@@ -653,7 +657,8 @@ fun PlaylistDetailContent(
                                         uiState = uiState,
                                         sortedSongs = sortedSongs,
                                         filteredAndSortedSongs = filteredAndSortedSongs,
-                                        artistId = playlistId // Pass the artist ID
+                                        artistId = playlistId, // Pass the artist ID
+                                        playlistType = playlistType
                                     )
                                 }
                                 PlaylistType.USER_CREATED -> {
@@ -779,13 +784,17 @@ fun PlaylistDetailContent(
 
                 // --- Pagination Trigger (No Loading Indicator) ---
                 item {
-                    if (playlistType == PlaylistType.ARTIST && playlistId != null) {
+                    if ((playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.UPLOADER) && playlistId != null) {
                          val isEndReached = uiState?.artistSongsEndReached == true
                          
                          if (!isEndReached) {
                              // Trigger Load More when visible
                              LaunchedEffect(Unit) {
-                                  playMusicViewModel?.loadMoreArtistSongs(playlistId)
+                                  if (playlistType == PlaylistType.ARTIST) {
+                                      playMusicViewModel?.loadMoreArtistSongs(playlistId)
+                                  } else {
+                                      playMusicViewModel?.loadMoreUploaderSongs(playlistId)
+                                  }
                              }
                          }
                     }

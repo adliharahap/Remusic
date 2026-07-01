@@ -3,6 +3,9 @@ package com.example.remusic.data.repository
 // Data Models
 import android.util.Log
 import com.example.remusic.data.SupabaseManager
+import com.example.remusic.data.repository.lyrics.LyricsRepository
+import com.example.remusic.data.repository.queue.QueueRepository
+
 import com.example.remusic.data.local.MusicDao
 import com.example.remusic.data.local.entity.CachedFollowedArtist
 import com.example.remusic.data.local.entity.CachedSong
@@ -19,6 +22,7 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.*
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -27,9 +31,19 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 class MusicRepository(private val musicDao: MusicDao) {
+
+val lyrics = com.example.remusic.data.repository.lyrics.LyricsRepository(musicDao)
+val queue = com.example.remusic.data.repository.queue.QueueRepository(musicDao)
+val social = com.example.remusic.data.repository.social.UserSocialRepository(musicDao, ::upsertYouTubeSong)
+
+    // Proxy for fetchArtistsByIds to avoid breaking other ViewModels
+    suspend fun fetchArtistsByIds(artistIds: List<String>): List<Artist> = social.fetchArtistsByIds(artistIds)
+
 
     // --- SYNC ENGINE: DOWNLOAD DATA USER (Likes & Follows) ---
     suspend fun synchronizeUserData(userId: String) {
@@ -44,14 +58,40 @@ class MusicRepository(private val musicDao: MusicDao) {
                             }
                             .decodeList<JsonObject>()
 
+            val songIds = remoteLikes.map { it["song_id"].toString().replace("\"", "") }
+
+            // Ambil mapping UUID -> youtube_id dari tabel songs untuk translate balik ke ID YouTube (11 char)
+            val youtubeMapping = if (songIds.isNotEmpty()) {
+                try {
+                    SupabaseManager.client.from("songs")
+                        .select(columns = Columns.list("id", "youtube_id")) {
+                            filter { isIn("id", songIds) }
+                        }
+                        .decodeList<JsonObject>()
+                        .associate {
+                            val id = it["id"]?.jsonPrimitive?.content ?: ""
+                            val ytId = it["youtube_id"]?.jsonPrimitive?.contentOrNull
+                            id to ytId
+                        }
+                } catch (e: Exception) {
+                    Log.w("DEBUG_PLAYER", "⚠️ [SYNC] Gagal ambil mapping youtube_id: ${e.message}")
+                    emptyMap<String, String?>()
+                }
+            } else emptyMap()
+
+            // Clear local likes first for a fresh sync
+            musicDao.clearLikedSongs()
+
             // Bulk Insert to SQLite
             remoteLikes.forEach {
-                val songId = it["song_id"].toString().replace("\"", "")
-                // Simpan as LikedSong
-                // Parse timestamp if needed, or just use now/default
-                musicDao.insertLikedSong(LikedSong(songId))
+                val uuid = it["song_id"]?.jsonPrimitive?.content ?: ""
+                if (uuid.isBlank()) return@forEach
+                
+                // Jika UUID ini adalah shadow entry untuk YouTube, gunakan youtube_id aslinya untuk Local DB
+                val effectiveId = youtubeMapping[uuid] ?: uuid
+                musicDao.insertLikedSong(LikedSong(effectiveId))
             }
-            Log.d("DEBUG_PLAYER", "✅ [SYNC] ${remoteLikes.size} liked songs tersimpan di Local.")
+            Log.d("DEBUG_PLAYER", "✅ [SYNC] ${remoteLikes.size} liked songs tersimpan di Local (dengan YouTube ID translation).")
 
             // 2. Sync Followed Artists
             val remoteFollows =
@@ -93,69 +133,121 @@ class MusicRepository(private val musicDao: MusicDao) {
     }
 
     // --- MEMORY CACHE (Hilang saat app close) ---
-    private val memoryUserCache = mutableMapOf<String, User>()
-    private val memoryArtistCache = mutableMapOf<String, Artist>()
     private val memoryFollowCache =
             mutableMapOf<String, Boolean>() // Cache untuk status follow artist
             
+
     fun getAllLikedSongs(): kotlinx.coroutines.flow.Flow<List<CachedSong>> {
         return musicDao.getAllLikedSongs()
     }
 
-    // --- LOGIC 1: RESOLVE URL (DIRECT TELEGRAM WITH RETRY) ---
+    // --- LOGIC 1: RESOLVE URL (MULTI-SOURCE: youtube / telegram / mp3 / offline) ---
     suspend fun getPlayableUrl(
             songId: String,
             title: String,
             telegramFileId: String?,
             fallbackUrl: String?,
-            artistId: String?
+            artistId: String?,
+            source: String? = null   // "youtube" | "telegram" | "mp3" | "offline" | null (auto)
     ): ResolvedSongUrl {
         Log.d(TAG, "================================================================")
-        Log.d(TAG, "🚀 [DIRECT MODE] Request Lagu: \"$title\"")
+        Log.d(TAG, "🚀 [RESOLVE] \"$title\" | source=$source | telegramFileId=$telegramFileId")
 
-        // 1. Validasi File ID
-        if (telegramFileId.isNullOrBlank()) {
-            Log.i(TAG, "⚠️ [NON-TELEGRAM] Lagu ini pakai Link Direct/Supabase.")
-
-            val directUrl = fallbackUrl ?: ""
-
-            // Jika direct URL kosong, berarti error fatal (data korup)
-            if (directUrl.isBlank()) {
-                Log.e(TAG, "❌ [ERROR] Fallback URL juga kosong.")
-                return ResolvedSongUrl("", "INVALID", ErrorType.NOT_FOUND)
-            }
-
-            // Cek dulu apakah data lama sudah ada?
-            val existingData = musicDao.getSongById(songId)
-
-            val cacheDataToSave =
-                    existingData?.copy(
-                            lastPlayedAt = System.currentTimeMillis() // Update waktu putar
-                    )
-                            ?: CachedSong(
-                                    id = songId,
-                                    title = title, // Judul dari parameter
-                                    uploaderUserId = null,
-                                    artistName = "Unknown", // Nanti diupdate getFullDetails
-                                    coverUrl = null,
-                                    lyrics = null,
-                                    telegramFileId = null, // Kosong karena bukan Telegram
-                                    telegramDirectUrl = directUrl, // Simpan URL aslinya disini
-                                    urlExpiryTime =
-                                            Long.MAX_VALUE, // Set abadi (karena link Supabase
-                                    // biasanya statis/tahan lama)
-                                    lastPlayedAt = System.currentTimeMillis(),
-                                    artistId = artistId
-                            )
-
-            musicDao.insertSong(cacheDataToSave)
-            Log.d(
-                    TAG,
-                    "💾 [SUCCESS] Lagu Non-Telegram berhasil dicatat di Database (Untuk History/Lirik)."
-            )
-            Log.d(TAG, "🎵 [AUDIO SOURCE] CACHE (Offline/Direct) - Non Telegram")
-            return ResolvedSongUrl(directUrl, "CACHE (Non-Telegram)")
+        // Deteksi source secara otomatis jika tidak eksplisit
+        val resolvedSource = when {
+            source == "offline" -> "offline"
+            source == "youtube" || source == "youtube_video" -> "youtube"
+            source == "mp3" -> "mp3"
+            source == "telegram" -> "telegram"
+            // Auto-detect (backward compatible):
+            !telegramFileId.isNullOrBlank() -> "telegram"       // Ada telegram file ID → telegram
+            fallbackUrl?.endsWith(".mp3") == true -> "mp3"      // URL berakhiran .mp3
+            else -> "youtube"                                    // Default: coba YouTube
         }
+        Log.d(TAG, "📍 Resolved source: $resolvedSource")
+
+        // ── OFFLINE ──────────────────────────────────────────────────────────────
+        if (resolvedSource == "offline") {
+            val cached = musicDao.getSongById(songId)
+            val offlineUrl = cached?.telegramDirectUrl ?: fallbackUrl ?: ""
+            if (offlineUrl.isNotBlank()) {
+                Log.d(TAG, "✅ [OFFLINE] Menggunakan file lokal: $offlineUrl")
+                return ResolvedSongUrl(offlineUrl, "OFFLINE")
+            }
+            Log.w(TAG, "⚠️ [OFFLINE] File lokal tidak ditemukan, fallback ke youtube")
+            // fallthrough ke youtube
+        }
+
+        // ── MP3 LINK ─────────────────────────────────────────────────────────────
+        if (resolvedSource == "mp3" && !fallbackUrl.isNullOrBlank()) {
+            Log.d(TAG, "✅ [MP3] Menggunakan direct MP3 link: $fallbackUrl")
+            return ResolvedSongUrl(fallbackUrl, "MP3_LINK")
+        }
+
+        // ── TELEGRAM ─────────────────────────────────────────────────────────────
+        if (resolvedSource == "telegram" && !telegramFileId.isNullOrBlank()) {
+            return resolveTelegramUrl(songId, title, telegramFileId, fallbackUrl, artistId)
+        }
+
+        // ── YOUTUBE ──────────────────────────────────────────────────────────────
+        Log.i(TAG, "🎵 [YOUTUBE] Mencoba stream YouTube untuk videoId: $songId")
+        var ytStreamUrl = ""
+        var ytExpiresInSeconds = 0
+
+        try {
+            val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
+                videoId = songId,
+                playlistId = null,
+                audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
+                connectivityManager = null
+            )
+            val playbackData = playbackResult.getOrNull()
+            ytStreamUrl = playbackData?.streamUrl ?: ""
+            ytExpiresInSeconds = playbackData?.streamExpiresInSeconds ?: 0
+            if (ytStreamUrl.isNotBlank()) {
+                Log.d(TAG, "✅ [YOUTUBE] Berhasil mendapatkan stream URL!")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [YOUTUBE ERROR] Gagal fetch dari YouTube: ${e.message}")
+        }
+
+        val finalUrl = ytStreamUrl.ifBlank { fallbackUrl ?: "" }
+
+        if (finalUrl.isBlank()) {
+            Log.e(TAG, "❌ [ERROR] Semua sumber gagal untuk lagu: $title")
+            return ResolvedSongUrl("", "INVALID", ErrorType.NOT_FOUND)
+        }
+
+        // Cache URL hasil YouTube ke DB
+        val expiryTime = if (ytStreamUrl.isNotBlank() && ytExpiresInSeconds > 0)
+            System.currentTimeMillis() + (ytExpiresInSeconds * 1000L)
+        else Long.MAX_VALUE
+
+        val existingData = musicDao.getSongById(songId)
+        if (existingData != null) {
+            musicDao.updateSongUrl(songId, finalUrl, expiryTime, System.currentTimeMillis())
+        } else {
+            musicDao.insertSong(CachedSong(
+                id = songId, title = title, uploaderUserId = null, artistName = "Unknown",
+                coverUrl = null, lyrics = null, telegramFileId = null,
+                telegramDirectUrl = finalUrl, urlExpiryTime = expiryTime,
+                lastPlayedAt = System.currentTimeMillis(), artistId = artistId,
+                source = "youtube"
+            ))
+        }
+
+        val sourceLabel = if (ytStreamUrl.isNotBlank()) "YOUTUBE" else "FALLBACK"
+        return ResolvedSongUrl(finalUrl, sourceLabel)
+    }
+
+    // ── Helper: Resolve Telegram URL dengan retry ─────────────────────────────
+    private suspend fun resolveTelegramUrl(
+            songId: String,
+            title: String,
+            telegramFileId: String,
+            fallbackUrl: String?,
+            artistId: String?
+    ): ResolvedSongUrl {
 
         // 2. Cek Cache Lokal (SQLite)
         val cachedSong = musicDao.getSongById(songId)
@@ -346,11 +438,184 @@ class MusicRepository(private val musicDao: MusicDao) {
     }
 
     // --- LOGIC 2: FETCH & SAVE DETAILS (LYRICS) ---
-    suspend fun getFullSongDetails(songId: String): CachedSong? {
-        Log.d(TAG, "🔍 [DETAILS] Meminta detail lengkap (Lirik, dll) untuk ID: $songId")
+    suspend fun getFullSongDetails(songId: String, forceFetch: Boolean = false, initialTitle: String? = null, initialArtist: String? = null): CachedSong? {
+        Log.d(TAG, "🔍 [DETAILS] Meminta detail lengkap. ID: $songId, Title: $initialTitle, Artist: $initialArtist, Force: $forceFetch")
 
         // 1. Cek di SQLite dulu
         val cached = musicDao.getSongById(songId)
+        
+        val isTelegramSong = cached?.source == "telegram" || cached?.telegramFileId != null
+        val hasMissingMetadata = isTelegramSong && cached?.language.isNullOrBlank()
+        
+        // --- PRIORITAS: Jika sudah ada lirik SYNCED di local dan METADATA LENGKAP, LANGSUNG PAKAI! ---
+        // Ini mengatasi latency (ngak perlu nunggu network) dan mencegah lirik tertimpa plain text.
+        if (!forceFetch && cached != null && lyrics.isLyricsSynced(cached.lyrics) && !hasMissingMetadata) {
+            Log.d(TAG, "🚀 [LOCAL] Lirik SYNCED & Metadata lengkap ditemukan. Mengembalikan instan.")
+            return cached
+        }
+
+        // 1.5 Handle lagu YouTube khusus: tidak perlu Supabase, fetch lirik via Innertube
+        val isYouTubeId = songId.matches(Regex("^[a-zA-Z0-9_-]{11}$"))
+        if (cached?.source == "youtube" || isYouTubeId) {
+            var title = initialTitle ?: cached?.title ?: ""
+            var artist = initialArtist ?: cached?.artistName ?: ""
+
+            // --- BARU: Resolusi Metadata jika masih kosong (Lagu baru dari YouTube) ---
+            if (title.isBlank() || artist.isBlank()) {
+                try {
+                    Log.d(TAG, "🔍 [METADATA] Metadata kosong, fetch dari Innertube...")
+                    val endpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = songId)
+                    val nextResult = com.metrolist.innertube.YouTube.next(endpoint).getOrNull()
+                    title = nextResult?.title ?: title
+                    artist = nextResult?.items?.firstOrNull()?.artists?.firstOrNull()?.name ?: artist
+                    Log.d(TAG, "✅ [METADATA] Resolved: $title - $artist")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ [METADATA] Gagal resolve metadata: ${e.message}")
+                }
+            }
+
+            val lyricsInCache = cached?.lyrics
+            val needsSyncedLyrics = lyricsInCache.isNullOrBlank() || !lyrics.isLyricsSynced(lyricsInCache) || lyricsInCache.contains("tidak tersedia", ignoreCase = true)
+
+            if (needsSyncedLyrics) {
+                try {
+                    // --- STEP A: SUPABASE HUB (Internal / Community Database) ---
+                    // Prioritas 1 karena paling cepat
+                    try {
+                        val cleanTitle = sanitizeSearchQuery(title)
+                        val cleanArtist = sanitizeSearchQuery(artist)
+                        Log.d(TAG, "☁️ [SUPABASE HUB] Mencari di lyrics_hub untuk: $cleanTitle - $cleanArtist")
+                        val hubData = SupabaseManager.client.from("lyrics_hub")
+                            .select() { filter { eq("id", songId) } }
+                            .decodeSingleOrNull<Map<String, String>>()
+                        
+                        val hubLyrics = hubData?.get("lyrics")
+                        if (!hubLyrics.isNullOrBlank()) {
+                            Log.d(TAG, "✅ [SUPABASE HUB] Lirik ditemukan di database bersama.")
+                            
+                            // Simpan ke local cache jika belum ada
+                            if (cached?.lyrics.isNullOrBlank()) {
+                                musicDao.updateLyrics(songId, hubLyrics)
+                            }
+
+                            return if (cached != null) {
+                                cached.copy(lyrics = hubLyrics)
+                            } else {
+                                CachedSong(id = songId, title = title, artistName = artist, lyrics = hubLyrics, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "⚠️ [SUPABASE HUB FAIL] ${e.message}")
+                    }
+
+                    // --- STEP B: LRCLIB (Fallback untuk lirik SYNCED) ---
+                    if (title.isNotBlank() && artist.isNotBlank()) {
+                        var lrcAttempt = 1
+                        val maxLrcAttempts = 2
+                        var lrcSuccess = false
+                        
+                        while (lrcAttempt <= maxLrcAttempts && !lrcSuccess) {
+                            try {
+                                val cleanTitle = sanitizeSearchQuery(title)
+                                val cleanArtist = sanitizeSearchQuery(artist)
+                                Log.d(TAG, "🔍 [LRCLIB] Mencari lirik (Percobaan ke-$lrcAttempt): $cleanTitle - $cleanArtist")
+                                val lrcResults = com.example.remusic.data.network.LrcLibRetrofit.api.searchLyrics(cleanTitle, cleanArtist)
+                                val bestMatch = lrcResults.firstOrNull()
+                                
+                                val syncedLyrics = bestMatch?.syncedLyrics
+                                val plainLyrics = bestMatch?.plainLyrics
+                                val isInstrumental = bestMatch?.instrumental == true
+                                
+                                if (isInstrumental || !syncedLyrics.isNullOrBlank()) {
+                                    val finalLrc = if (isInstrumental) "[Instrumental]" else syncedLyrics!! + "\n\nlyrics from lrclib"
+                                    Log.d(TAG, "✅ [LRCLIB] Berhasil mendapatkan lirik SYNCED.")
+                                    
+                                    val currentLyrics = cached?.lyrics
+                                    val shouldSave = when {
+                                        isInstrumental -> true
+                                        lyrics.isLyricsSynced(finalLrc) -> true
+                                        currentLyrics.isNullOrBlank() -> true
+                                        !lyrics.isLyricsSynced(currentLyrics) -> true
+                                        else -> false
+                                    }
+
+                                    if (shouldSave) {
+                                        musicDao.updateLyrics(songId, finalLrc)
+                                        lyrics.pushLyricsToLyricsHub(songId, title, artist, finalLrc, "lrclib")
+                                    }
+                                    
+                                    return if (cached != null) {
+                                        cached.copy(lyrics = finalLrc)
+                                    } else {
+                                        CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLrc, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                                    }
+                                } else if (!plainLyrics.isNullOrBlank()) {
+                                    Log.w(TAG, "⚠️ [LRCLIB] Hanya ketemu PLAIN lyrics. Melanjutkan ke fallback lain.")
+                                    lrcSuccess = true 
+                                } else {
+                                    Log.w(TAG, "⚠️ [LRCLIB] Tidak ditemukan lirik di LRCLIB.")
+                                    lrcSuccess = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ [LRCLIB] Percobaan ke-$lrcAttempt Gagal: ${e.message}")
+                                if (lrcAttempt < maxLrcAttempts) delay(2000)
+                                lrcAttempt++
+                            }
+                        }
+                    }
+
+                    // --- STEP C: FALLBACK KE YOUTUBE API ---
+                    Log.d(TAG, "🎵 [YOUTUBE] Meminta lirik via YouTube API untuk ID: $songId")
+                    // 1. Cek Synced Lyrics (Transcript)
+                    var ytLyrics = com.metrolist.innertube.YouTube.transcript(songId).getOrNull()
+                    val lyricsType = if (!ytLyrics.isNullOrBlank()) "SYNCED (Transcript)" else "None"
+                    
+                    // 2. Cek Plain Lyrics jika Synced gagal
+                    if (ytLyrics.isNullOrBlank()) {
+                        val endpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = songId)
+                        val nextResult = com.metrolist.innertube.YouTube.next(endpoint).getOrNull()
+                        val lyricsEndpoint = nextResult?.lyricsEndpoint
+                        if (lyricsEndpoint != null) {
+                            ytLyrics = com.metrolist.innertube.YouTube.lyrics(lyricsEndpoint).getOrNull()
+                            if (!ytLyrics.isNullOrBlank()) Log.d(TAG, "📜 [YT LYRICS] Synced gagal, menggunakan PLAIN lyrics.")
+                        }
+                    }
+
+                    // Filter pesan "tidak tersedia" dari YouTube
+                    val invalidKeywords = listOf("tidak tersedia", "not available", "no lyrics", "lirik belum ada")
+                    val finalLyrics = if (!ytLyrics.isNullOrBlank() && invalidKeywords.none { ytLyrics!!.contains(it, ignoreCase = true) }) {
+                        ytLyrics
+                    } else null
+
+                    if (finalLyrics != null) {
+                        Log.d(TAG, "✅ [YT LYRICS] Berhasil! Type: $lyricsType")
+                        
+                        val currentLyrics = cached?.lyrics
+                        val shouldSave = when {
+                            lyrics.isLyricsSynced(finalLyrics) -> true
+                            currentLyrics.isNullOrBlank() -> true
+                            !lyrics.isLyricsSynced(currentLyrics) -> true
+                            else -> false
+                        }
+
+                        if (shouldSave) {
+                            Log.d(TAG, "💾 [YT LYRICS] Menyimpan lirik ke DB.")
+                            musicDao.updateLyrics(songId, finalLyrics)
+                        }
+                        
+                        return if (cached != null) {
+                            cached.copy(lyrics = finalLyrics)
+                        } else {
+                            CachedSong(id = songId, title = title, artistName = artist, lyrics = finalLyrics, source = "youtube", uploaderUserId = null, telegramFileId = null, telegramDirectUrl = null, coverUrl = null)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ [FALLBACKS ERROR] Gagal fetch lirik: ${e.message}")
+                }
+            }
+            if (cached != null) return cached
+        }
+
 
         // Kita tidak langsung percaya cache. Kita cek dulu ke Supabase:
         // "Apakah lirik di server lebih baru dari yang saya punya?"
@@ -359,35 +624,58 @@ class MusicRepository(private val musicDao: MusicDao) {
 
         try {
             // A. Ambil HANYA timestamp dari server (Hemat Kuota)
-            Log.d(TAG, "☁️ [VERSION CHECK] Mengecek versi lirik ke Supabase...")
+            Log.d(TAG, "☁️ [VERSION CHECK] Mengecek versi lirik dan metadata ke Supabase untuk ID: $songId")
             val remoteVersion =
                     SupabaseManager.client
                             .from("songs")
-                            .select(columns = Columns.list("lyrics_updated_at")) {
-                                filter { eq("id", songId) }
+                            .select(columns = Columns.list("lyrics_updated_at", "language", "moods")) {
+                                filter { 
+                                    if (isYouTubeId) eq("youtube_id", songId)
+                                    else eq("id", songId)
+                                }
                             }
                             .decodeSingleOrNull<Song>()
 
             val remoteTimestamp = remoteVersion?.lyricsUpdatedAt
             val localTimestamp = cached?.lyricsUpdatedAt
+            val remoteLanguage = remoteVersion?.language
+            val missingLocalLanguage = cached?.language.isNullOrBlank()
 
-            if (remoteTimestamp != null) {
-                if (localTimestamp == null) {
+            if (remoteTimestamp != null || remoteLanguage != null) {
+                if (remoteTimestamp != null && localTimestamp == null) {
                     // KASUS 1: Lokal belum ada timestamp (lagu baru di-cache)
                     Log.d(TAG, "🆕 [NEW LYRICS] Lirik lokal belum ada versinya. Download...")
                     shouldFetchFullDetails = true
-                } else if (localTimestamp != remoteTimestamp) {
+                } else if (remoteTimestamp != null && localTimestamp != remoteTimestamp) {
                     // KASUS 2: Remote beda (lebih baru)
                     Log.d(
                             TAG,
                             "♻️ [UPDATE DETECTED] Server: $remoteTimestamp vs Lokal: $localTimestamp"
                     )
                     shouldFetchFullDetails = true
+                } else if (missingLocalLanguage && remoteLanguage != null && cached != null) {
+                    // KASUS 3: Lirik up-to-date, TAPI metadata bahasa kosong. Kita tambal!
+                    Log.d(TAG, "🔄 [MISSING META] Lirik up-to-date tapi language bolong. Menyimpan metadata baru: $remoteLanguage")
+                    musicDao.updateSongDetails(
+                        id = songId,
+                        title = cached.title,
+                        lyrics = cached.lyrics,
+                        lyricsUpdatedAt = cached.lyricsUpdatedAt,
+                        cover = cached.coverUrl,
+                        canvas = cached.canvasUrl,
+                        uploaderId = cached.uploaderUserId,
+                        language = remoteLanguage,
+                        moods = remoteVersion.moods ?: emptyList(),
+                        artistId = cached.artistId,
+                        featuredArtists = cached.featuredArtists
+                    )
+                    val patchedCache = cached.copy(language = remoteLanguage, moods = remoteVersion.moods ?: emptyList())
+                    return patchedCache
                 } else {
-                    // KASUS 3: Timestamp sama -> AMAN!
+                    // KASUS 4: Timestamp sama dan metadata aman -> AMAN!
                     Log.d(
                             TAG,
-                            "✅ [FRESH] Lirik lokal sudah paling update ($localTimestamp). Skip download."
+                            "✅ [FRESH] Lirik lokal sudah paling update ($localTimestamp) dan metadata lengkap. Skip download."
                     )
                     shouldFetchFullDetails = false
                 }
@@ -430,9 +718,16 @@ class MusicRepository(private val musicDao: MusicDao) {
                                                     "language",
                                                     "moods",
                                                     "artist_id",
-                                                    "featured_artists"
+                                                    "featured_artists",
+                                                    "youtube_id",
+                                                    "source"
                                             )
-                            ) { filter { eq("id", songId) } }
+                            ) { 
+                                filter { 
+                                    if (isYouTubeId) eq("youtube_id", songId)
+                                    else eq("id", songId)
+                                }
+                            }
                             .decodeSingleOrNull<Song>()
 
             if (supabaseSong != null) {
@@ -444,17 +739,25 @@ class MusicRepository(private val musicDao: MusicDao) {
                 val oldData = musicDao.getSongById(songId)
 
                 if (oldData != null) {
+                    // 🔥 JANGAN TIMPA lirik lokal jika yang lokal sudah SYNCED tapi server cuma PLAIN/NULL
+                    val finalLyricsToSave = if (lyrics.isLyricsSynced(oldData.lyrics) && !lyrics.isLyricsSynced(supabaseSong.lyrics)) {
+                        Log.d(TAG, "⚠️ [MERGE] Menjaga lirik SYNCED lokal. Skip timpa dengan lirik server.")
+                        oldData.lyrics
+                    } else {
+                        supabaseSong.lyrics
+                    }
+
                     // PARTIAL UPDATE
                     musicDao.updateSongDetails(
                             id = songId,
                             title = supabaseSong.title,
-                            lyrics = supabaseSong.lyrics,
+                            lyrics = finalLyricsToSave,
                             lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt, // Simpan versi baru
                             cover = supabaseSong.coverUrl,
                             canvas = supabaseSong.canvasUrl,
                             uploaderId = supabaseSong.uploaderUserId,
                             language = supabaseSong.language,
-                            moods = supabaseSong.moods,
+                            moods = supabaseSong.moods ?: emptyList(),
                             artistId = supabaseSong.artistId,
                             featuredArtists = supabaseSong.featuredArtists
                     )
@@ -463,14 +766,15 @@ class MusicRepository(private val musicDao: MusicDao) {
                     // Return object gabungan
                     return oldData.copy(
                             title = supabaseSong.title,
-                            lyrics = supabaseSong.lyrics,
+                            lyrics = finalLyricsToSave,
                             lyricsUpdatedAt = supabaseSong.lyricsUpdatedAt,
                             coverUrl = supabaseSong.coverUrl,
                             canvasUrl = supabaseSong.canvasUrl,
                             uploaderUserId = supabaseSong.uploaderUserId,
                             language = supabaseSong.language,
-                            moods = supabaseSong.moods,
-                            artistId = supabaseSong.artistId
+                            moods = supabaseSong.moods ?: emptyList(),
+                            artistId = supabaseSong.artistId,
+                            featuredArtists = supabaseSong.featuredArtists
                     )
                 } else {
                     // INSERT BARU
@@ -480,6 +784,7 @@ class MusicRepository(private val musicDao: MusicDao) {
                                     title = supabaseSong.title,
                                     uploaderUserId = supabaseSong.uploaderUserId,
                                     artistName = "Unknown",
+                                    featuredArtists = supabaseSong.featuredArtists,
                                     coverUrl = supabaseSong.coverUrl,
                                     canvasUrl = supabaseSong.canvasUrl,
                                     lyrics = supabaseSong.lyrics,
@@ -487,7 +792,7 @@ class MusicRepository(private val musicDao: MusicDao) {
                                     telegramFileId = supabaseSong.telegramFileId,
                                     telegramDirectUrl = null,
                                     language = supabaseSong.language,
-                                    moods = supabaseSong.moods,
+                                    moods = supabaseSong.moods ?: emptyList(),
                                     artistId = supabaseSong.artistId
                             )
                     musicDao.insertSong(newData)
@@ -504,169 +809,112 @@ class MusicRepository(private val musicDao: MusicDao) {
         return cached // Return apa adanya (mungkin null atau data parsial)
     }
 
+
+
+
+
+
+
+
     // --- LOGIC 3: LIKE / UNLIKE SONG (OFFLINE FIRST) ---
-    suspend fun isSongLiked(songId: String, userId: String): Boolean {
-        // "Single Source of Truth" adalah Local DB
-        return musicDao.isSongLiked(songId).first()
+
+
+
+
+
+
+    /**
+     * [SOLUTION 1] Shadow Entry:
+     * Menyimpan metadata lagu YouTube ke tabel 'songs' agar mendapatkan UUID.
+     * UUID ini nantinya digunakan untuk relasi di tabel user_song_likes dan playlist_songs.
+     */
+    /**
+     * Membuat atau mengambil UUID Artist YouTube di tabel 'artists'
+     */
+    suspend fun upsertYouTubeArtist(name: String, youtubeId: String, photoUrl: String? = null): String? {
+        return try {
+            val data = buildJsonObject {
+                put("name", name)
+                put("youtube_id", youtubeId)
+                if (photoUrl != null) put("photo_url", photoUrl)
+                put("source", "youtube")
+            }
+
+            val response = SupabaseManager.client.from("artists")
+                .upsert(data) {
+                    onConflict = "youtube_id"
+                    select(Columns.list("id"))
+                }
+                .decodeSingle<JsonObject>()
+            
+            response["id"]?.jsonPrimitive?.content
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [UPSERT ARTIST YT] Gagal: ${e.message}")
+            null
+        }
     }
 
-    suspend fun toggleLike(songId: String, userId: String, isLiked: Boolean) {
-        // 1. Perbarui Local DB (Optimistic Update) - UI langsung berubah!
-        if (isLiked) {
-            // Kalau user mau UNLIKE -> Hapus dari DB
-            musicDao.deleteLikedSong(songId)
-            Log.d(TAG, "💔 [OFFLINE] Lagu dihapus dari Liked Songs (Local).")
-        } else {
-            // Kalau user mau LIKE -> Simpan ke DB
-            musicDao.insertLikedSong(LikedSong(songId))
-            Log.d(TAG, "❤️ [OFFLINE] Lagu ditambahkan ke Liked Songs (Local).")
-        }
-
-        // 2. Sinkron ke Cloud (Best Effort)
-        try {
-            if (isLiked) {
-                // DELETE (Unlike)
-                SupabaseManager.client.from("user_song_likes").delete {
-                    filter {
-                        eq("user_id", userId)
-                        eq("song_id", songId)
-                    }
-                }
-                Log.d(TAG, "☁️ [SYNC] Unlike berhasil disinkronkan ke server.")
-            } else {
-                // INSERT (Like)
-                val data = mapOf("user_id" to userId, "song_id" to songId)
-                SupabaseManager.client.from("user_song_likes").insert(data)
-                Log.d(TAG, "☁️ [SYNC] Like berhasil disinkronkan ke server.")
+    suspend fun upsertYouTubeSong(song: Song, artistName: String? = null, artistPhoto: String? = null): String? {
+        return try {
+            // 1. Pastikan Artist YouTube tersimpan di tabel 'artists' dulu
+            var finalArtistId: String? = null
+            if (!song.artistId.isNullOrBlank()) {
+                finalArtistId = upsertYouTubeArtist(
+                    name = artistName ?: song.featuredArtists.firstOrNull() ?: "Unknown Artist",
+                    youtubeId = song.artistId,
+                    photoUrl = artistPhoto
+                )
             }
+
+            // 2. Simpan data lagu dengan artist_id yang baru didapat
+            val data = buildJsonObject {
+                put("title", song.title)
+                put("cover_url", song.coverUrl)
+                put("source", song.source ?: "youtube")
+                put("youtube_id", song.id)
+                put("duration_ms", song.durationMs)
+                if (finalArtistId != null) {
+                    put("artist_id", finalArtistId)
+                }
+                
+                // Simpan featured artists (penyanyi tambahan)
+                // Jika artistName sama dengan artis utama, jangan masukkan ke featured_artists
+                val additionalArtists = if (artistName != null) {
+                    song.featuredArtists.filter { it.trim().lowercase() != artistName.trim().lowercase() }
+                } else {
+                    song.featuredArtists
+                }
+                
+                put("featured_artists", JsonArray(additionalArtists.map { JsonPrimitive(it) }))
+            }
+            
+            val response = SupabaseManager.client.from("songs")
+                .upsert(data) {
+                    onConflict = "youtube_id"
+                    select(Columns.list("id"))
+                }
+                .decodeSingle<JsonObject>()
+            
+            val uuid = response["id"]?.jsonPrimitive?.content
+            Log.d(TAG, "✅ [UPSERT YT] Berhasil. YT_ID: ${song.id} -> SongUUID: $uuid, ArtistUUID: $finalArtistId")
+            uuid
         } catch (e: Exception) {
-            // Jika gagal sync network, biarkan saja.
-            // Data lokal sudah benar. Nanti bisa ada worker sync ulang.
-            Log.e(TAG, "⚠️ [SYNC FAIL] Gagal sync ke server (UI aman): ${e.message}")
-            // Tidak perlu re-throw karena kita mau UI tetap konsisten dengan Local DB
+            Log.e(TAG, "❌ [UPSERT YT ERROR] ${e.message}")
+            null
         }
     }
 
     // --- LOGIC 4: FETCH USER DETAILS (WITH RETRY) ---
-    suspend fun fetchUserDetails(userId: String): User? {
-        Log.d(TAG, "[USER] Meminta detail user untuk ID: $userId")
 
-        // 1. Cek Memory Cache
-        if (memoryUserCache.containsKey(userId)) {
-            Log.d(TAG, "⚡ [USER CACHE HIT] User ditemukan di memory cache.")
-            return memoryUserCache[userId]
-        }
-
-        var attempt = 1
-        val maxAttempts = 4
-
-        while (attempt <= maxAttempts) {
-            try {
-                if (attempt > 1) Log.d(TAG, "🔄 RETRY USER: Percobaan ke-$attempt...")
-
-                val user =
-                        SupabaseManager.client
-                                .from("users")
-                                .select { filter { eq("id", userId) } }
-                                .decodeSingleOrNull<User>()
-
-                if (user != null) {
-                    memoryUserCache[userId] = user // Simpan ke cache
-                    return user
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "[USER ERROR] Percobaan $attempt Gagal: ${e.message}")
-            }
-
-            if (attempt < maxAttempts) delay(1000)
-            attempt++
-        }
-
-        Log.e(TAG, "[USER GIVE UP] Gagal ambil detail user setelah $maxAttempts percobaan.")
-        return null
-    }
 
     // --- LOGIC 4.5: FETCH ARTIST DETAILS (WITH RETRY) ---
-    suspend fun fetchArtistDetails(artistId: String): Artist? {
-        Log.d(TAG, "[ARTIST] Meminta detail artist untuk ID: $artistId")
 
-        // 1. Cek Memory Cache
-        if (memoryArtistCache.containsKey(artistId)) {
-            Log.d(TAG, "⚡ [ARTIST CACHE HIT] Artist ditemukan di memory cache.")
-            return memoryArtistCache[artistId]
-        }
 
-        var attempt = 1
-        val maxAttempts = 4
-
-        while (attempt <= maxAttempts) {
-            try {
-                if (attempt > 1) Log.d(TAG, "🔄 RETRY ARTIST: Percobaan ke-$attempt...")
-
-                val artist =
-                        SupabaseManager.client
-                                .from("artists")
-                                .select { filter { eq("id", artistId) } }
-                                .decodeSingleOrNull<Artist>()
-
-                if (artist != null) {
-                    memoryArtistCache[artistId] = artist // Simpan ke cache
-                    return artist
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "[ARTIST ERROR] Percobaan $attempt Gagal: ${e.message}")
-            }
-
-            if (attempt < maxAttempts) delay(1000)
-            attempt++
-        }
-
-        Log.e(TAG, "[ARTIST GIVE UP] Gagal ambil detail artist setelah $maxAttempts percobaan.")
-        return null
-    }
-
-    // --- LOGIC 4.6: BULK FETCH ARTISTS (FOR SMART QUEUE) ---
-    suspend fun fetchArtistsByIds(artistIds: List<String>): List<Artist> {
-        if (artistIds.isEmpty()) return emptyList()
-
-        // Filter valid IDs and remove duplicates
-        val uniqueIds = artistIds.filter { it.isNotBlank() }.distinct()
-        if (uniqueIds.isEmpty()) return emptyList()
-
-        Log.d(TAG, "[ARTIST BULK] Meminta ${uniqueIds.size} artists...")
-
-        // 1. Check Cache first
-        val cachedArtists = uniqueIds.mapNotNull { memoryArtistCache[it] }
-        val missingIds = uniqueIds.filter { !memoryArtistCache.containsKey(it) }
-
-        if (missingIds.isEmpty()) {
-            Log.d(TAG, "⚡ [ARTIST BULK CACHE HIT] Semua artist ditemukan di cache.")
-            return cachedArtists
-        }
-
-        try {
-            Log.d(TAG, "🌍 [ARTIST BULK FETCH] Mengambil ${missingIds.size} artist dari DB...")
-            val fetchedArtists =
-                    SupabaseManager.client
-                            .from("artists")
-                            .select { filter { isIn("id", missingIds) } }
-                            .decodeList<Artist>()
-
-            // Update Cache
-            fetchedArtists.forEach { artist -> memoryArtistCache[artist.id] = artist }
-
-            return cachedArtists + fetchedArtists
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [ARTIST BULK ERROR]: ${e.message}")
-            // Return whatever we have in cache
-            return cachedArtists
-        }
-    }
-
-    // --- LOGIC 5: SMART QUEUE V4 (Final Boss - Hardened) ---
+// --- LOGIC 5: SMART QUEUE V4 (Final Boss - Hardened) ---
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     suspend fun fetchSmartQueue(
-            currentSong: Song // Seed Song
+            currentSong: Song, // Seed Song
+            playedIds: List<String> = emptyList() // Daftar ID yang sudah ada di antrean
     ): List<Song> {
         Log.d("MusicRepository", "🔄 calling get_smart_queue RPC...")
 
@@ -681,7 +929,7 @@ class MusicRepository(private val musicDao: MusicDao) {
         return try {
             // 🛡️ 1. SAFEGUARD MOODS
             // Kalau mood null, kita kasih list kosong biar map gak crash
-            val safeMoods = currentSong.moods
+            val safeMoods = currentSong.moods ?: emptyList()
 
             // 🛡️ 2. SAFEGUARD ARTIST ID
             // Kalau artistId null/kosong, jangan kirim string kosong "", nanti error UUID invalid.
@@ -701,15 +949,12 @@ class MusicRepository(private val musicDao: MusicDao) {
                                     "get_smart_queue",
                                     parameters =
                                             buildJsonObject {
-                                                // Array ID yang sudah diputar
+                                                // Array ID yang sudah diputar (GABUNGAN seed + antrean)
+                                                val allPlayedIds = (playedIds + currentSong.id).distinct()
                                                 put(
                                                         "p_played_ids",
                                                         JsonArray(
-                                                                listOf(
-                                                                        JsonPrimitive(
-                                                                                currentSong.id
-                                                                        )
-                                                                )
+                                                                allPlayedIds.map { JsonPrimitive(it) }
                                                         )
                                                 )
 
@@ -748,11 +993,23 @@ class MusicRepository(private val musicDao: MusicDao) {
     }
 
     // --- LOGIC 6: INCREMENT PLAY COUNT ---
-    suspend fun incrementPlayCount(songId: String) {
+    suspend fun incrementPlayCount(
+        songId: String,
+        songMetadata: Song? = null,
+        artistName: String? = null,
+        artistPhoto: String? = null
+    ) {
         try {
+            val isYouTubeId = songId.length == 11 || songMetadata?.source?.startsWith("youtube") == true
+            if (isYouTubeId) {
+                Log.d(TAG, "⏭️ [PLAY COUNT] Lagu YouTube terdeteksi. Lewati (skip) seluruh increment untuk semua lagu YouTube: $songId")
+                return
+            }
+
+            // Untuk lagu non-YouTube (Telegram/Uploader), play count diincrement langsung menggunakan songId (UUID)
             SupabaseManager.client.postgrest.rpc(
-                    "increment_play_count",
-                    parameters = buildJsonObject { put("song_uuid", songId) }
+                "increment_play_count",
+                parameters = buildJsonObject { put("song_uuid", songId) }
             )
             Log.d(TAG, "🆙 [PLAY COUNT] Berhasil increment play count untuk lagu: $songId")
         } catch (e: Exception) {
@@ -766,42 +1023,7 @@ class MusicRepository(private val musicDao: MusicDao) {
         return musicDao.isArtistFollowed(artistId).first()
     }
 
-    suspend fun toggleFollowArtist(userId: String, artistId: String, isFollowed: Boolean) {
-        // 1. Perbarui Local DB (Optimistic Update)
-        if (isFollowed) {
-            musicDao.deleteFollowedArtist(artistId)
-            Log.d(TAG, "💔 [OFFLINE] Berhenti mengikuti artist (Local): $artistId")
-        } else {
-            musicDao.insertFollowedArtist(CachedFollowedArtist(artistId))
-            Log.d(TAG, "❤️ [OFFLINE] Mulai mengikuti artist (Local): $artistId")
-        }
 
-        // 2. Sync ke Cloud (Best Effort)
-        try {
-            if (isFollowed) {
-                // UNFOLLOW (DELETE)
-                SupabaseManager.client.from("artist_followers").delete {
-                    filter {
-                        eq("user_id", userId)
-                        eq("artist_id", artistId)
-                    }
-                }
-                Log.d(TAG, "☁️ [SYNC] Unfollow sukses di server.")
-            } else {
-                // FOLLOW (INSERT)
-                val data = mapOf("user_id" to userId, "artist_id" to artistId)
-                SupabaseManager.client.from("artist_followers").insert(data)
-                Log.d(TAG, "☁️ [SYNC] Follow sukses di server.")
-            }
-
-            // Note: Memcache di-handle oleh Repo logic sebelumnya, tapi dengan SQLite kita ga butuh
-            // map lagi.
-            // memoryFollowCache[artistId] = !isFollowed // (Bisa dihapus jika move total ke SQLite)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "⚠️ [SYNC FAIL] Gagal sync follow ke server: ${e.message}")
-        }
-    }
 
     // --- LOGIC 8: GET AGGREGATED ARTIST DETAILS (HEADER) ---
     suspend fun getArtistDetails(userId: String, artistId: String): ArtistDetails? {
@@ -809,7 +1031,7 @@ class MusicRepository(private val musicDao: MusicDao) {
 
         return try {
             // 1. Ambil Info Artist (Name, Bio, Photo)
-            val artistInfo = fetchArtistDetails(artistId) ?: return null
+            val artistInfo = social.fetchArtistDetails(artistId) ?: return null
 
             // 2. Count Followers
             val followersCount =
@@ -902,7 +1124,7 @@ class MusicRepository(private val musicDao: MusicDao) {
 
             // Kita butuh Info Artist untuk setiap SongWithArtist.
             // Efisiensi: Fetch Artist Sekali saja karena sama semua.
-            val artist = fetchArtistDetails(artistId) ?: return emptyList()
+            val artist = social.fetchArtistDetails(artistId) ?: return emptyList()
 
             // Map to SongWithArtist
             songs.map { song -> SongWithArtist(song, artist) }
@@ -912,188 +1134,6 @@ class MusicRepository(private val musicDao: MusicDao) {
         }
     }
 
-    // --- LOGIC 10: PLAYBACK QUEUE PERSISTENCE ---
-    suspend fun savePlaybackQueue(songs: List<SongWithArtist>, playlistName: String) {
-        try {
-            musicDao.clearPlaybackQueue() // Wajib kosongin tabel dulu
-            if (songs.isEmpty()) {
-                return
-            }
-            // Konversi ke Entity dengan urutan
-            val queueEntities =
-                    songs.mapIndexed { index, songWA ->
-                        PlaybackQueueEntity(
-                                songId = songWA.song.id,
-                                listOrder = index,
-                                artistName = songWA.artist?.name ?: "Unknown",
-                                playlistName = playlistName
-                        )
-                    }
-            musicDao.insertPlaybackQueue(queueEntities)
-
-            // 🔥 FIX: Aktivasi Caching SongDetails Langsung Saat Menyimpan Antrean
-            for (songWA in songs) {
-                val song = songWA.song
-                val existing = musicDao.getSongById(song.id)
-                if (existing != null) {
-                    val needsUpdate = existing.coverUrl == null || existing.canvasUrl == null || 
-                                      (song.lyricsUpdatedAt != null && song.lyricsUpdatedAt != existing.lyricsUpdatedAt)
-                    if (needsUpdate) {
-                       musicDao.updateSongDetails(
-                           id = song.id,
-                           title = song.title,
-                           lyrics = song.lyrics ?: existing.lyrics,
-                           lyricsUpdatedAt = song.lyricsUpdatedAt ?: existing.lyricsUpdatedAt,
-                           cover = song.coverUrl ?: existing.coverUrl,
-                           canvas = song.canvasUrl ?: existing.canvasUrl,
-                           uploaderId = song.uploaderUserId ?: existing.uploaderUserId,
-                           language = song.language ?: existing.language,
-                           moods = song.moods.ifEmpty { existing.moods },
-                           artistId = song.artistId ?: existing.artistId,
-                           featuredArtists = song.featuredArtists.ifEmpty { existing.featuredArtists }
-                       )
-                    }
-                } else {
-                    musicDao.insertSong(CachedSong(
-                        id = song.id,
-                        title = song.title,
-                        uploaderUserId = song.uploaderUserId,
-                        artistName = songWA.artist?.name ?: "Unknown",
-                        coverUrl = song.coverUrl,
-                        canvasUrl = song.canvasUrl,
-                        lyrics = song.lyrics,
-                        lyricsUpdatedAt = song.lyricsUpdatedAt,
-                        telegramFileId = song.telegramFileId,
-                        telegramDirectUrl = song.audioUrl,
-                        language = song.language,
-                        moods = song.moods,
-                        artistId = song.artistId,
-                        featuredArtists = song.featuredArtists
-                    ))
-                }
-            }
-
-            Log.d(TAG, "💾 [QUEUE] Saved ${songs.size} songs to playback queue.")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [QUEUE ERROR] Failed to save queue: ${e.message}")
-        }
-    }
-
-    suspend fun restorePlaybackQueue(): Pair<List<SongWithArtist>, String> {
-        try {
-            val queueEntities = musicDao.getPlaybackQueue()
-            if (queueEntities.isEmpty()) return Pair(emptyList(), "Unknown Playlist")
-
-            val playlistName = queueEntities.first().playlistName
-
-            // Ambil ID lagu dari queue
-            val songIds = queueEntities.map { it.songId }
-
-            // Fetch detail lagu (Coba cache dulu, kalau gak ada fetch dari server)
-            val cachedSongs = songIds.mapNotNull { id -> musicDao.getSongById(id) }
-            val cachedSongMap = cachedSongs.associateBy { it.id }.toMutableMap()
-
-            val missingSongIds = songIds.filter { 
-                val cached = cachedSongMap[it]
-                cached == null || cached.coverUrl == null 
-            }
-
-            // Jika ada lagu yang belum di-cache, fetch dari Supabase secara bulk
-            if (missingSongIds.isNotEmpty()) {
-                Log.d(TAG, "☁️ [QUEUE] Fetching ${missingSongIds.size} missing/incomplete songs from Supabase...")
-                try {
-                    val remoteSongs = SupabaseManager.client.from("songs")
-                        .select { filter { isIn("id", missingSongIds) } }
-                        .decodeList<Song>()
-
-                    val newCacheEntries = remoteSongs.map { song ->
-                        val existing = cachedSongMap[song.id]
-                        CachedSong(
-                            id = song.id,
-                            title = song.title,
-                            uploaderUserId = song.uploaderUserId,
-                            artistName = "Unknown",
-                            coverUrl = song.coverUrl,
-                            canvasUrl = song.canvasUrl,
-                            lyrics = song.lyrics ?: existing?.lyrics,
-                            lyricsUpdatedAt = song.lyricsUpdatedAt ?: existing?.lyricsUpdatedAt,
-                            telegramFileId = song.telegramFileId ?: existing?.telegramFileId,
-                            telegramDirectUrl = existing?.telegramDirectUrl, // 🔥 PERTAHANKAN DIRECT URL!
-                            language = song.language ?: existing?.language,
-                            moods = song.moods.ifEmpty { existing?.moods ?: emptyList() },
-                            artistId = song.artistId ?: existing?.artistId
-                        )
-                    }
-
-                    // Insert ke cache HANYA DARI DISPATCHER IO
-                    newCacheEntries.forEach { musicDao.insertSong(it) }
-                    
-                    // Tambahkan ke map
-                    newCacheEntries.forEach { cachedSongMap[it.id] = it }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ [QUEUE] Failed to fetch missing songs: ${e.message}")
-                }
-            }
-
-            // Definisi judul/artist yang dianggap "tidak valid" (corrupt/placeholder)
-            val invalidTitles = setOf("unknown song", "unknown title", "")
-            val invalidArtists = setOf("unknown artist", "unknown")
-
-            val restoredSongs = mutableListOf<SongWithArtist>()
-
-            queueEntities.forEach { entity ->
-                val cachedSong = cachedSongMap[entity.songId]
-                val songTitle = cachedSong?.title?.trim()?.lowercase() ?: "unknown song"
-                val artistNameLower = entity.artistName.trim().lowercase()
-
-                // Cek apakah lagu ini tidak valid
-                if (songTitle in invalidTitles || artistNameLower in invalidArtists) {
-                    // Hapus entry corrupt ini dari database agar tidak muncul lagi
-                    Log.w(TAG, "🗑️ [QUEUE FILTER] Skipping & deleting corrupt entry: songId=${entity.songId}, title='${cachedSong?.title}', artist='${entity.artistName}'")
-                    return@forEach // skip, jangan masukkan ke restoredSongs
-                }
-
-                val song = cachedSong?.toSong() ?: Song(
-                    id = entity.songId,
-                    title = "Unknown Song",
-                    audioUrl = null,
-                    coverUrl = null,
-                    lyrics = null
-                )
-
-                val fallbackArtist = Artist(
-                    id = song.artistId ?: "",
-                    name = entity.artistName,
-                    photoUrl = null,
-                    description = null,
-                    normalizedName = null,
-                    createdBy = null,
-                    createdAt = null,
-                    updatedAt = null
-                )
-                restoredSongs.add(SongWithArtist(song, fallbackArtist))
-            }
-
-            // Bersihkan seluruh queue lama, lalu simpan kembali HANYA lagu yang valid
-            // Ini memastikan entry corrupt tidak menumpuk di database
-            val validSongIds = restoredSongs.map { it.song.id }.toSet()
-            val removedCount = queueEntities.count { it.songId !in validSongIds }
-            if (removedCount > 0) {
-                Log.d(TAG, "🧹 [QUEUE CLEAN] Menghapus $removedCount entry tidak valid dari database.")
-                musicDao.clearPlaybackQueue()
-                val cleanEntities = queueEntities
-                    .filter { it.songId in validSongIds }
-                    .mapIndexed { idx, e -> e.copy(listOrder = idx) }
-                musicDao.insertPlaybackQueue(cleanEntities)
-            }
-
-            Log.d(TAG, "♻️ [QUEUE] Restored ${restoredSongs.size} songs from playback queue.")
-            return Pair(restoredSongs, playlistName)
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [QUEUE ERROR] Failed to restore queue: ${e.message}")
-            return Pair(emptyList(), "Unknown Playlist")
-        }
-    }
 
 
 
@@ -1110,10 +1150,93 @@ class MusicRepository(private val musicDao: MusicDao) {
                 telegramDirectUrl = this.telegramDirectUrl,
                 lyricsUpdatedAt = this.lyricsUpdatedAt,
                 language = this.language,
-                moods = this.moods,
+                moods = this.moods ?: emptyList(),
                 featuredArtists = this.featuredArtists
         )
     }
 
 
+
+    suspend fun getSongsByUploaderPagination(
+        uploaderId: String,
+        limit: Int = 20,
+        offset: Int = 0
+    ): List<SongWithArtist> {
+        return try {
+            Log.d(TAG, "📤 [UPLOADER SONGS] Fetching songs for $uploaderId (Limit: $limit, Offset: $offset)")
+
+            val results = SupabaseManager.client
+                .from("songs")
+                .select(columns = Columns.raw("*, artists(*)")) {
+                    filter {
+                        eq("uploader_user_id", uploaderId)
+                        eq("source", "telegram")
+                    }
+                    order("created_at", Order.DESCENDING)
+                    range(offset.toLong(), (offset + limit - 1).toLong())
+                }
+                .decodeList<JsonObject>()
+
+            results.map { json ->
+                val songId = json["id"]?.jsonPrimitive?.content ?: ""
+                val title = json["title"]?.jsonPrimitive?.content ?: "Unknown"
+                val artistId = json["artist_id"]?.jsonPrimitive?.contentOrNull
+                val coverUrl = json["cover_url"]?.jsonPrimitive?.contentOrNull
+                val audioUrl = json["audio_url"]?.jsonPrimitive?.contentOrNull
+                val durationMs = json["duration_ms"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                val telegramFileId = json["telegram_audio_file_id"]?.jsonPrimitive?.contentOrNull
+                val canvasUrl = json["canvas_url"]?.jsonPrimitive?.contentOrNull
+                val source = json["source"]?.jsonPrimitive?.content ?: "telegram"
+                val lyrics = json["lyrics"]?.jsonPrimitive?.contentOrNull
+                val lyricsUpdate = json["lyrics_updated_at"]?.jsonPrimitive?.contentOrNull
+                
+                val song = Song(
+                    id = songId,
+                    title = title,
+                    artistId = artistId,
+                    coverUrl = coverUrl,
+                    audioUrl = audioUrl,
+                    durationMs = durationMs,
+                    telegramFileId = telegramFileId,
+                    canvasUrl = canvasUrl,
+                    source = source,
+                    lyrics = lyrics,
+                    lyricsUpdatedAt = lyricsUpdate
+                )
+
+                val artistJson = json["artists"] as? JsonObject
+                val artist = if (artistJson != null) {
+                    Artist(
+                        id = artistJson["id"]?.jsonPrimitive?.content ?: "",
+                        name = artistJson["name"]?.jsonPrimitive?.content ?: "Unknown",
+                        photoUrl = artistJson["photo_url"]?.jsonPrimitive?.contentOrNull
+                    )
+                } else {
+                    Artist(id = "", name = "Unknown")
+                }
+                
+                SongWithArtist(song, artist)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ [UPLOADER SONGS ERROR] ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun sanitizeSearchQuery(text: String): String {
+        return text
+            .replace(Regex("(?i) - Topic"), "")
+            .replace(Regex("(?i)\\(Official.*?\\)"), "")
+            .replace(Regex("(?i)\\[Official.*?\\]"), "")
+            .replace(Regex("(?i)\\(Live.*?\\)"), "")
+            .replace(Regex("(?i)\\[Live.*?\\]"), "")
+            .replace(Regex("(?i)\\(Music Video\\)"), "")
+            .replace(Regex("(?i)\\[Music Video\\]"), "")
+            .replace(Regex("(?i)\\(Lyric.*?\\)"), "")
+            .replace(Regex("(?i)\\[Lyric.*?\\]"), "")
+            .replace(Regex("(?i)MV$"), "")
+            .replace(Regex("(?i)\\(.*?Hz.*?\\)"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
 }

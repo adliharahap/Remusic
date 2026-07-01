@@ -21,30 +21,79 @@ object GoogleFontDownloader {
     private const val TAG = "GoogleFontDownloader"
     private const val FONTS_DIR = "fonts"
 
-    // Google Fonts CSS API v2 — mengambil URL file TTF dari CSS yang direturn
+    // Google Fonts CSS API v1 — mengambil URL file TTF dari CSS yang direturn
+    // Kita gunakan v1 dengan User-Agent jadul agar mendapatkan link .ttf (bukan .woff2)
     private const val GOOGLE_FONTS_CSS_BASE =
-        "https://fonts.googleapis.com/css2?family=%s&display=swap"
+        "https://fonts.googleapis.com/css?family=%s"
 
     // Fallback: langsung ke file TTF dari GitHub Google Fonts mirror
-    // Format: https://github.com/google/fonts/raw/main/ofl/<lowercaseName>/<FileName>-Regular.ttf
-    // Kita gunakan fonts.gstatic.com yang lebih andal
     private const val GSTATIC_BASE =
         "https://fonts.gstatic.com/s/%s/v%s/%s.ttf"
 
     /**
-     * Mapping dari googleFontName ke URL langsung file TTF Regular.
-     * URL ini stabil dan merupakan CDN Google (gstatic).
+     * Mengambil URL langsung file TTF.
+     * Menggunakan API GWFH (Google Webfonts Helper) yang lebih andal memberikan link .ttf langsung.
      */
-    private val FONT_TTF_URLS = mapOf(
-        "Nunito" to "https://fonts.gstatic.com/s/nunito/v26/XRXI3I6Li01BKofiOc5wtlZ2di8HDFwmdTo3jQ.ttf",
-        "Lato" to "https://fonts.gstatic.com/s/lato/v24/S6uyw4BMUTPHjx4wXg.ttf",
-        "Montserrat" to "https://fonts.gstatic.com/s/montserrat/v29/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Hw9aXp-p7K4KLjztg.ttf",
-        "Inter" to "https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.ttf",
-        "Playfair_Display" to "https://fonts.gstatic.com/s/playfairdisplay/v37/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvUDQ5Zgo_g.ttf",
-        "Raleway" to "https://fonts.gstatic.com/s/raleway/v34/1Ptug8zYS_SKggPNyC0IT4ttDfA.ttf",
-        "Josefin_Sans" to "https://fonts.gstatic.com/s/josefinsans/v32/Qw3PZQNVED7rKGKxtqIqX5E-AVSJrOCfjY46_GbQXMFrLgTsQV0.ttf",
-        "Pacifico" to "https://fonts.gstatic.com/s/pacifico/v22/FwZY7-Qmy14u9lezJ96A4sijpFu_.ttf",
-    )
+    private suspend fun resolveTtfUrl(googleFontName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // GWFH menggunakan format lowercase dengan tanda hubung (e.g., 'fjalla-one')
+            val fontId = googleFontName.lowercase().replace("_", "-")
+            val apiUrl = "https://gwfh.mranftl.com/api/fonts/$fontId"
+            
+            Log.d(TAG, "Resolving TTF URL via GWFH API: $apiUrl")
+            
+            val request = Request.Builder().url(apiUrl).build()
+            val response = httpClient.newCall(request).execute()
+            
+            if (response.isSuccessful) {
+                val json = response.body?.string() ?: ""
+                
+                // Cari variant 'regular' lalu ambil link 'ttf'
+                val regularMatch = """(?s)"id"\s*:\s*"regular".*?"ttf"\s*:\s*"([^"]+)"""".toRegex().find(json)
+                var ttfUrl = regularMatch?.groupValues?.get(1)
+                
+                // Jika tidak ada 'regular', ambil link ttf pertama yang ketemu
+                if (ttfUrl == null) {
+                    ttfUrl = """ "ttf"\s*:\s*"([^"]+)"""".toRegex().find(json)?.groupValues?.get(1)
+                }
+                
+                if (ttfUrl != null) {
+                    Log.d(TAG, "Resolved TTF URL from GWFH: $ttfUrl")
+                    return@withContext ttfUrl
+                }
+            }
+            
+            // Jika GWFH gagal, gunakan fallback ke CSS API
+            Log.w(TAG, "GWFH failed, falling back to CSS API for $googleFontName")
+            resolveTtfUrlFallback(googleFontName)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in resolveTtfUrl: ${e.message}")
+            resolveTtfUrlFallback(googleFontName)
+        }
+    }
+
+    private suspend fun resolveTtfUrlFallback(googleFontName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val apiName = googleFontName.replace("_", "+")
+            val cssUrl = "https://fonts.googleapis.com/css?family=$apiName"
+            
+            val request = Request.Builder()
+                .url(cssUrl)
+                .header("User-Agent", "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)")
+                .build()
+            
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+            
+            val cssContent = response.body?.string() ?: ""
+            val regex = """url\(['"]?(https://[^'"]+?\.ttf[^'"]*?)['"]?\)""".toRegex()
+            val match = regex.find(cssContent)
+            
+            return@withContext match?.groupValues?.get(1)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     private val httpClient by lazy {
         OkHttpClient.Builder()
@@ -86,9 +135,10 @@ object GoogleFontDownloader {
                 return@withContext true
             }
 
-            val url = FONT_TTF_URLS[googleFontName]
+            // --- DYNAMIC RESOLUTION ---
+            val url = resolveTtfUrl(googleFontName)
             if (url == null) {
-                Log.e(TAG, "No URL configured for font '$googleFontName'")
+                Log.e(TAG, "Could not resolve TTF URL for font '$googleFontName'")
                 return@withContext false
             }
 

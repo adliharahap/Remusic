@@ -17,7 +17,9 @@ data class SongWithArtistRpcResult(
     @SerialName("featured_artists") val featuredArtists: List<String>?,
     @SerialName("lyrics") val lyrics: String?,
     @SerialName("artist_name") val artistName: String,
-    @SerialName("match_score") val matchScore: Float
+    @SerialName("match_score") val matchScore: Float,
+    @SerialName("source") val source: String? = null,
+    @SerialName("youtube_id") val youtubeId: String? = null
 ) {
     fun toSongWithArtist(): SongWithArtist {
         val song = Song(
@@ -31,7 +33,9 @@ data class SongWithArtistRpcResult(
             telegramFileId = telegramFileId,
             createdAt = createdAt,
             featuredArtists = featuredArtists ?: emptyList(),
-            lyrics = lyrics
+            lyrics = lyrics,
+            source = source,
+            youtubeId = youtubeId
         )
         val artist = if (artistId != null) {
             Artist(

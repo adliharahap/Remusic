@@ -1,5 +1,6 @@
 package com.example.remusic.ui.screen
 
+import com.example.remusic.viewmodel.playmusic.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,12 +33,17 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.TextFormat
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -79,6 +85,7 @@ import com.example.remusic.utils.extractGradientColorsFromImageUrl
 import com.example.remusic.data.model.Notification
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
+import java.util.Locale
 import com.example.remusic.R
 
 @Composable
@@ -251,6 +258,8 @@ fun ProfileMainContent(
     val coroutineScope = rememberCoroutineScope()
     val userPreferencesRepository = remember { UserPreferencesRepository(context) }
     val backgroundMusicEnabled by userPreferencesRepository.backgroundMusicEnabledFlow.collectAsState(initial = false)
+    val fontScale by userPreferencesRepository.fontScaleFlow.collectAsState(initial = 0.9f)
+    var showFontScaleDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         delay(100)
@@ -450,6 +459,14 @@ fun ProfileMainContent(
                                     }
                                 }
                             )
+                            DividerItem()
+                            SettingsRow(
+                                icon = Icons.Rounded.TextFormat,
+                                iconBgColor = Color(0xFFE91E63), // Pink
+                                title = "Skala Ukuran Font",
+                                value = "${String.format(Locale.US, "%.2f", fontScale)}x",
+                                onClick = { showFontScaleDialog = true }
+                            )
                         }
                     }
                 }
@@ -562,6 +579,133 @@ fun ProfileMainContent(
             }
         } else {
             CircularProgressIndicator(color = Color(0xFFE91E63))
+        }
+
+        if (showFontScaleDialog) {
+            var sliderValue by remember { mutableStateOf(fontScale) }
+            
+            AlertDialog(
+                onDismissRequest = { showFontScaleDialog = false },
+                title = {
+                    Text(
+                        text = "Skala Ukuran Font",
+                        fontFamily = AppFont.Poppins,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Sesuaikan ukuran teks aplikasi agar nyaman dibaca. Skala saat ini:",
+                            fontFamily = AppFont.Poppins,
+                            fontSize = 14.sp,
+                            color = Color.White.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Display current value in large text
+                        Text(
+                            text = "${String.format(Locale.US, "%.2f", sliderValue)}x",
+                            fontFamily = AppFont.Poppins,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 32.sp,
+                            color = Color(0xFFE91E63)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // The Slider
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            valueRange = 0.5f..1.0f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFFE91E63),
+                                activeTrackColor = Color(0xFFE91E63),
+                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                            )
+                        )
+                        
+                        // Min and Max indicators
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "0.5x (Kecil)", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
+                            Text(text = "1.0x (Normal)", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        // Live Preview box
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF222222)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Pratinjau Ukuran Teks",
+                                    fontFamily = AppFont.Poppins,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = (14 * sliderValue).sp,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Lagu yang diputar saat ini akan disinkronisasikan ke Smart Queue dengan optimal.",
+                                    fontFamily = AppFont.Poppins,
+                                    fontSize = (11 * sliderValue).sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = (16 * sliderValue).sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                userPreferencesRepository.saveFontScale(sliderValue)
+                                showFontScaleDialog = false
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = "Simpan",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFE91E63)
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            sliderValue = 0.9f
+                        }
+                    ) {
+                        Text(
+                            text = "Reset (0.9x)",
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                },
+                containerColor = Color(0xFF1E1E1E),
+                titleContentColor = Color.White,
+                textContentColor = Color.White
+            )
         }
     }
 }

@@ -6,17 +6,19 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.example.remusic.utils.RemusicCache // Import file utils tadi
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import com.example.remusic.utils.RemusicCache
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 
 
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +35,7 @@ import androidx.media3.common.Player
 @UnstableApi
 class MusicService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
+    private lateinit var player: ExoPlayer
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private lateinit var sleepTimerManager: SleepTimerManager
@@ -48,6 +51,10 @@ class MusicService : MediaSessionService() {
             for (i in 0 until player.mediaItemCount) {
                 mediaItems.add(player.getMediaItemAt(i))
             }
+            // ⚠️ KRITIS: Set playWhenReady=false segera agar Android TIDAK auto-play
+            // setelah onPlaybackResumption selesai. Ini mencegah musik muncul tiba-tiba
+            // saat user membuka app atau menekan tombol headset.
+            player.playWhenReady = false
             val startPosition = MediaSession.MediaItemsWithStartPosition(
                 mediaItems,
                 player.currentMediaItemIndex,
@@ -63,6 +70,8 @@ class MusicService : MediaSessionService() {
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                 .add(androidx.media3.session.SessionCommand("START_SLEEP_TIMER", android.os.Bundle.EMPTY))
                 .add(androidx.media3.session.SessionCommand("STOP_SLEEP_TIMER", android.os.Bundle.EMPTY))
+                .add(androidx.media3.session.SessionCommand("SET_PREFERRED_AUDIO_DEVICE", android.os.Bundle.EMPTY))
+                .add(androidx.media3.session.SessionCommand("SYNC_ROUTING", android.os.Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -86,6 +95,36 @@ class MusicService : MediaSessionService() {
                 sleepTimerManager.cancelTimer()
                 broadcastSleepTimerState(false)
                 return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
+            } else if (customCommand.customAction == "SET_PREFERRED_AUDIO_DEVICE") {
+                val deviceId = args.getInt("DEVICE_ID", -1)
+                val audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    try {
+                        if (deviceId == -1) {
+                            android.util.Log.d("MusicService", "🎧 Clearing preferred audio device (system default)")
+                            player.setPreferredAudioDevice(null)
+                        } else {
+                            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                            val targetDevice = devices.firstOrNull { it.id == deviceId }
+                            if (targetDevice != null) {
+                                android.util.Log.d("MusicService", "🎧 Setting preferred audio device to: ${targetDevice.productName} (ID: $deviceId)")
+                                player.setPreferredAudioDevice(targetDevice)
+                            } else {
+                                android.util.Log.w("MusicService", "⚠️ Target device ID $deviceId not found in available outputs!")
+                                player.setPreferredAudioDevice(null)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MusicService", "❌ Error setting preferred audio device", e)
+                    }
+                }
+                return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
+            } else if (customCommand.customAction == "SYNC_ROUTING") {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    android.util.Log.d("MusicService", "🎧 SYNC_ROUTING: Resetting to system default")
+                    player.setPreferredAudioDevice(null)
+                }
+                return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
             }
             return super.onCustomCommand(session, controller, customCommand, args)
         }
@@ -104,28 +143,41 @@ class MusicService : MediaSessionService() {
         // 1. Ambil Cache dari Singleton
         val simpleCache = RemusicCache.getInstance(this)
 
-        // 2. Siapkan HTTP Source (Internet)
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        // 2. Buat OkHttpClient untuk streaming (tanpa User-Agent hardcoded — akan di-set dinamis)
+        val streamingOkHttpClient = OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
 
-        // 2.5 Siapkan Default Data Source (Mendukung Content, File, HTTP, dll)
+        // 3. OkHttpDataSource.Factory — User-Agent & X-Goog-Visitor-Id di-set dinamis per lagu
+        val httpDataSourceFactory = OkHttpDataSource.Factory(streamingOkHttpClient)
+            .setDefaultRequestProperties(mapOf(
+                "Origin" to "https://www.youtube.com",
+                "Referer" to "https://www.youtube.com/"
+            ))
+
+        // 4. Siapkan Default Data Source (Mendukung Content, File, HTTP, dll)
         val defaultDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpDataSourceFactory)
 
-        // 3. Siapkan Cache Source (Gabungan Cache + Local + Internet)
+        // 5. Siapkan Cache Source (Gabungan Cache + Local + Internet)
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(simpleCache)
             .setUpstreamDataSourceFactory(defaultDataSourceFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
         // 4. Pasang ke ExoPlayer
-        val player = ExoPlayer.Builder(this)
-            .setAudioAttributes(AudioAttributes.DEFAULT, true)
+        player = ExoPlayer.Builder(this)
+            .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(this)
-                    .setDataSourceFactory(cacheDataSourceFactory) // <--- POWER OF CACHE
-            .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy()) // <--- PANTANG MENYERAH!
+                DefaultMediaSourceFactory(cacheDataSourceFactory, androidx.media3.extractor.DefaultExtractorsFactory())
+                    .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy() as LoadErrorHandlingPolicy)
             )
             .build()
             
@@ -136,6 +188,11 @@ class MusicService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 super.onMediaItemTransition(mediaItem, reason)
                 if (mediaItem == null) return
+
+                // ── GUARD: Jangan re-resolve saat PLAYLIST_CHANGED ──────────────
+                // PLAYLIST_CHANGED terjadi karena replaceMediaItem() — sudah ada URL baru,
+                // tidak perlu resolve lagi (akan menyebabkan loop tak terbatas)
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
 
                 val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
                 val isUrlValid = currentUrl.isNotBlank() && (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
@@ -152,24 +209,61 @@ class MusicService : MediaSessionService() {
                         try {
                             val songId = mediaItem.mediaId
                             val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
-                            
-                            // Ambil detail song dari local DB untuk info fallback/telegramFileId
+
+                            val extras = mediaItem.mediaMetadata.extras
+                            val effectiveId = extras?.getString("effectiveId") ?: songId
+                            val sourceFromExtras = extras?.getString("source")
+
+                            // Ambil detail song dari local DB
                             val localSong = database.musicDao().getSongById(songId)
                             val artistId = localSong?.artistId
                             val telegramFileId = localSong?.telegramFileId
                             val fallbackUrl = localSong?.telegramDirectUrl
+                            val source = sourceFromExtras ?: localSong?.source
+
+                            // Pastikan visitorData YouTube sudah siap sebelum resolve
+                            if (com.metrolist.innertube.YouTube.visitorData == null) {
+                                try {
+                                    val vd = com.metrolist.innertube.YouTube.visitorData().getOrNull()
+                                    if (vd != null) com.metrolist.innertube.YouTube.visitorData = vd
+                                } catch (_: Exception) {}
+                            }
                             
                             val result = repository.getPlayableUrl(
-                                songId = songId,
+                                songId = effectiveId,
                                 title = songTitle,
                                 telegramFileId = telegramFileId,
                                 fallbackUrl = fallbackUrl,
-                                artistId = artistId
+                                artistId = artistId,
+                                source = source
                             )
                             
                             val newUrl = result.url
                             if (newUrl.isNotBlank()) {
-                                Log.d("MusicService", "✅ URL Resolved in Service: $newUrl")
+                                Log.d("MusicService", "✅ URL Resolved: $newUrl (source=${result.source})")
+
+                                // Set User-Agent dan header YouTube sesuai client jika sumber YouTube
+                                if (result.source.startsWith("YOUTUBE")) {
+                                    val userAgent = when {
+                                        newUrl.contains("&c=IOS") || newUrl.contains("c=IOS&") ->
+                                            "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)"
+                                        newUrl.contains("&c=ANDROID_VR") ->
+                                            "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)"
+                                        newUrl.contains("&c=ANDROID") ->
+                                            "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
+                                        else -> "Mozilla/5.0"
+                                    }
+                                    val headers = mutableMapOf(
+                                        "Origin" to "https://www.youtube.com",
+                                        "Referer" to "https://www.youtube.com/"
+                                    )
+                                    com.metrolist.innertube.YouTube.visitorData?.let {
+                                        headers["X-Goog-Visitor-Id"] = it
+                                    }
+                                    httpDataSourceFactory.setUserAgent(userAgent)
+                                    httpDataSourceFactory.setDefaultRequestProperties(headers)
+                                }
+
                                 // Rebuild MediaItem dengan URL yang valid
                                 val newItem = mediaItem.buildUpon()
                                     .setUri(newUrl)
@@ -177,19 +271,23 @@ class MusicService : MediaSessionService() {
                                 
                                 withContext(Dispatchers.Main) {
                                     val newIndex = player.currentMediaItemIndex
+                                    // Simpan posisi sekarang — mungkin sudah ada buffering
+                                    // sedikit tapi kalau masih 0, mulai dari awal
+                                    val resumePos = player.currentPosition.coerceAtLeast(0L)
                                     player.replaceMediaItem(newIndex, newItem)
-                                    // Memastikan ExoPlayer tahu kita me-replace data (Fix cascade issue)
-                                    player.seekTo(newIndex, C.TIME_UNSET) 
+                                    // Jika sudah ada posisi bermakna, lanjutkan dari sana
+                                    // Jika belum (auto-next baru saja terjadi), mulai dari 0
+                                    if (resumePos > 500L) {
+                                        player.seekTo(newIndex, resumePos)
+                                    }
+                                    // Tidak perlu seekTo(C.TIME_UNSET) karena akan reset ke 0!
                                     player.play()
                                 }
                             } else {
-                                Log.e("MusicService", "❌ Gagal resolve URL in Service (Fatal). Melewati lagu.")
+                                Log.e("MusicService", "❌ Gagal resolve URL. Melewati lagu.")
                                 withContext(Dispatchers.Main) {
-                                    if (player.hasNextMediaItem()) {
-                                        player.seekToNextMediaItem()
-                                    } else {
-                                        player.pause()
-                                    }
+                                    if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+                                    else player.pause()
                                 }
                             }
                         } catch (e: Exception) {
@@ -203,12 +301,10 @@ class MusicService : MediaSessionService() {
                             }
                         }
                     }
-                } else if (isUrlValid && player.playbackState != Player.STATE_IDLE && !player.isPlaying) {
-                    // Jika valid dari awal tapi player tertahan, coba play kembali
-                    // player.play() // Ini bisa menimbulkan masalah jika state buffering.
                 }
             }
         })
+
 
         // Create an intent to launch MainActivity
         val sessionActivityIntent = Intent(this, com.example.remusic.MainActivity::class.java).apply {

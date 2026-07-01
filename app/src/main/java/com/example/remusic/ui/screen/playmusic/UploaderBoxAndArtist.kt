@@ -81,6 +81,7 @@ fun WavyText(
 @Composable
 fun UploaderBoxAndArtist(
     artist: Artist?,
+    artistNameFallback: String? = null,
     uploader: User?,
     isFollowed: Boolean = false,
     onToggleFollow: () -> Unit = {},
@@ -121,12 +122,12 @@ fun UploaderBoxAndArtist(
     ) { (currentArtist, currentUploader) ->
 
         // Fallback data
-        val artistName = currentArtist?.name ?: "Unknown Artist"
-        val artistPhoto = currentArtist?.photoUrl ?: "https://picsum.photos/id/64/300/300"
+        val artistName = currentArtist?.name ?: artistNameFallback ?: "Unknown Artist"
+        val artistPhoto = currentArtist?.photoUrl ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg"
         val artistDesc = currentArtist?.description ?: "No description available for this artist."
 
         val uploaderName = currentUploader?.displayName ?: "Unknown Uploader"
-        val uploaderPhoto = currentUploader?.photoUrl ?: "https://picsum.photos/id/65/200/200"
+        val uploaderPhoto = currentUploader?.photoUrl ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/avatar_1775118109127.jpg"
         val uploaderRole = currentUploader?.role?.replaceFirstChar { it.uppercase() } ?: "Uploader"
 
         // LUXURY DECORATION: Role-based logic
@@ -138,10 +139,10 @@ fun UploaderBoxAndArtist(
             else -> Color(0xFF1DB954) // Green
         }
 
-        // CONTAINER UTAMA (WIDTH 100%)
+        // CONTAINER UTAMA
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1A1A1A).copy(alpha = 0.9f)
+                containerColor = Color(0xFF161616).copy(alpha = 0.95f) // Warna lebih solid & elegan
             ),
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
@@ -150,149 +151,150 @@ fun UploaderBoxAndArtist(
                 .border(
                     width = 1.dp,
                     brush = Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = 0.12f), Color.Transparent)
+                        listOf(Color.White.copy(alpha = 0.1f), Color.Transparent)
                     ),
                     shape = RoundedCornerShape(24.dp)
                 )
         ) {
             Column {
-                // ================= BAGIAN 1: ARTIST (FULL WIDTH DESCRIPTION) =================
+                // ================= BAGIAN 1: ARTIST (REDESIGNED SLEEK) =================
                 Column(
-                    modifier = Modifier.padding(20.dp)
+                    modifier = Modifier.padding(18.dp) // Padding disesuaikan agar proporsional
                 ) {
+                    // Gambar Artist (1:1 Ratio, Perfect Square)
+                    AsyncImage(
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(artistPhoto)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Artist Image",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f) // MEMAKSA RASIO 1:1 SESUAI DATABASE
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.DarkGray)
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.1f),
+                                RoundedCornerShape(16.dp)
+                            )
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Nama Artist + Verified (Mencegah icon mengecil)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Gambar Artist
-                        AsyncImage(
-                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                .data(artistPhoto)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = "Artist Image",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(110.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.DarkGray)
-                                .border(
-                                    1.dp,
-                                    Color.White.copy(alpha = 0.15f),
-                                    RoundedCornerShape(16.dp)
-                                )
+                        Text(
+                            text = artistName,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = AppFont.HelveticaRoundedBold,
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false) // Teks ngalah jadi ...
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Filled.Verified,
+                            contentDescription = "Verified",
+                            tint = Color(0xFF1DB954),
+                            modifier = Modifier.requiredSize(22.dp) // Pastikan ukuran icon tetap
+                        )
+                    }
 
-                        Spacer(modifier = Modifier.width(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                        Column {
-                            // Nama Artist + Verified
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = artistName,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontFamily = AppFont.HelveticaRoundedBold,
-                                    color = Color.White,
-                                    fontSize = 22.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                    // Button Row (Ramping, Minimalis, Tidak Stretched Kanan Kiri)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp) // Jarak natural antar button
+                    ) {
+                        // Button Follow / Mengikuti (Primary Action ditaruh kiri)
+                        if (isFollowed) {
+                            OutlinedButton(
+                                onClick = onToggleFollow,
+                                border = BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp), // Lebih ramping (sleek)
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFF1DB954)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Verified,
-                                    contentDescription = "Verified",
-                                    tint = Color(0xFF1DB954),
-                                    modifier = Modifier.size(22.dp)
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = "Followed",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF1DB954)
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Diikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Button Row
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                // Button Lihat Playlist
-                                OutlinedButton(
-                                    onClick = onLihatPlaylistClick,
-                                    border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
-                                    shape = RoundedCornerShape(50),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(36.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                                ) {
-                                    Text("Lihat Playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // Button Follow / Mengikuti
-                                if (isFollowed) {
-                                    // MENGIKUTI (Outlined, Green Text/Border)
-                                    OutlinedButton(
-                                        onClick = onToggleFollow,
-                                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.5f)),
-                                        shape = RoundedCornerShape(50),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(36.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = "Followed",
-                                            modifier = Modifier.size(16.dp),
-                                            tint = Color.White
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Diikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                } else {
-                                    // IKUTI (Filled Translucent White)
-                                    Button(
-                                        onClick = onToggleFollow,
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color.White.copy(alpha = 0.2f),
-                                            contentColor = Color.White
-                                        ),
-                                        shape = RoundedCornerShape(50),
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(36.dp)
-                                    ) {
-                                        Text("Ikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                        } else {
+                            Button(
+                                onClick = onToggleFollow,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color.Black
+                                ),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                                modifier = Modifier.height(36.dp) // Lebih ramping
+                            ) {
+                                Text("Ikuti", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+
+                        // Button Lihat Playlist (Secondary Action)
+                        OutlinedButton(
+                            onClick = onLihatPlaylistClick,
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier.height(36.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("Lihat Playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Deskripsi (FULL WIDTH with ANIMATED HEIGHT)
+                    // Deskripsi (Lebih lega dengan line-height yang nyaman)
                     var isExpanded by remember { mutableStateOf(false) }
                     
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .animateContentSize(animationSpec = tween(durationMillis = 500, easing = LinearOutSlowInEasing))
+                            .animateContentSize(animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing))
                     ) {
                         Text(
                             text = artistDesc,
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                lineHeight = 24.sp, // Memberikan breathing room pada teks
+                                letterSpacing = 0.2.sp
+                            ),
                             fontFamily = AppFont.Helvetica,
-                            color = Color.White.copy(alpha = 0.75f),
-                            lineHeight = 22.sp,
+                            color = Color.White.copy(alpha = 0.7f),
                             maxLines = if (isExpanded) Int.MAX_VALUE else 3,
                             overflow = TextOverflow.Ellipsis,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             modifier = Modifier.fillMaxWidth()
                         )
                         
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
                         Text(
-                            text = if (isExpanded) "Show Less" else "Show More",
+                            text = if (isExpanded) "Sembunyikan" else "Selengkapnya",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1DB954),
+                            color = Color.White, // Putih agar lebih netral dan elegan
                             modifier = Modifier
                                 .clickable { isExpanded = !isExpanded }
                                 .padding(vertical = 4.dp)
@@ -305,21 +307,21 @@ fun UploaderBoxAndArtist(
                     color = Color.White.copy(alpha = 0.08f)
                 )
 
-                // ================= BAGIAN 2: UPLOADER (BUTTON BELOW) =================
+                // ================= BAGIAN 2: UPLOADER (LEBIH BALANCE) =================
                 Column(
                     modifier = Modifier
-                        .padding(20.dp)
+                        .padding(horizontal = 18.dp, vertical = 16.dp)
                         .fillMaxWidth()
                 ) {
                     Text(
-                        text = "Lagu ini diupload oleh :",
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Diupload oleh",
+                        style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.5f),
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         letterSpacing = 0.5.sp
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -327,7 +329,7 @@ fun UploaderBoxAndArtist(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(62.dp)
+                                .size(48.dp) // Diperkecil sedikit agar tidak mendominasi
                                 .clip(CircleShape)
                                 .then(
                                     if (isOwner) {
@@ -341,15 +343,15 @@ fun UploaderBoxAndArtist(
                                                     )
                                                 )
                                             )
-                                            .padding(2.5.dp)
+                                            .padding(2.dp)
                                     } else if (isUploaderRole) {
                                         Modifier
                                             .background(Color(0xFF3897F0))
-                                            .padding(2.5.dp)
+                                            .padding(2.dp)
                                     } else {
                                         Modifier
                                             .background(Color.White.copy(alpha = 0.15f))
-                                            .padding(1.5.dp)
+                                            .padding(1.dp)
                                     }
                                 )
                                 .clip(CircleShape)
@@ -361,12 +363,11 @@ fun UploaderBoxAndArtist(
                                     .build(),
                                 contentDescription = "Uploader Image",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(18.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -376,83 +377,48 @@ fun UploaderBoxAndArtist(
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = AppFont.HelveticaRoundedBold,
                                     color = Color.White,
-                                    fontSize = 18.sp
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                // Checkmark on the right
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = "Uploader Verified",
                                     tint = roleColor,
-                                    modifier = Modifier.offset(y = 1.5.dp).size(19.dp)
+                                    modifier = Modifier
+                                        .offset(y = 1.dp)
+                                        .requiredSize(16.dp)
                                 )
                             }
                             
-                            // WAVY ANIMATION FOR ROLE TEXT (Wavy cycle: 4s total, 1s action + 3s pause)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            
                             if (isOwner) {
                                 WavyText(
-                                    text = "Remusic Official $uploaderRole",
-                                    style = MaterialTheme.typography.labelLarge.copy(
+                                    text = "Founder Of Remusic",
+                                    style = MaterialTheme.typography.labelMedium.copy(
                                         fontFamily = AppFont.Helvetica,
-                                        letterSpacing = 3.sp,
-                                        fontSize = 14.sp
+                                        letterSpacing = 1.5.sp,
+                                        fontSize = 12.sp
                                     ),
                                     color = roleColor
                                 )
                             } else {
                                 Text(
                                     text = uploaderRole,
-                                    style = MaterialTheme.typography.labelLarge,
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = roleColor,
-                                    letterSpacing = 1.2.sp,
-                                    fontSize = 14.sp
+                                    letterSpacing = 1.sp,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
-
-                    // Spacer(modifier = Modifier.height(24.dp))
-
-                    // // BUTTON BELOW UPLOADER (PROFESSIONAL OUTLINED)
-                    // val infiniteTransition = rememberInfiniteTransition(label = "ArrowAnimation")
-                    // val arrowTranslation by infiniteTransition.animateFloat(
-                    //     initialValue = -2f,
-                    //     targetValue = 6f,
-                    //     animationSpec = infiniteRepeatable(
-                    //         animation = tween(1000, easing = LinearEasing),
-                    //         repeatMode = RepeatMode.Reverse
-                    //     ),
-                    //     label = "ArrowSlide"
-                    // )
-
-                    // OutlinedButton(
-                    //     onClick = onSemuaLaguClick,
-                    //     border = BorderStroke(1.5.dp, roleColor.copy(alpha = 0.4f)),
-                    //     colors = ButtonDefaults.outlinedButtonColors(contentColor = roleColor),
-                    //     shape = RoundedCornerShape(16.dp),
-                    //     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                    //     modifier = Modifier
-                    //         .fillMaxWidth()
-                    //         .height(50.dp)
-                    // ) {
-                    //     Text(
-                    //         "Semua Lagu", 
-                    //         color = Color.White,
-                    //         fontSize = 16.sp, 
-                    //         fontWeight = FontWeight.ExtraBold,
-                    //         fontFamily = AppFont.Helvetica
-                    //     )
-                    //     Spacer(modifier = Modifier.width(12.dp))
-                    //     Icon(
-                    //         imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                    //         tint = Color.White,
-                    //         contentDescription = null,
-                    //         modifier = Modifier
-                    //             .size(26.dp)
-                    //             .graphicsLayer(translationX = arrowTranslation)
-                    //     )
-                    // }
                 }
             }
         }
@@ -466,11 +432,11 @@ fun PreviewCombinedCardLuxury() {
         Box(modifier = Modifier.padding(16.dp)) {
             UploaderBoxAndArtist(
                 artist = Artist(
-                    name = "Nadin Amizah", 
+                    name = "Nadin Amizah dan Teman-temannya yang asik sekali",
                     description = "Nadin Amizah adalah penyanyi dan penulis lagu berkebangsaan Indonesia. Musiknya dikenal puitis dan menyentuh hati. Album pertamanya 'Selamat Ulang Tahun' mendapat sambutan hangat. Ia mulai dikenal publik saat masih di bangku SMA."
                 ),
                 uploader = User(
-                    displayName = "Remusic Admin",
+                    displayName = "Remusic Admin Super Long Name Sekali Dong",
                     role = "owner"
                 ),
                 isFollowed = true,
