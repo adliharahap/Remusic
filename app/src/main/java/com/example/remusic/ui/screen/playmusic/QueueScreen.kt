@@ -26,8 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,11 +70,13 @@ fun QueueScreen(
     topPlayerColor: Color = Color.Transparent,
     bottomPlayerColor: Color = Color.Transparent,
     gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
-    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
-    headerHeight: androidx.compose.ui.unit.Dp = 120.dp
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LIQUID_GRADIENT,
+    headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
+    meshColors: List<Color> = emptyList()
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
     val currentlyPlayingId = songWithArtist?.song?.id
+    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT
     var isEditMode by remember { mutableStateOf(false) }
 
     // --- Bottom Sheet State ---
@@ -101,7 +106,8 @@ fun QueueScreen(
             topColor = topPlayerColor,
             bottomColor = bottomPlayerColor,
             gradientBrush = gradientBrush,
-            coverUrl = songWithArtist?.song?.coverUrl
+            coverUrl = songWithArtist?.song?.coverUrl,
+            meshColors = meshColors
         )
 
         LazyColumn(
@@ -109,6 +115,32 @@ fun QueueScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .reorderable(reorderableState)
+                .then(
+                    if (isBlurredOrMesh) {
+                        Modifier
+                            .graphicsLayer { alpha = 0.99f }
+                            .drawWithContent {
+                                drawContent()
+                                val topFadeEndPx = (headerHeight - 10.dp).toPx()
+                                val topFadeStartPx = (headerHeight + 70.dp).toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(
+                                            0.0f to Color.Transparent,
+                                            (topFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                            (topFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
+                                            1.0f to Color.Black
+                                        ),
+                                        startY = 0f,
+                                        endY = size.height
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
         item {
             Spacer(modifier = Modifier.height(headerHeight).fillMaxWidth())
@@ -218,16 +250,22 @@ fun QueueScreen(
                 .height(headerHeight + 40.dp)
                 .heightIn(min = 100.dp, max = 200.dp)
                 .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to topPlayerColor,
-                            0.5f to topPlayerColor,
-                            0.6f to topPlayerColor.copy(alpha = 0.8f),
-                            0.8f to topPlayerColor.copy(alpha = 0.5f),
-                            1.0f to topPlayerColor.copy(alpha = 0f)
+                .then(
+                    if (isBlurredOrMesh) {
+                        Modifier
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to topPlayerColor,
+                                    0.5f to topPlayerColor,
+                                    0.6f to topPlayerColor.copy(alpha = 0.8f),
+                                    0.8f to topPlayerColor.copy(alpha = 0.5f),
+                                    1.0f to topPlayerColor.copy(alpha = 0f)
+                                )
+                            )
                         )
-                    )
+                    }
                 )
         )
     }

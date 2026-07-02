@@ -301,8 +301,9 @@ fun PlayMusicScreen(
                         bottomPlayerColor = animatedBottomColor,
                         gradientBrush = animatedGradientBrush,
                         playerBackgroundStyle = if (uiState.isThemeAppliedToQueue) uiState.playerBackgroundStyle
-                            else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
-                        headerHeight = headerHeight
+                            else com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT,
+                        headerHeight = headerHeight,
+                        meshColors = uiState.dominantColors
                     )
                 }
                 1 -> NowPlaying(
@@ -350,7 +351,7 @@ fun PlayMusicScreen(
                     isExiting = isExiting,
                     playbackSpeed = uiState.playbackSpeed,
                     playerBackgroundStyle = if (uiState.isThemeAppliedToNowPlaying) uiState.playerBackgroundStyle
-                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT,
                     currentAudioDevice = uiState.currentAudioDevice,
                     onAddToPlaylistClick = { 
                         uiState.currentSong?.let { playMusicViewModel.showAddToPlaylistSheet(it) } 
@@ -358,7 +359,8 @@ fun PlayMusicScreen(
                     onGameModeClick = { showGameModeSheet = true },
                     isGameModeEnabled = uiState.isGameModeActive,
                     gameModeVolume = uiState.gameModeVolume,
-                    onAudioDeviceClick = { showAudioSwitchSheet = true }
+                    onAudioDeviceClick = { showAudioSwitchSheet = true },
+                    meshColors = uiState.dominantColors
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,
@@ -378,7 +380,7 @@ fun PlayMusicScreen(
                     onSeekToMs = { ms -> playMusicViewModel.seekTo(ms) },
                     playbackSpeed = uiState.playbackSpeed,
                     playerBackgroundStyle = if (uiState.isThemeAppliedToLyrics) uiState.playerBackgroundStyle
-                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+                        else com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT,
                     gradientBrush = animatedGradientBrush,
                     onRetryClick = { playMusicViewModel.retryFetchLyrics() },
                     lyricsOffset = uiState.lyricsOffset,
@@ -387,7 +389,8 @@ fun PlayMusicScreen(
                     isSearching = uiState.isSearchingLyrics,
                     searchResults = uiState.alternativeLyricsResults,
                     onApplyLyrics = { playMusicViewModel.applyAlternativeLyrics(it) },
-                    isFetchingSyncedLyrics = uiState.isFetchingSyncedLyrics
+                    isFetchingSyncedLyrics = uiState.isFetchingSyncedLyrics,
+                    meshColors = uiState.dominantColors
                 )
             }
         }

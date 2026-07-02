@@ -29,7 +29,7 @@ enum class GradientStyle(val displayName: String) {
 enum class PlayerBackgroundStyle(val displayName: String) {
     LINEAR_GRADIENT("Linear Gradient"),
     MESH_GRADIENT("Mesh Gradient (Cloud)"),
-    RADIAL_GRADIENT("Radial Gradient"),
+    LIQUID_GRADIENT("Liquid Gradient"),
     BLURRED_COVER("Blurred Cover")
 }
 
@@ -133,7 +133,7 @@ class UserPreferencesRepository(private val context: Context) {
                                 ?: com.example.remusic.ui.screen.playmusic.LyricsAlign.LEFT.name
                 val autoScale = preferences[LYRICS_AUTO_SCALE_KEY] ?: false
                 val scaleFactor = preferences[LYRICS_SCALE_FACTOR_KEY] ?: 1
-                val markPassed = preferences[LYRICS_MARK_PASSED_KEY] ?: false
+                val markPassed = preferences[LYRICS_MARK_PASSED_KEY] ?: true
                 val translateFontSize = preferences[LYRICS_TRANSLATE_FONT_SIZE_KEY] ?: 15.5f
                 val translateFontWeightName = preferences[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR.name
                 val mainFontWeightName = preferences[LYRICS_MAIN_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD.name
@@ -221,11 +221,11 @@ class UserPreferencesRepository(private val context: Context) {
 
     val playerBackgroundStyleFlow: Flow<PlayerBackgroundStyle> =
         context.dataStore.data.map { preferences ->
-            val styleName = preferences[PLAYER_BACKGROUND_STYLE_KEY] ?: PlayerBackgroundStyle.LINEAR_GRADIENT.name
+            val styleName = preferences[PLAYER_BACKGROUND_STYLE_KEY] ?: PlayerBackgroundStyle.LIQUID_GRADIENT.name
             try {
                 PlayerBackgroundStyle.valueOf(styleName)
             } catch (e: IllegalArgumentException) {
-                PlayerBackgroundStyle.LINEAR_GRADIENT
+                PlayerBackgroundStyle.LIQUID_GRADIENT
             }
         }
 

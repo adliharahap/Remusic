@@ -75,7 +75,7 @@ import kotlinx.coroutines.launch
 enum class LyricsBackgroundStyle(val displayName: String) {
     LINEAR_GRADIENT("Linear Gradient"),
     MESH_GRADIENT("Mesh Gradient (Cloud)"),
-    RADIAL_GRADIENT("Radial Gradient"),
+    LIQUID_GRADIENT("Liquid Gradient"),
     BLURRED_COVER("Blurred Cover")
 }
 
@@ -86,12 +86,12 @@ data class LyricsConfig(
     val align: LyricsAlign = LyricsAlign.LEFT,
     val autoScaleIfNoTranslation: Boolean = false,
     val scaleFactor: Int = 1, // +1, +2, +3
-    val markPassedLyrics: Boolean = false,
+    val markPassedLyrics: Boolean = true,
     val translateFontSize: Float = 15.5f,
     val translationFontWeight: LyricsFontWeight = LyricsFontWeight.REGULAR,
     val mainFontWeight: LyricsFontWeight = LyricsFontWeight.BOLD,
     val clickLyricsToSeek: Boolean = true,
-    val backgroundStyle: LyricsBackgroundStyle = LyricsBackgroundStyle.LINEAR_GRADIENT,
+    val backgroundStyle: LyricsBackgroundStyle = LyricsBackgroundStyle.LIQUID_GRADIENT,
     val animateActiveLyric: Boolean = true,
     val inactiveLyricsColor: InactiveLyricsColor = InactiveLyricsColor.FADED_WHITE
 )
@@ -198,7 +198,7 @@ fun MoreOptionsBottomSheet(
     playbackSpeed: Float = 1.0f,
     onPlaybackSpeedChange: (Float) -> Unit = {},
     // Player Theme
-    playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+    playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT,
     onPlayerBackgroundStyleChange: (com.example.remusic.data.preferences.PlayerBackgroundStyle) -> Unit = {},
     isThemeAppliedToQueue: Boolean = true,
     onThemeAppliedToQueueChange: (Boolean) -> Unit = {},
@@ -545,7 +545,7 @@ fun MoreOptionsBottomSheet(
                     onItemSelected = { onPlayerBackgroundStyleChange(it) }
                 )
 
-                if (playerBackgroundStyle != com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT) {
+                if (playerBackgroundStyle != com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT) {
                     ItemDivider()
                     SettingToggleRow(
                         title = "Terapkan di Queue",

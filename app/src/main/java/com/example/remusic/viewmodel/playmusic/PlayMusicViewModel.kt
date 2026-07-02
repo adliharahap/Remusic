@@ -162,7 +162,7 @@ data class PlayerUiState(
         val gameModeVolume: Float = 0.2f,
 
         // Player Background Style
-        val playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LINEAR_GRADIENT,
+        val playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle = com.example.remusic.data.preferences.PlayerBackgroundStyle.LIQUID_GRADIENT,
 
         // Per-screen theme toggles
         val isThemeAppliedToQueue: Boolean = true,

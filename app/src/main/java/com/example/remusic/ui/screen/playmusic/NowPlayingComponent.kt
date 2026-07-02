@@ -131,13 +131,14 @@ fun NowPlaying(
     headerHeight: androidx.compose.ui.unit.Dp = 120.dp,
     isExiting: Boolean = false,
     playbackSpeed: Float = 1.0f,
-    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LIQUID_GRADIENT,
     currentAudioDevice: AudioOutputDevice? = null,
     onAddToPlaylistClick: () -> Unit = {},
     onGameModeClick: () -> Unit = {},
     isGameModeEnabled: Boolean = false,
     gameModeVolume: Float = 0.2f,
-    onAudioDeviceClick: () -> Unit = {}
+    onAudioDeviceClick: () -> Unit = {},
+    meshColors: List<Color> = emptyList()
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -206,7 +207,8 @@ fun NowPlaying(
                 topColor = topPlayerColor,
                 bottomColor = bottomPlayerColor,
                 gradientBrush = gradientBrush,
-                coverUrl = songWithArtist?.song?.coverUrl
+                coverUrl = songWithArtist?.song?.coverUrl,
+                meshColors = meshColors
             )
         }
 

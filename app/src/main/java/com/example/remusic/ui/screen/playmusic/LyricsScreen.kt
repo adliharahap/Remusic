@@ -82,6 +82,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -136,9 +138,10 @@ fun LyricsScreen(
     lyricsConfig: LyricsConfig = LyricsConfig(),
     onSeekToMs: (Long) -> Unit = {},
     playbackSpeed: Float = 1.0f,
-    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LINEAR_GRADIENT,
+    playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LIQUID_GRADIENT,
     gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
-    isFetchingSyncedLyrics: Boolean = false
+    isFetchingSyncedLyrics: Boolean = false,
+    meshColors: List<Color> = emptyList()
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -156,6 +159,8 @@ fun LyricsScreen(
     val screenHeight = configuration.screenHeightDp.dp
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    
+    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT
     
     var showLyricsOptions by remember { mutableStateOf(false) }
 
@@ -265,7 +270,8 @@ fun LyricsScreen(
             topColor = topPlayerColor,
             bottomColor = bottomPlayerColor,
             gradientBrush = gradientBrush,
-            coverUrl = songWithArtist?.song?.coverUrl
+            coverUrl = songWithArtist?.song?.coverUrl,
+            meshColors = meshColors
         )
 
         // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
@@ -288,11 +294,47 @@ fun LyricsScreen(
                 }
                 "CONTENT" -> {
                     val hasSynced = lyrics.isSynced()
-                    Crossfade(
-                        targetState = hasSynced,
-                        animationSpec = tween(450),
-                        label = "LyricsContentTransition"
-                    ) { synced ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (isBlurredOrMesh) {
+                                    Modifier
+                                        .graphicsLayer { alpha = 0.99f }
+                                        .drawWithContent {
+                                            drawContent()
+                                            
+                                            val topFadeEndPx = (headerHeight - 10.dp).toPx()
+                                            val topFadeStartPx = (headerHeight + 70.dp).toPx()
+                                            val bottomFadeStartPx = size.height - 200.dp.toPx()
+                                            val bottomFadeEndPx = size.height - 130.dp.toPx()
+                                            
+                                            drawRect(
+                                                brush = Brush.verticalGradient(
+                                                    colorStops = arrayOf(
+                                                        0.0f to Color.Transparent,
+                                                        (topFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                                        (topFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
+                                                        (bottomFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
+                                                        (bottomFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                                        1.0f to Color.Transparent
+                                                    ),
+                                                    startY = 0f,
+                                                    endY = size.height
+                                                ),
+                                                blendMode = BlendMode.DstIn
+                                            )
+                                        }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    ) {
+                        Crossfade(
+                            targetState = hasSynced,
+                            animationSpec = tween(450),
+                            label = "LyricsContentTransition"
+                        ) { synced ->
                         if (synced) {
                             LazyColumn(
                                 state = lazyListState,
@@ -373,6 +415,7 @@ fun LyricsScreen(
                     }
                 }
             }
+            }
         }
 
         // 1. Gradient ATAS
@@ -382,16 +425,22 @@ fun LyricsScreen(
                 .height(headerHeight + 40.dp)
                 .heightIn(min = 100.dp, max = 200.dp)
                 .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to topPlayerColor,
-                            0.5f to topPlayerColor,
-                            0.6f to topPlayerColor.copy(alpha = 0.8f),
-                            0.8f to topPlayerColor.copy(alpha = 0.5f),
-                            1.0f to topPlayerColor.copy(alpha = 0f)
+                .then(
+                    if (isBlurredOrMesh) {
+                        Modifier
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to topPlayerColor,
+                                    0.5f to topPlayerColor,
+                                    0.6f to topPlayerColor.copy(alpha = 0.8f),
+                                    0.8f to topPlayerColor.copy(alpha = 0.5f),
+                                    1.0f to topPlayerColor.copy(alpha = 0f)
+                                )
+                            )
                         )
-                    )
+                    }
                 )
         )
 
@@ -401,16 +450,22 @@ fun LyricsScreen(
                 .fillMaxWidth()
                 .fillMaxHeight(0.65f)
                 .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to bottomPlayerColor.copy(alpha = 0f),
-                            0.4f to bottomPlayerColor.copy(alpha = 0.1f),
-                            0.6f to bottomPlayerColor.copy(alpha = 0.5f),
-                            0.8f to bottomPlayerColor,
-                            1.0f to bottomPlayerColor
+                .then(
+                    if (isBlurredOrMesh) {
+                        Modifier
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to bottomPlayerColor.copy(alpha = 0f),
+                                    0.4f to bottomPlayerColor.copy(alpha = 0.1f),
+                                    0.6f to bottomPlayerColor.copy(alpha = 0.5f),
+                                    0.8f to bottomPlayerColor,
+                                    1.0f to bottomPlayerColor
+                                )
+                            )
                         )
-                    )
+                    }
                 )
         )
 
