@@ -45,7 +45,7 @@ class PlaylistScreenViewModel(application: Application) : AndroidViewModel(appli
 
     init {
         val database = MusicDatabase.getDatabase(application)
-        repository = MusicRepository(database.musicDao())
+        repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
         startSessionObservation()
     }
 

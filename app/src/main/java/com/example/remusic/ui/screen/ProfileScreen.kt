@@ -115,6 +115,19 @@ fun ProfileScreen(
             }
         }
     }
+    // --- Consume pending uploader navigation via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.uploaderNavigationFlow.collect { uploaderId ->
+            if (uploaderId != null && playerUiState.previousTab == "profile") {
+                playMusicViewModel.consumePendingUploaderNavigation()
+                profileNavController.navigate(
+                    ProfileRoute.createRoute(id = uploaderId, type = "UPLOADER")
+                ) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
 
     NavHost(
         navController = profileNavController,

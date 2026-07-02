@@ -282,11 +282,10 @@ fun UserPlaylistHeader(
                             .clip(CircleShape)
                             .background(Color.White.copy(0.1f))
                             .clickable {
-                                if (sortedSongs.isNotEmpty()) {
-                                    val randomIndex = sortedSongs.indices.random()
+                                if (songs.isNotEmpty()) {
+                                    val randomIndex = songs.indices.random()
                                     playMusicViewModel?.playingMusicFromPlaylist(playlistName)
-                                    playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
-                                    playMusicViewModel?.forceSetShuffle(true)
+                                    playMusicViewModel?.setPlaylist(songs, randomIndex, forceShuffle = true)
                                 }
                             },
                         contentAlignment = Alignment.Center

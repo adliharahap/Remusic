@@ -70,7 +70,8 @@ import kotlinx.coroutines.launch
 fun PlayMusicScreen(
     playMusicViewModel: PlayMusicViewModel,
     navController: NavController,
-    onNavigateToArtist: (artistId: String) -> Unit = {} // Callback: navigate to artist detail
+    onNavigateToArtist: (artistId: String) -> Unit = {}, // Callback: navigate to artist detail
+    onNavigateToUploader: (uploaderId: String) -> Unit = {} // Callback: navigate to uploader playlist
 ) {
     LockScreenOrientationPortrait()
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
@@ -341,6 +342,12 @@ fun PlayMusicScreen(
                         val artistId = uiState.currentSong?.artist?.id
                         if (!artistId.isNullOrBlank()) {
                             onNavigateToArtist(artistId)
+                        }
+                    },
+                    onUploaderClick = {
+                        val uploaderId = uiState.uploader?.uid
+                        if (!uploaderId.isNullOrBlank() && uploaderId != "youtube") {
+                            onNavigateToUploader(uploaderId)
                         }
                     },
                     isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,

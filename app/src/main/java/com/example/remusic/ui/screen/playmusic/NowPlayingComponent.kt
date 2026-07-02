@@ -124,6 +124,7 @@ fun NowPlaying(
     isArtistFollowed: Boolean = false,
     onToggleFollowArtist: () -> Unit = {},
     onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
+    onUploaderClick: () -> Unit = {}, // NEW: Navigate to uploader playlist
     isDataSaverModeEnabled: Boolean = false,
     topPlayerColor: Color = Color.Transparent,
     bottomPlayerColor: Color = Color.Transparent,
@@ -1115,7 +1116,8 @@ fun NowPlaying(
                         isFollowed = isArtistFollowed,
                         onToggleFollow = onToggleFollowArtist,
                         onLihatPlaylistClick = onLihatPlaylistClick,
-                        onSemuaLaguClick = onLihatPlaylistClick // Same action: go to artist detail
+                        onSemuaLaguClick = onLihatPlaylistClick, // Same action: go to artist detail
+                        onUploaderClick = onUploaderClick
                     )
                 }
 

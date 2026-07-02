@@ -86,7 +86,8 @@ fun UploaderBoxAndArtist(
     isFollowed: Boolean = false,
     onToggleFollow: () -> Unit = {},
     onLihatPlaylistClick: () -> Unit = {}, // NEW: Navigate to artist playlist
-    onSemuaLaguClick: () -> Unit = {}      // NEW: Navigate to all songs (same as artist playlist)
+    onSemuaLaguClick: () -> Unit = {},      // NEW: Navigate to all songs (same as artist playlist)
+    onUploaderClick: () -> Unit = {}
 ) {
     // 1. DELAYED STATE LOGIC (Prevent flickering to 'Unknown' during transitions)
     var displayedArtist by remember { mutableStateOf<Artist?>(null) }
@@ -324,7 +325,13 @@ fun UploaderBoxAndArtist(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (currentUploader?.uid != "youtube" && currentUploader?.uid != null) {
+                                    Modifier.clickable { onUploaderClick() }
+                                } else Modifier
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(

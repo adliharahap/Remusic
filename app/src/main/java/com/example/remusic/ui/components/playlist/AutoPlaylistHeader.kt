@@ -221,26 +221,12 @@ fun AutoPlaylistHeader(
                         .clip(CircleShape)
                         .background(Color.White.copy(0.1f))
                         .clickable {
-                            // Fix: Start from a random index instead of 0
-                            if (sortedSongs.isNotEmpty()) {
-                                // Pick a random index to start from
-                                val randomIndex = sortedSongs.indices.random()
-
-                                // 🔥 FIX BUG SHUFFLE SKIP:
-                                // setPlaylist DULU dengan index random,
-                                // BARU aktifkan shuffle SETELAH player siap.
-                                // Jika shuffle diaktifkan SEBELUM setPlaylist,
-                                // ExoPlayer akan shuffle ke lagu lain yang URLnya masih kosong.
-                                playMusicViewModel?.playingMusicFromPlaylist(playlistName)
-                                playMusicViewModel?.setPlaylist(sortedSongs, randomIndex)
-
-                                // 🔥 FIX RACE CONDITION:
-                                // Gunakan forceSetShuffle(true) bukan toggleShuffleMode()!
-                                // toggleShuffleMode() membaca uiState yang masih STALE di Compose snapshot
-                                // saat tombol diklik, menyebabkan toggle bisa jadi OFF bukan ON.
-                                // forceSetShuffle(true) langsung set ke mediaController tanpa cek state.
-                                playMusicViewModel?.forceSetShuffle(true)
-                            }
+                                // Fix: Start from a random index instead of 0
+                                if (sortedSongs.isNotEmpty()) {
+                                    val randomIndex = sortedSongs.indices.random()
+                                    playMusicViewModel?.playingMusicFromPlaylist(playlistName)
+                                    playMusicViewModel?.setPlaylist(sortedSongs, randomIndex, forceShuffle = true)
+                                }
                         },
                     contentAlignment = Alignment.Center
                 ) {

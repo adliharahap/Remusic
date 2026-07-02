@@ -131,6 +131,20 @@ fun HomeScreen(
         }
     }
 
+    // --- Consume pending uploader navigation via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.uploaderNavigationFlow.collect { uploaderId ->
+            if (uploaderId != null && playerUiState.previousTab == "home") {
+                playMusicViewModel.consumePendingUploaderNavigation()
+                homeNavController.navigate(
+                    HomeRoute.createRoute(id = uploaderId, type = "UPLOADER")
+                ) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
     // --- Reset nested nav to root when user returns to Home from another tab ---
     LaunchedEffect(homeResetTrigger) {
         if (homeResetTrigger > 0) {
@@ -473,18 +487,22 @@ private fun HomeMainScreen(
                                 dominantColor = lastSongColor
                             )
 
-                            QuickPickCarousel(
-                                songs = state.quickPickSongs.take(20),
-                                onSongClick = { index ->
-                                    val song = state.quickPickSongs.getOrNull(index)
-                                    if (song != null) {
-                                        playMusicViewModel.playSongWithSmartQueue(song, "Pilihan Cepat")
+                            if (state.isRefreshing) {
+                                QuickPickCarouselSkeleton()
+                            } else {
+                                QuickPickCarousel(
+                                    songs = state.quickPickSongs.take(20),
+                                    onSongClick = { index ->
+                                        val song = state.quickPickSongs.getOrNull(index)
+                                        if (song != null) {
+                                            playMusicViewModel.playSongWithSmartQueue(song, "Pilihan Cepat")
+                                        }
+                                    },
+                                    onMoreClick = { song ->
+                                        playMusicViewModel.showQueueOptions(song)
                                     }
-                                },
-                                onMoreClick = { song ->
-                                    playMusicViewModel.showQueueOptions(song)
-                                }
-                            )
+                                )
+                            }
                         }
                     }
 

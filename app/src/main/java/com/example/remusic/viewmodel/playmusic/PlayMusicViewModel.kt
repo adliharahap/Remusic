@@ -82,6 +82,7 @@ data class PlayerUiState(
         val repeatMode: Int =
                 Player.REPEAT_MODE_OFF, // REPEAT_MODE_OFF, REPEAT_MODE_ONE, REPEAT_MODE_ALL
         val playlist: List<SongWithArtist> = emptyList(),
+        val originalPlaylist: List<SongWithArtist> = emptyList(),
         val dominantColors: List<Color> = listOf(Color.DarkGray, Color.Black),
         val currentAudioDevice: AudioOutputDevice? = null,
         val availableAudioDevices: List<AudioOutputDevice> = emptyList(),
@@ -137,8 +138,10 @@ data class PlayerUiState(
         // --- Tab Tracking for "Lihat Playlist" Navigation ---
         val previousTab: String = "home", // Default to Home tab route
         val navigateToArtistEvent: String? = null, // One-shot event: artistId to navigate to
+        val navigateToUploaderEvent: String? = null, // One-shot event: uploaderId to navigate to
         val navigateToCreatePlaylistEvent: Boolean = false, // One-shot event: to create playlist
         val pendingArtistNavigation: String? = null, // Pending artistId for tab screens to consume
+        val pendingUploaderNavigation: String? = null, // Pending uploaderId for tab screens to consume
         val gradientStyle: com.example.remusic.data.preferences.GradientStyle = com.example.remusic.data.preferences.GradientStyle.PRIMARY,
         val gradientTopColorIndex: Int = 0,
         val gradientBottomColorIndex: Int = 1,
@@ -192,10 +195,6 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     internal var volumeFadeJob: Job? = null
     internal var isFading = false
 
-    // YouTube Radio Pagination Tokens
-    internal var youtubeRadioEndpoint: com.metrolist.innertube.models.WatchEndpoint? = null
-    internal var youtubeRadioContinuation: String? = null
-    
     // Explicit flag to track if we are currently generating a smart queue
     @Volatile
     internal var isGeneratingSmartQueue = false
@@ -209,12 +208,12 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     // ===================== ARTIST NAVIGATION SHARED FLOW =====================
     // replay=1 ensures late subscribers still receive the last emitted artistId
     internal val _artistNavigationFlow =
-            MutableSharedFlow<String?>(
-                    replay = 1,
-                    extraBufferCapacity = 1,
-                    onBufferOverflow = BufferOverflow.DROP_OLDEST
-            )
+        MutableSharedFlow<String?>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val artistNavigationFlow = _artistNavigationFlow.asSharedFlow()
+
+    internal val _uploaderNavigationFlow =
+        MutableSharedFlow<String?>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val uploaderNavigationFlow = _uploaderNavigationFlow.asSharedFlow()
 
     // Variabel untuk melacak lagu terakhir yang play count-nya sudah di-increment
     internal var lastIncrementedSongId: String? = null
@@ -226,7 +225,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Cache memory: Key = TelegramFileID, Value = Link Streaming Direct
     internal val database = MusicDatabase.getDatabase(application)
-    internal val repository = MusicRepository(database.musicDao())
+    internal val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
 
     val uiState = _uiState.asStateFlow()
 
@@ -394,11 +393,10 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         // --- CONTEXT-AWARE SHUFFLE: Simpan state shuffle sekarang, lalu paksa OFF ---
         preSearchShuffleState = _uiState.value.isShuffleModeEnabled
         if (preSearchShuffleState) {
-           Timber.tag("DEBUG_PLAYER").d(
-                    
+            Timber.tag("DEBUG_PLAYER").d(
                     "🔀 [SEARCH] Pre-search shuffle ON → disimpan, lalu dimatikan"
             )
-            mediaController?.shuffleModeEnabled = false
+            applyShuffleState(false)
             // Jangan simpan ke prefs agar ketika balik ke playlist, state asli tetap ada
         }
 
@@ -679,6 +677,20 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(pendingArtistNavigation = null) }
         viewModelScope.launch {
             _artistNavigationFlow.emit(null) // Reset replay cache
+        }
+    }
+
+    /** Set pending uploader navigation - also emits to SharedFlow for reliable delivery */
+    fun setPendingUploaderNavigation(uploaderId: String) {
+        _uiState.update { it.copy(pendingUploaderNavigation = uploaderId) }
+        viewModelScope.launch { _uploaderNavigationFlow.emit(uploaderId) }
+    }
+
+    /** Called by HomeScreen/SearchScreen after consuming the pending uploader navigation */
+    fun consumePendingUploaderNavigation() {
+        _uiState.update { it.copy(pendingUploaderNavigation = null) }
+        viewModelScope.launch {
+            _uploaderNavigationFlow.emit(null) // Reset replay cache
         }
     }
 

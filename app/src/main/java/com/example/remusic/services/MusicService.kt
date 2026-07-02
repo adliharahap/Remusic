@@ -182,7 +182,7 @@ class MusicService : MediaSessionService() {
             .build()
             
         val database = MusicDatabase.getDatabase(this)
-        val repository = MusicRepository(database.musicDao())
+        val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
 
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -201,7 +201,8 @@ class MusicService : MediaSessionService() {
                 // Jika tidak valid, kita harus meresolve URI yang kosong / kadaluarsa ini.
                 if (!isUrlValid && !mediaItem.mediaId.startsWith("offline_")) {
                     Log.w("MusicService", "⚠️ URL KOSONG/INVALID di MusicService. Resolving URL dulu untuk ${mediaItem.mediaId}...")
-                    
+                    // Simpan state wasPlaying sebelum pause
+                    val wasPlaying = player.playWhenReady
                     // Pause player sementara agar tidak error saat mencoba memutar url kosong
                     player.pause()
 
@@ -229,7 +230,6 @@ class MusicService : MediaSessionService() {
                                     .build()
 
                                 withContext(Dispatchers.Main) {
-                                    val wasPlaying = player.playWhenReady
                                     player.replaceMediaItem(player.currentMediaItemIndex, newItem)
                                     player.prepare()
                                     if (wasPlaying) player.play()
@@ -297,7 +297,6 @@ class MusicService : MediaSessionService() {
                                     // Simpan posisi sekarang — mungkin sudah ada buffering
                                     // sedikit tapi kalau masih 0, mulai dari awal
                                     val resumePos = player.currentPosition.coerceAtLeast(0L)
-                                    val wasPlaying = player.playWhenReady
                                     
                                     player.replaceMediaItem(newIndex, newItem)
                                     // Jika sudah ada posisi bermakna, lanjutkan dari sana

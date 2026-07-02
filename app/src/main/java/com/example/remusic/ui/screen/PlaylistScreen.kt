@@ -117,6 +117,19 @@ fun PlaylistScreen(
             }
         }
     }
+    // --- Consume pending uploader navigation via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.uploaderNavigationFlow.collect { uploaderId ->
+            if (uploaderId != null && playerUiState.previousTab == "playlist") {
+                playMusicViewModel.consumePendingUploaderNavigation()
+                playlistNavController.navigate(
+                    PlaylistRoute.createRoute(id = uploaderId, type = "UPLOADER")
+                ) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
 
     NavHost(
         navController = playlistNavController,

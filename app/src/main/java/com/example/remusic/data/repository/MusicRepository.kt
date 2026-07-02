@@ -35,11 +35,30 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class MusicRepository(private val musicDao: MusicDao) {
+class MusicRepository(
+    private val musicDao: MusicDao,
+    private val localPlayHistoryDao: com.example.remusic.data.local.dao.LocalPlayHistoryDao
+) {
 
 val lyrics = com.example.remusic.data.repository.lyrics.LyricsRepository(musicDao)
 val queue = com.example.remusic.data.repository.queue.QueueRepository(musicDao)
 val social = com.example.remusic.data.repository.social.UserSocialRepository(musicDao, ::upsertYouTubeSong)
+
+    suspend fun addToPlayHistory(songId: String) {
+        val existing = localPlayHistoryDao.getHistoryById(songId)
+        if (existing != null) {
+            localPlayHistoryDao.insertOrUpdate(existing.copy(playCount = existing.playCount + 1, lastPlayedAt = System.currentTimeMillis()))
+        } else {
+            localPlayHistoryDao.insertOrUpdate(com.example.remusic.data.local.entity.LocalPlayHistory(songId = songId, playCount = 1, lastPlayedAt = System.currentTimeMillis()))
+        }
+        localPlayHistoryDao.enforceLimit()
+    }
+
+    suspend fun getQuickPicks(): List<String> {
+        val top = localPlayHistoryDao.getTopPlayed()
+        val randoms = localPlayHistoryDao.getRandomHistory()
+        return (top + randoms).map { it.songId }
+    }
 
     // Proxy for fetchArtistsByIds to avoid breaking other ViewModels
     suspend fun fetchArtistsByIds(artistIds: List<String>): List<Artist> = social.fetchArtistsByIds(artistIds)

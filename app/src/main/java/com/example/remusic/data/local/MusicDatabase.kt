@@ -13,6 +13,7 @@ import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.local.entity.LikedSong
 import com.example.remusic.data.local.entity.PlaybackQueueEntity
 import com.example.remusic.data.local.entity.SearchHistoryEntity
+import com.example.remusic.data.local.entity.LocalPlayHistory
 
 @Database(
         entities =
@@ -23,14 +24,16 @@ import com.example.remusic.data.local.entity.SearchHistoryEntity
                         SearchHistoryEntity::class,
                         CachedFollowedArtist::class,
                         PlaybackQueueEntity::class,
-                        com.example.remusic.data.local.entity.CachedPlaylist::class],
-        version = 14,
+                        com.example.remusic.data.local.entity.CachedPlaylist::class,
+                        LocalPlayHistory::class],
+        version = 15,
         exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
 abstract class MusicDatabase : RoomDatabase() {
 
     abstract fun musicDao(): MusicDao
+    abstract fun localPlayHistoryDao(): com.example.remusic.data.local.dao.LocalPlayHistoryDao
 
     companion object {
         @Volatile private var INSTANCE: MusicDatabase? = null
@@ -162,6 +165,15 @@ abstract class MusicDatabase : RoomDatabase() {
                     }
                 }
 
+        val MIGRATION_14_15 =
+                object : Migration(14, 15) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                                "CREATE TABLE IF NOT EXISTS `local_play_history` (`songId` TEXT NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`))"
+                        )
+                    }
+                }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE
                     ?: synchronized(this) {
@@ -183,7 +195,8 @@ abstract class MusicDatabase : RoomDatabase() {
                                                 MIGRATION_10_11,
                                                 MIGRATION_11_12,
                                                 MIGRATION_12_13,
-                                                MIGRATION_13_14
+                                                MIGRATION_13_14,
+                                                MIGRATION_14_15
                                         )
                                         .fallbackToDestructiveMigration(true)
                                         .build()

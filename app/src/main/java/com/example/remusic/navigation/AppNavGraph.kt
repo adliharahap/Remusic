@@ -108,6 +108,13 @@ fun AppNavGraph(
                         delay(200)
                         playMusicViewModel.setPendingArtistNavigation(artistId)
                     }
+                },
+                onNavigateToUploader = { uploaderId ->
+                    navController.popBackStack()
+                    coroutineScope.launch {
+                        delay(200)
+                        playMusicViewModel.setPendingUploaderNavigation(uploaderId)
+                    }
                 }
             )
         }

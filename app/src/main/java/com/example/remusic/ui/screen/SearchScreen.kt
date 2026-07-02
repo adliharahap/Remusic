@@ -94,6 +94,22 @@ fun SearchScreen(
         }
     }
 
+    // --- Consume pending uploader navigation via SharedFlow ---
+    LaunchedEffect(Unit) {
+        playMusicViewModel.uploaderNavigationFlow.collect { uploaderId ->
+            if (uploaderId != null && playerUiState.previousTab == "search") {
+                playMusicViewModel.consumePendingUploaderNavigation()
+                searchNavController.navigate(
+                    com.example.remusic.navigation.SearchRoute.createRoute(
+                        id = uploaderId,
+                        type = "UPLOADER"
+                    )
+                ) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
     androidx.navigation.compose.NavHost(
         navController = searchNavController,
         startDestination = com.example.remusic.navigation.SearchRoute.MAIN,
@@ -223,7 +239,7 @@ fun SearchMainScreen(
     LaunchedEffect(searchQuery, combinedSongs, combinedArtists, foundPlaylists, foundUsers) {
         if (searchQuery.isNotEmpty() && combinedSongs.isEmpty() && combinedArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
             showEmptyState = false
-            kotlinx.coroutines.delay(2500) // 2.5 second delay
+            kotlinx.coroutines.delay(5000) // 5 second delay
             if (searchQuery.isNotEmpty() && combinedSongs.isEmpty() && combinedArtists.isEmpty() && foundPlaylists.isEmpty() && foundUsers.isEmpty()) {
                 showEmptyState = true
             }
@@ -835,32 +851,10 @@ fun SearchMainScreen(
                         }
                     }
 
-                    // --- LOADING & ERROR (YT) ---
+                    // --- LOADING (YT) ---
                     if (ytIsLoading) {
                         items(5) {
                             QueueSongCardSkeleton()
-                        }
-                    }
-
-                    ytError?.let { err ->
-                        item {
-                            Text(
-                                err,
-                                color = Color(0xFFE53935),
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-                    }
-
-                    searchError?.let { err ->
-                        item {
-                            Text(
-                                err,
-                                color = Color(0xFFE53935),
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
                         }
                     }
                 }

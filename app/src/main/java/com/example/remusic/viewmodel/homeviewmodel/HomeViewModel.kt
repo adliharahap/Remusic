@@ -36,7 +36,8 @@ sealed class HomeUiState {
         val followedArtists: List<Artist>,
         val mostLoved: List<SongWithArtist>,
         val topTrending: List<SongWithArtist>,
-        val quickPickSongs: List<SongWithArtist>
+        val quickPickSongs: List<SongWithArtist>,
+        val isRefreshing: Boolean = false
     ) : HomeUiState()
     data class Error(val message: String) : HomeUiState()
 }
@@ -52,14 +53,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val database = MusicDatabase.getDatabase(application)
-        repository = MusicRepository(database.musicDao())
+        repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
 
         // Langsung load dari cache dulu agar UI tidak kosong
         val cached = HomeCacheManager.load()
 
         if (cached != null) {
-            _uiState.value = cached
-            Log.d(TAG, "📦 [INIT] Cache tersedia, tampilkan dulu.")
+            val shuffledCache = cached.copy(quickPickSongs = cached.quickPickSongs.shuffled())
+            _uiState.value = shuffledCache
+            Log.d(TAG, "📦 [INIT] Cache tersedia, tampilkan dulu (shuffled).")
         }
         // Tetap fetch online (jika ada internet)
         fetchAllHomeData()
@@ -94,8 +96,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshInBackground() {
         viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState is HomeUiState.Success) {
+                _uiState.value = currentState.copy(isRefreshing = true)
+            }
             try {
-                val newState = buildHomeData() ?: return@launch
+                val newState = buildHomeData()
+                if (newState == null) {
+                    // Reset isRefreshing jika fetch gagal
+                    if (_uiState.value is HomeUiState.Success) {
+                        _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
+                    }
+                    return@launch
+                }
+                
                 _uiState.value = newState
                 HomeCacheManager.save(newState)
                 
@@ -109,6 +123,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d(TAG, "✅ [BG REFRESH] Data diperbarui di background")
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ [BG REFRESH] Gagal: ${e.message}")
+                if (_uiState.value is HomeUiState.Success) {
+                    _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
+                }
             }
         }
     }
@@ -116,8 +133,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun fetchAllHomeData() {
         viewModelScope.launch {
             // Jika tidak ada cache, tampilkan Loading
-            if (_uiState.value !is HomeUiState.Success) {
+            val currentState = _uiState.value
+            if (currentState !is HomeUiState.Success) {
                 _uiState.value = HomeUiState.Loading
+            } else {
+                _uiState.value = currentState.copy(isRefreshing = true)
             }
             try {
                 Log.d(TAG, "🔄 [HOME] Fetching all home data...")
@@ -136,6 +156,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                          // Jangan di-await agar tidak memblokir UI Home
                          launch { repository.synchronizeUserData(userId) }
                     }
+                } else {
+                    // Jika gagal tapi punya cache, hilangkan status refreshing
+                    if (_uiState.value is HomeUiState.Success) {
+                        _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
+                    }
                 }
 
             } catch (e: Exception) {
@@ -143,6 +168,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // Jika gagal dan ada cache, tetap tampilkan cache (jangan tampilkan Error)
                 if (_uiState.value !is HomeUiState.Success) {
                     _uiState.value = HomeUiState.Error(e.message ?: "Terjadi kesalahan saat memuat data.")
+                } else {
+                    _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
                 }
             }
         }
@@ -210,32 +237,39 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     // --- Modular Fetch Functions ---
 
     private suspend fun fetchQuickPickSongs(): List<Song> {
-        val prefs = getApplication<Application>().getSharedPreferences("remusic_home_cache", android.content.Context.MODE_PRIVATE)
-        val lastFetchTime = prefs.getLong("last_quick_pick_time", 0L)
-        val currentTime = System.currentTimeMillis()
-        val twelveHoursInMillis = 12 * 60 * 60 * 1000L
-
-        // Cek apakah sudah lewat 12 jam
-        if (currentTime - lastFetchTime < twelveHoursInMillis) {
-            val cachedHomeData = HomeCacheManager.load()
-            if (cachedHomeData != null && cachedHomeData.quickPickSongs.isNotEmpty()) {
-                Log.d(TAG, "📦 [CACHE] Memuat Quick Picks lama (belum 12 jam).")
-                return cachedHomeData.quickPickSongs.map { it.song }
+        val historyIds = repository.getQuickPicks()
+        val localSongs = mutableListOf<Song>()
+        val db = MusicDatabase.getDatabase(getApplication())
+        
+        if (historyIds.isNotEmpty()) {
+            historyIds.forEach { id ->
+                db.musicDao().getSongById(id)?.let {
+                    localSongs.add(it.toSong())
+                }
+            }
+        }
+        
+        // If we don't have 20 songs, fill the rest from Supabase
+        if (localSongs.size < 20) {
+            val needed = 20 - localSongs.size
+            Log.d(TAG, "🌐 [NETWORK] Local history has ${localSongs.size} songs. Fetching $needed Quick Picks dari RPC...")
+            val moreSongs = SupabaseManager.client.postgrest.rpc(
+                function = "get_random_quick_picks",
+                parameters = buildJsonObject {
+                    put("max_limit", needed + 20) // Fetch extra to handle duplicates/filters
+                }
+            ).decodeList<Song>()
+            
+            // Avoid duplicates
+            val existingIds = localSongs.map { it.id }.toSet()
+            moreSongs.forEach { s ->
+                if (s.id !in existingIds && localSongs.size < 20) {
+                    localSongs.add(s)
+                }
             }
         }
 
-        Log.d(TAG, "🌐 [NETWORK] Memuat Quick Picks baru dari RPC...")
-        val songs = SupabaseManager.client.postgrest.rpc(
-            function = "get_random_quick_picks",
-            parameters = buildJsonObject {
-                put("max_limit", 20)
-            }
-        ).decodeList<Song>()
-            .filter { it.source == "telegram" }
-
-        // Update timestamp setelah berhasil fetch online
-        prefs.edit().putLong("last_quick_pick_time", currentTime).apply()
-        return songs
+        return localSongs.shuffled().take(20)
     }
 
     private suspend fun fetchRecentlyPlayedSongs(): List<Song> {

@@ -70,16 +70,19 @@ import timber.log.Timber
     fun PlayMusicViewModel.setPlaylist(
             songs: List<SongWithArtist>,
             startIndex: Int = 0,
-            overridePlaylistName: String? = null
+            overridePlaylistName: String? = null,
+            forceShuffle: Boolean? = null
     ): Job? {
        Timber.tag("DEBUG_PLAYER").d(
                 
                 "📥 SET PLAYLIST: Menerima ${songs.size} lagu. Start Index: $startIndex"
         )
 
-        // Reset YouTube Radio Pagination Tokens when starting a new playlist
-        youtubeRadioEndpoint = null
-        youtubeRadioContinuation = null
+        _uiState.update {
+            it.copy(
+                playlist = emptyList()
+            )
+        }
 
         // 1. Validasi Awal
         if (songs.isEmpty()) {
@@ -102,10 +105,28 @@ import timber.log.Timber
         val finalPlaylistName = overridePlaylistName ?: _uiState.value.playingMusicFromPlaylist
 
         // 2. Update UI State Langsung (Biar user lihat judul lagu berubah cepat)
+        if (forceShuffle != null) {
+            _uiState.update { it.copy(isShuffleModeEnabled = forceShuffle) }
+            viewModelScope.launch {
+                userPreferencesRepository.setShuffleEnabled(forceShuffle)
+            }
+        }
+        val isShuffle = forceShuffle ?: _uiState.value.isShuffleModeEnabled
+        val actualPlaylist = if (isShuffle && songs.size > 1) {
+            val firstSong = songs[startIndex]
+            val remaining = songs.filterIndexed { i, _ -> i != startIndex }.shuffled()
+            listOf(firstSong) + remaining
+        } else {
+            songs
+        }
+        val actualStartIndex = if (isShuffle) 0 else startIndex
+
         _uiState.update {
             it.copy(
-                    playlist = songs,
-                    currentSong = songs[startIndex],
+                    originalPlaylist = songs,
+                    playlist = actualPlaylist,
+                    currentSong = actualPlaylist[actualStartIndex],
+                    currentSongIndex = actualStartIndex,
                     playingMusicFromPlaylist = finalPlaylistName
             )
         }
@@ -125,11 +146,11 @@ import timber.log.Timber
         return viewModelScope.launch(Dispatchers.IO) {
 
             // A. Ambil Lagu yang mau dimainkan
-            val songToPlay = songs.getOrNull(startIndex) ?: return@launch
+            val songToPlay = actualPlaylist.getOrNull(actualStartIndex) ?: return@launch
 
            Timber.tag("DEBUG_PLAYER").d(
                     
-                    "⚡ PROCESS: Resolving URL untuk lagu pertama (Index $startIndex): ${songToPlay.song.title}"
+                    "⚡ PROCESS: Resolving URL untuk lagu pertama (Index $actualStartIndex): ${songToPlay.song.title}"
             )
             // B. Resolve URL (Tunggu sebentar request ke Vercel/Cache)
             // Ini langkah kuncinya! Kita putuskan mau pakai link Telegram atau AudioURL biasa
@@ -172,9 +193,9 @@ import timber.log.Timber
            Timber.tag("DEBUG_PLAYER").d( "🛠 MAPPING: Membuat MediaItems...")
 
             // D. Mapping jadi MediaItems (DI DALAM COROUTINE)
-            // Kenapa di dalam? Karena kita butuh 'resolvedUrl' untuk index == startIndex
+            // Kenapa di dalam? Karena kita butuh 'resolvedUrl' untuk index == actualStartIndex
             val mediaItems =
-                    songs.mapIndexed { index, s ->
+                    actualPlaylist.mapIndexed { index, s ->
                         val meta =
                                 MediaMetadata.Builder()
                                         .setTitle(s.song.title)
@@ -184,13 +205,12 @@ import timber.log.Timber
                                         )
                                         .build()
 
-                        // LOGIKA PENTING:
-                        // Jika ini lagu yang mau dimainkan (startIndex), pakai 'resolvedUrl' (hasil
+                        // Jika ini lagu yang mau dimainkan (actualStartIndex), pakai 'resolvedUrl' (hasil
                         // Vercel).
                         // Jika lagu lain, pakai 'audioUrl' biasa dulu (nanti di-prefetch sambil
                         // jalan).
                         val urlToUse =
-                                if (index == startIndex) resolvedUrl else (s.song.audioUrl ?: "")
+                                if (index == actualStartIndex) resolvedUrl else (s.song.audioUrl ?: "")
 
                         val item =
                                 MediaItem.Builder()
@@ -201,14 +221,12 @@ import timber.log.Timber
                                         .build()
 
                         // Debug log (Sesuai kode Mas)
-                        if (index == startIndex) {
+                        if (index == actualStartIndex) {
                            Timber.tag("DEBUG_PLAYER").d(
-                                    
                                     "   🎵 [Index $index] (ACTIVE) ${s.song.title} -> $urlToUse"
                             )
                         } else {
                            Timber.tag("DEBUG_PLAYER").d(
-                                    
                                     "   ❓ [Index $index] (QUEUE) URL Masih Mentah: $urlToUse"
                             )
                         }
@@ -362,165 +380,162 @@ import timber.log.Timber
 
 
     /**
-     * Fetch 50 YouTube-recommended songs based on [seedSong] using YouTube.next() (automix).
-     * Results are appended to the current queue silently, without interrupting playback.
+     * Fetch YouTube-recommended songs based on [seedSong] using YouTube.next() + relatedEndpoint.
+     * This avoids the RDAMVM (Automix) playlist which is often too biased to the exact same artist,
+     * and instead fetches the "Up Next / Related" list which has much better genre matching and variety.
      */
     suspend fun PlayMusicViewModel.fetchYouTubeRecommendations(seedSong: SongWithArtist) {
         val videoId = seedSong.song.id
-        var isRetry = false
 
-        while (true) {
-            smartQueueMutex.withLock {
-                try {
-                    var finalUniqueNew = emptyList<SongWithArtist>()
-                    var pagesFetched = 0
-                    val maxPages = 3
+        smartQueueMutex.withLock {
+            try {
+                var recommendedSongItems = emptyList<com.metrolist.innertube.models.SongItem>()
 
-                    while (pagesFetched < maxPages && finalUniqueNew.isEmpty()) {
-                        var recommendedSongItems: List<com.metrolist.innertube.models.SongItem> = emptyList()
-                        var attempt = 0
+                // ==========================================
+                // STRATEGI 1: Related Endpoint (Variasi Terbaik)
+                // ==========================================
+                Timber.tag("DEBUG_PLAYER").d("▶ [YT RECO] Strategi 1: Fetch Related Endpoint")
+                val endpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = videoId)
+                val nextResult = com.metrolist.innertube.YouTube.next(endpoint, null).getOrNull()
+                val relEndpoint = nextResult?.relatedEndpoint
 
-                        // Use existing endpoint or create a new one for this seed
-                        if (youtubeRadioEndpoint == null) {
-                            youtubeRadioEndpoint = com.metrolist.innertube.models.WatchEndpoint(
-                                videoId = videoId,
-                                playlistId = "RDAMVM$videoId"
-                            )
-                        }
-
-                        while (attempt < 3 && recommendedSongItems.isEmpty()) {
-                           Timber.tag("DEBUG_PLAYER").d( "▶ YouTube.next(endpoint=${youtubeRadioEndpoint?.videoId}, continuation=$youtubeRadioContinuation)")
-
-                            val endpoint = youtubeRadioEndpoint!!
-                            val nextResult = com.metrolist.innertube.YouTube.next(endpoint, youtubeRadioContinuation).getOrNull()
-
-                            if (nextResult != null) {
-                                youtubeRadioEndpoint = nextResult.endpoint
-                                youtubeRadioContinuation = nextResult.continuation
-                            }
-
-                            var items = nextResult?.items ?: emptyList()
-
-                            val relEndpoint = nextResult?.relatedEndpoint
-                            if (items.size <= 1 && relEndpoint != null) {
-                               Timber.tag("DEBUG_PLAYER").d( "⚠️ [YT RECO] Automix empty, falling back to relatedEndpoint")
-                                val relatedPage = com.metrolist.innertube.YouTube.related(relEndpoint).getOrNull()
-                                if (relatedPage != null && relatedPage.songs.isNotEmpty()) {
-                                    items = items + relatedPage.songs
-                                }
-                            }
-
-                            recommendedSongItems = items
-                                .filter { it.id != videoId }
-                                .distinctBy { it.id }
-
-                            if (recommendedSongItems.isEmpty()) {
-                                if (youtubeRadioContinuation != null) {
-                                    Timber.tag("DEBUG_PLAYER").w( "⚠️ [YT RECO] Attempt ${attempt+1}: Empty items with continuation. Clearing continuation and retrying...")
-                                    youtubeRadioContinuation = null
-                                } else if (youtubeRadioEndpoint?.playlistId != null) {
-                                    Timber.tag("DEBUG_PLAYER").w( "⚠️ [YT RECO] Attempt ${attempt+1}: Empty items with playlistId. Retrying without playlistId.")
-                                    youtubeRadioEndpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = videoId)
-                                }
-                            }
-                            attempt++
-                        }
-
-                        if (recommendedSongItems.isEmpty()) break
-
-                        val converted = recommendedSongItems.map { item ->
-                            val primaryArtist = item.artists.firstOrNull()
-                            val aId = primaryArtist?.id ?: ""
-                            val aName = primaryArtist?.name ?: "YouTube Music"
-                            val song = Song(
-                                id = item.id,
-                                title = item.title,
-                                coverUrl = item.thumbnail,
-                                source = "youtube",
-                                artistId = aId.takeIf { it.isNotBlank() },
-                                featuredArtists = item.artists.drop(1).map { it.name },
-                                telegramFileId = null,
-                                audioUrl = null
-                            )
-                            val artist = Artist(id = aId, name = aName)
-                            SongWithArtist(song, artist)
-                        }
-
-                        val musicDao = MusicDatabase.getDatabase(getApplication()).musicDao()
-                        converted.forEach { swa ->
-                            if (musicDao.getSongById(swa.song.id) == null) {
-                                musicDao.insertSong(
-                                    com.example.remusic.data.local.entity.CachedSong(
-                                        id = swa.song.id,
-                                        title = swa.song.title,
-                                        artistName = swa.artist?.name ?: "YouTube Music",
-                                        coverUrl = swa.song.coverUrl,
-                                        lyrics = null,
-                                        uploaderUserId = null,
-                                        telegramFileId = null,
-                                        telegramDirectUrl = null,
-                                        source = "youtube",
-                                        youtubeId = swa.song.youtubeId ?: swa.song.id,
-                                        artistId = swa.song.artistId,
-                                        urlExpiryTime = 0L,
-                                        lastPlayedAt = 0L
-                                    )
-                                )
-                            }
-                        }
-
-                        val existingIds = _uiState.value.playlist.map { it.song.id }.toSet()
-                        val uniqueOnThisPage = converted.filter { it.song.id !in existingIds }
-
-                        if (uniqueOnThisPage.isNotEmpty()) {
-                            finalUniqueNew = uniqueOnThisPage.take(50)
-                           Timber.tag("DEBUG_PLAYER").d( "✅ [YT RECO] Found ${finalUniqueNew.size} unique songs on page ${pagesFetched + 1}")
-                        } else {
-                            Timber.tag("DEBUG_PLAYER").w( "⚠️ [YT RECO] Page ${pagesFetched + 1} had no unique songs. Advancing to next page via continuation...")
-                            if (youtubeRadioContinuation == null) break
-                        }
-                        pagesFetched++
+                if (relEndpoint != null) {
+                    val relatedPage = com.metrolist.innertube.YouTube.related(relEndpoint).getOrNull()
+                    if (relatedPage != null && relatedPage.songs.isNotEmpty()) {
+                        // Gabungkan Up Next items dan Related items
+                        val upNextItems = nextResult.items ?: emptyList()
+                        recommendedSongItems = upNextItems + relatedPage.songs
+                        Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Strategi 1 Sukses: Didapat ${recommendedSongItems.size} lagu")
                     }
-
-                    if (finalUniqueNew.isEmpty()) {
-                        if (!isRetry) {
-                            Timber.tag("DEBUG_PLAYER").w( "⚠️ [YT RECO] FAILED after $pagesFetched pages. Resetting session and trying fresh seed...")
-                            youtubeRadioEndpoint = null
-                            youtubeRadioContinuation = null
-                            isRetry = true
-                            return@withLock // This will exit the lock and loop again because finalUniqueNew is empty
-                        } else {
-                           Timber.tag("DEBUG_PLAYER").e( "❌ [YT RECO] FAILED even after session reset. Giving up.")
-                            withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(getApplication(), "Gagal memuat rekomendasi YouTube.", android.widget.Toast.LENGTH_LONG).show()
-                            }
-                            return
-                        }
-                    }
-
-                    val currentPlaylist = _uiState.value.playlist.toMutableList()
-                    currentPlaylist.addAll(finalUniqueNew)
-                    val finalPlaylist = currentPlaylist.toList()
-                    _uiState.update { it.copy(playlist = finalPlaylist) }
-                    repository.queue.savePlaybackQueue(finalPlaylist, _uiState.value.playingMusicFromPlaylist)
-
-                    withContext(Dispatchers.Main) {
-                        val controller = mediaController ?: return@withContext
-                        val newMediaItems = finalUniqueNew.map { createMediaItem(it, "") }
-                        controller.addMediaItems(newMediaItems)
-                       Timber.tag("DEBUG_PLAYER").d( "✅ [YT RECO] Added ${newMediaItems.size} to MediaController queue")
-                    }
-                    return // SUCCESS, exit the while(true) loop
-
-                } catch (e: Exception) {
-                   Timber.tag("DEBUG_PLAYER").e( "❌ [YT RECO] fetchYouTubeRecommendations failed: ${e.message}")
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(getApplication(), "Gagal memuat rekomendasi YouTube: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                    }
-                    return
                 }
-            } // end Mutex lock
-        } // end while(true) retry loop
+
+                // ==========================================
+                // STRATEGI 2: Automix (RDAMVM)
+                // ==========================================
+                if (recommendedSongItems.isEmpty()) {
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Strategi 1 Gagal. Fallback ke Strategi 2: Automix (RDAMVM)")
+                    val rdamvmEndpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = videoId, playlistId = "RDAMVM$videoId")
+                    val rdamvmResult = com.metrolist.innertube.YouTube.next(rdamvmEndpoint, null).getOrNull()
+                    if (rdamvmResult != null && rdamvmResult.items.isNotEmpty()) {
+                        recommendedSongItems = rdamvmResult.items
+                        Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Strategi 2 Sukses: Didapat ${recommendedSongItems.size} lagu")
+                    }
+                }
+
+                // ==========================================
+                // STRATEGI 3: GetQueue API murni
+                // ==========================================
+                if (recommendedSongItems.isEmpty()) {
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Strategi 2 Gagal. Fallback ke Strategi 3: GetQueue API")
+                    val queueResult = com.metrolist.innertube.YouTube.queue(videoIds = listOf(videoId)).getOrNull()
+                    if (queueResult != null && queueResult.isNotEmpty()) {
+                        recommendedSongItems = queueResult
+                        Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Strategi 3 Sukses: Didapat ${recommendedSongItems.size} lagu")
+                    }
+                }
+
+                fun String.normalizeForDeduplication(): String {
+                    return this
+                        .replace(Regex("(?i)\\s*\\(.*?\\)"), "") // Hapus (Slowed), (Acoustic), dll
+                        .replace(Regex("(?i)\\s*\\[.*?\\]"), "")
+                        .replace(Regex("(?i)\\s*[-–—].*"), "") // Hapus - string version, dll
+                        .replace(Regex("(?i)slowed|sped up|reverb|acoustic|instrumental|a cappella|live|remix|version|vip|mix|preview"), "")
+                        .replace(Regex("[^a-zA-Z0-9]"), "")
+                        .lowercase()
+                }
+
+                val seedNormalizedTitle = seedSong.song.title.normalizeForDeduplication()
+
+                recommendedSongItems = recommendedSongItems
+                    .filter { it.id != videoId }
+                    .distinctBy { it.title.normalizeForDeduplication() }
+                    .filter { it.title.normalizeForDeduplication() != seedNormalizedTitle }
+                if (recommendedSongItems.isEmpty()) {
+                    Timber.tag("DEBUG_PLAYER").e("❌ [YT RECO] Gagal mendapatkan rekomendasi YouTube sama sekali.")
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(getApplication(), "Gagal memuat antrean rekomendasi YouTube.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    return@withLock
+                }
+
+                val converted = recommendedSongItems.map { item ->
+                    val primaryArtist = item.artists.firstOrNull()
+                    val aId = primaryArtist?.id ?: ""
+                    val aName = primaryArtist?.name ?: "YouTube Music"
+                    val song = Song(
+                        id = item.id,
+                        title = item.title,
+                        coverUrl = item.thumbnail,
+                        source = "youtube",
+                        artistId = aId.takeIf { it.isNotBlank() },
+                        featuredArtists = item.artists.drop(1).map { it.name },
+                        telegramFileId = null,
+                        audioUrl = null
+                    )
+                    val artist = Artist(id = aId, name = aName)
+                    SongWithArtist(song, artist)
+                }
+
+                val musicDao = MusicDatabase.getDatabase(getApplication()).musicDao()
+                converted.forEach { swa ->
+                    if (musicDao.getSongById(swa.song.id) == null) {
+                        musicDao.insertSong(
+                            com.example.remusic.data.local.entity.CachedSong(
+                                id = swa.song.id,
+                                title = swa.song.title,
+                                artistName = swa.artist?.name ?: "YouTube Music",
+                                coverUrl = swa.song.coverUrl,
+                                lyrics = null,
+                                uploaderUserId = null,
+                                telegramFileId = null,
+                                telegramDirectUrl = null,
+                                source = "youtube",
+                                youtubeId = swa.song.youtubeId ?: swa.song.id,
+                                artistId = swa.song.artistId,
+                                urlExpiryTime = 0L,
+                                lastPlayedAt = 0L
+                            )
+                        )
+                    }
+                }
+
+                val existingIds = _uiState.value.playlist.map { it.song.id }.toSet()
+                val uniqueNewSongs = converted.filter { it.song.id !in existingIds }.take(30)
+
+                if (uniqueNewSongs.isEmpty()) {
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Semua lagu rekomendasi sudah ada di antrean.")
+                    return@withLock
+                }
+
+                Timber.tag("DEBUG_QUEUE_DUMP").d("================ QUEUE GENERATED ================")
+                Timber.tag("DEBUG_QUEUE_DUMP").d("Seed Video ID: $videoId")
+                Timber.tag("DEBUG_QUEUE_DUMP").d("Total Lagu Baru: ${uniqueNewSongs.size}")
+                uniqueNewSongs.forEachIndexed { index, swa ->
+                    Timber.tag("DEBUG_QUEUE_DUMP").d("${index + 1}. ${swa.song.title} - ${swa.artist?.name ?: "Unknown Artist"} (ID: ${swa.song.id})")
+                }
+                Timber.tag("DEBUG_QUEUE_DUMP").d("=================================================")
+
+                val currentPlaylist = _uiState.value.playlist.toMutableList()
+                currentPlaylist.addAll(uniqueNewSongs)
+                val finalPlaylist = currentPlaylist.toList()
+                
+                _uiState.update { it.copy(playlist = finalPlaylist) }
+                repository.queue.savePlaybackQueue(finalPlaylist, _uiState.value.playingMusicFromPlaylist)
+
+                withContext(Dispatchers.Main) {
+                    val controller = mediaController ?: return@withContext
+                    val newMediaItems = uniqueNewSongs.map { createMediaItem(it, "") }
+                    controller.addMediaItems(newMediaItems)
+                    Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Berhasil menambahkan ${newMediaItems.size} lagu ke MediaController")
+                }
+
+            } catch (e: Exception) {
+                Timber.tag("DEBUG_PLAYER").e("❌ [YT RECO] fetchYouTubeRecommendations failed: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(getApplication(), "Gagal memuat rekomendasi YouTube: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
 
@@ -711,13 +726,13 @@ import timber.log.Timber
         }
 
         val currentShuffleState = _uiState.value.isShuffleModeEnabled
+        val newState = !currentShuffleState
        Timber.tag("DEBUG_PLAYER").d(
-                
-                "COMMAND: Toggling shuffle. Current state is $currentShuffleState. Setting to ${!currentShuffleState}"
+                "COMMAND: Toggling shuffle. Current state is $currentShuffleState. Setting to $newState"
         )
-        mediaController?.shuffleModeEnabled = !currentShuffleState
+        
+        applyShuffleState(newState)
     }
-
 
     /**
      * Set shuffle mode secara LANGSUNG tanpa toggle. Digunakan oleh AutoPlaylistHeader agar tidak
@@ -725,7 +740,137 @@ import timber.log.Timber
      */
     fun PlayMusicViewModel.forceSetShuffle(enabled: Boolean) {
        Timber.tag("DEBUG_PLAYER").d( "🔀 [FORCE SHUFFLE] Set shuffle to: $enabled")
-        mediaController?.shuffleModeEnabled = enabled
+       applyShuffleState(enabled)
+    }
+
+    fun PlayMusicViewModel.applyShuffleState(enabled: Boolean) {
+        val currentState = _uiState.value
+        if (currentState.isShuffleModeEnabled == enabled) return
+        
+        // Simpan ke preferensi
+        viewModelScope.launch {
+            userPreferencesRepository.setShuffleEnabled(enabled)
+        }
+        
+        val controller = mediaController ?: return
+        val currentSong = currentState.currentSong ?: return
+        
+        if (enabled) {
+            // Aktifkan Shuffle: Acak originalPlaylist, tapi currentSong tetap di atas (index 0)
+            val original = currentState.originalPlaylist.ifEmpty { currentState.playlist }
+            val remaining = original.filter { it.song.id != currentSong.song.id }.shuffled()
+            val newPlaylist = listOf(currentSong) + remaining
+            
+            _uiState.update { 
+                it.copy(
+                    isShuffleModeEnabled = true,
+                    originalPlaylist = original,
+                    playlist = newPlaylist,
+                    currentSongIndex = 0
+                ) 
+            }
+            // Update ExoPlayer
+            viewModelScope.launch(Dispatchers.Main) {
+                // Jangan panggil replaceMediaItem, panggil moveMediaItem atau ganti semua?
+                // Lebih aman panggil setMediaItems tanpa mereset posisi, ATAU moveMediaItem.
+                // Tapi setPlaylist memanggil setMediaItems dari awal.
+                // Kita bisa menggunakan ExoPlayer addMediaItems / moveMediaItem, tapi paling mudah:
+                val mediaItems = newPlaylist.map { s ->
+                    val meta = androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(s.song.title)
+                        .setArtist(s.artist?.name)
+                        .setArtworkUri(s.song.coverUrl?.takeIf { it.isNotBlank() }?.toUri())
+                        .build()
+                    val urlToUse = if (s.song.id == currentSong.song.id) {
+                        // Gunakan URL yang sedang diputar (ambil dari ExoPlayer)
+                        controller.currentMediaItem?.localConfiguration?.uri?.toString() ?: (s.song.audioUrl ?: "")
+                    } else {
+                        (s.song.audioUrl ?: "")
+                    }
+                    androidx.media3.common.MediaItem.Builder()
+                        .setMediaId(s.song.id)
+                        .setUri(urlToUse)
+                        .setCustomCacheKey(s.song.effectiveId)
+                        .setMediaMetadata(meta)
+                        .build()
+                }
+                
+                val count = controller.mediaItemCount
+                val currentIndex = controller.currentMediaItemIndex
+
+                // Hapus lagu-lagu setelah current
+                if (currentIndex + 1 < count) {
+                    controller.removeMediaItems(currentIndex + 1, count)
+                }
+                // Hapus lagu-lagu sebelum current
+                if (currentIndex > 0) {
+                    controller.removeMediaItems(0, currentIndex)
+                }
+                
+                // Tambahkan lagu-lagu sisa (setelah current) 
+                val itemsAfter = mediaItems.subList(1, mediaItems.size)
+                if (itemsAfter.isNotEmpty()) {
+                    controller.addMediaItems(1, itemsAfter)
+                }
+            }
+        } else {
+            // Matikan Shuffle: Kembalikan ke originalPlaylist
+            val original = currentState.originalPlaylist
+            if (original.isNotEmpty()) {
+                val newIndex = original.indexOfFirst { it.song.id == currentSong.song.id }.takeIf { it >= 0 } ?: 0
+                _uiState.update { 
+                    it.copy(
+                        isShuffleModeEnabled = false,
+                        playlist = original,
+                        currentSongIndex = newIndex
+                    ) 
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    val mediaItems = original.map { s ->
+                        val meta = androidx.media3.common.MediaMetadata.Builder()
+                            .setTitle(s.song.title)
+                            .setArtist(s.artist?.name)
+                            .setArtworkUri(s.song.coverUrl?.takeIf { it.isNotBlank() }?.toUri())
+                            .build()
+                        val urlToUse = if (s.song.id == currentSong.song.id) {
+                            controller.currentMediaItem?.localConfiguration?.uri?.toString() ?: (s.song.audioUrl ?: "")
+                        } else {
+                            (s.song.audioUrl ?: "")
+                        }
+                        androidx.media3.common.MediaItem.Builder()
+                            .setMediaId(s.song.id)
+                            .setUri(urlToUse)
+                            .setCustomCacheKey(s.song.effectiveId)
+                            .setMediaMetadata(meta)
+                            .build()
+                    }
+                    
+                    val count = controller.mediaItemCount
+                    val currentIndex = controller.currentMediaItemIndex
+
+                    // Hapus lagu-lagu setelah current
+                    if (currentIndex + 1 < count) {
+                        controller.removeMediaItems(currentIndex + 1, count)
+                    }
+                    // Hapus lagu-lagu sebelum current
+                    if (currentIndex > 0) {
+                        controller.removeMediaItems(0, currentIndex)
+                    }
+                    
+                    // Tambahkan lagu-lagu sebelum current (newIndex adalah posisi current di original playlist)
+                    val itemsBefore = mediaItems.subList(0, newIndex)
+                    if (itemsBefore.isNotEmpty()) {
+                        controller.addMediaItems(0, itemsBefore)
+                    }
+                    
+                    // Tambahkan lagu-lagu setelah current
+                    val itemsAfter = mediaItems.subList(newIndex + 1, mediaItems.size)
+                    if (itemsAfter.isNotEmpty()) {
+                        controller.addMediaItems(newIndex + 1, itemsAfter)
+                    }
+                }
+            }
+        }
     }
 
 

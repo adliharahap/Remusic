@@ -33,4 +33,22 @@ data class CachedSong(
 
     // ID YouTube 11 karakter untuk lagu shadow Supabase yang primary key-nya UUID
     val youtubeId: String? = null
-)
+) {
+    fun toSong(): com.example.remusic.data.model.Song {
+        return com.example.remusic.data.model.Song(
+            id = id,
+            title = title,
+            lyrics = lyrics,
+            coverUrl = coverUrl,
+            canvasUrl = canvasUrl,
+            artistId = artistId,
+            uploaderUserId = uploaderUserId,
+            moods = moods,
+            language = language,
+            telegramFileId = telegramFileId,
+            telegramDirectUrl = telegramDirectUrl,
+            source = source,
+            youtubeId = youtubeId
+        )
+    }
+}

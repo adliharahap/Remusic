@@ -119,10 +119,10 @@ import timber.log.Timber
                     syncRoutingToSystem()
                                 viewModelScope.launch {
                         val savedShuffleMode = userPreferencesRepository.shuffleEnabledFlow.first()
-                        mediaController?.shuffleModeEnabled = savedShuffleMode
+                        mediaController?.shuffleModeEnabled = false // MUST ALWAYS BE FALSE FOR MANUAL SHUFFLE
                         // Update UI state juga agar konsisten saat awal
                         _uiState.update { it.copy(isShuffleModeEnabled = savedShuffleMode) }
-                       Timber.tag("DEBUG_PLAYER").d( "Applied saved shuffle mode: $savedShuffleMode")
+                       Timber.tag("DEBUG_PLAYER").d( "Applied saved shuffle mode (to UI state): $savedShuffleMode")
                     }
                     viewModelScope.launch {
                         val savedRepeatMode = userPreferencesRepository.repeatModeFlow.first()
@@ -321,10 +321,7 @@ import timber.log.Timber
                                 )
 
                                 // URL resolution is now handled by MusicService.kt directly.
-                                // We just need to ensure the player plays if it was stuck.
-                                if (!player.isPlaying && player.playbackState != Player.STATE_IDLE) {
-                                    player.play()
-                                }
+                                // We rely on MusicService's resume logic to maintain playback state.
 
                                 // PRE-FETCH: Siapkan lagu tetangga HANYA untuk AUTO/SEEK.
                                 // PLAYLIST_CHANGED (dari replaceMediaItem) DILARANG mem-prefetch
@@ -384,18 +381,11 @@ import timber.log.Timber
 
                     // Listener untuk update shuffle dan repeat mode
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                       Timber.tag("DEBUG_PLAYER").d(
-                                
-                                "LISTENER: Shuffle mode changed to: $shuffleModeEnabled"
-                        )
-                        _uiState.update { it.copy(isShuffleModeEnabled = shuffleModeEnabled) }
-
-                        viewModelScope.launch {
-                            userPreferencesRepository.setShuffleEnabled(shuffleModeEnabled)
-                           Timber.tag("DEBUG_PLAYER").d(
-                                    
-                                    "Saved new shuffle mode: $shuffleModeEnabled"
-                            )
+                        super.onShuffleModeEnabledChanged(shuffleModeEnabled)
+                        // Karena kita pakai manual shuffle, kita hiraukan perubahan dari ExoPlayer
+                        // kecuali kalau dipaksa true oleh suatu hal, kita kembalikan ke false.
+                        if (shuffleModeEnabled) {
+                            mediaController?.shuffleModeEnabled = false
                         }
                     }
 
@@ -641,6 +631,7 @@ import timber.log.Timber
                                             artistName = currentSongWA?.displayArtistName,
                                             artistPhoto = currentSongWA?.artist?.photoUrl
                                         )
+                                        repository.addToPlayHistory(currentSongId)
                                     }
                                     lastIncrementedSongId =
                                             currentSongId // Lock agar tidak double count
