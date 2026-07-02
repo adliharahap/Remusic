@@ -67,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -99,7 +100,8 @@ data class PlaylistItem(
 @Composable
 fun PlaylistScreen(
     onCreatePlaylistClick: () -> Unit,
-    playMusicViewModel: PlayMusicViewModel
+    playMusicViewModel: PlayMusicViewModel,
+    rootNavController: NavController
 ) {
     val playlistNavController = rememberNavController()
     val playerUiState by playMusicViewModel.uiState.collectAsState()
@@ -173,14 +175,18 @@ fun PlaylistScreen(
                 playlistCoverUrl = decodedCoverUrl,
                 playlistType = type,
                 playlistId = argsId,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onAddSongClick = {
+                    rootNavController.navigate("add_song_to_playlist/$argsId")
+                }
             )
         }
 
         composable(PlaylistRoute.OFFLINE_PLAYLIST) {
-            OfflinePlaylistScreen(
+            com.example.remusic.ui.screen.offline.OfflinePlaylistScreen(
                 playMusicViewModel = playMusicViewModel,
-                onBack = { playlistNavController.popBackStack() }
+                onBack = { playlistNavController.popBackStack() },
+                showBottomPlayer = false
             )
         }
 

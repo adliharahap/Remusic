@@ -49,6 +49,7 @@ fun QueueSongCard(
     sourceLabel: String? = null,
     isEditMode: Boolean = false,
     dragModifier: Modifier = Modifier,
+    trailingIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.MoreVert,
     onClickListener: (index: Int) -> Unit = {},
     onMoreClick: () -> Unit = {}
 ) {
@@ -197,8 +198,8 @@ fun QueueSongCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             Icon(
-                imageVector = Icons.Outlined.MoreVert,
-                contentDescription = "more",
+                imageVector = trailingIcon,
+                contentDescription = "Action",
                 tint = Color.White.copy(0.8f),
                 modifier = Modifier
                     .size(24.dp)

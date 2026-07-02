@@ -80,7 +80,17 @@ fun AppNavGraph(
         composable(
             route = "login",
         ) {
-            LoginScreen(onGoogleSignInClick = onGoogleSignInClick)
+            LoginScreen(
+                onGoogleSignInClick = onGoogleSignInClick,
+                onOfflineClick = { navController.navigate(PlaylistRoute.OFFLINE_PLAYLIST) }
+            )
+        }
+        composable(PlaylistRoute.OFFLINE_PLAYLIST) {
+            com.example.remusic.ui.screen.offline.OfflinePlaylistScreen(
+                playMusicViewModel = playMusicViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = { navController.navigate("playmusic") }
+            )
         }
         // Removed Search routes from here as they are now handled in BottomNavGraph (MainScreen)
         composable(route = "main") {
@@ -116,6 +126,17 @@ fun AppNavGraph(
                         playMusicViewModel.setPendingUploaderNavigation(uploaderId)
                     }
                 }
+            )
+        }
+        composable(
+            route = "add_song_to_playlist/{playlistId}",
+            arguments = listOf(androidx.navigation.navArgument("playlistId") { type = androidx.navigation.NavType.StringType })
+        ) { backStackEntry ->
+            val playlistId = backStackEntry.arguments?.getString("playlistId") ?: return@composable
+            com.example.remusic.ui.screen.AddSongToPlaylistScreen(
+                playlistId = playlistId,
+                playMusicViewModel = playMusicViewModel,
+                navController = navController
             )
         }
     }

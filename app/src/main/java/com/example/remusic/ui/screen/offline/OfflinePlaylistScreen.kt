@@ -62,10 +62,14 @@ import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
 import com.example.remusic.viewmodel.playmusic.PlayerUiState
 import kotlinx.coroutines.launch
 
+import com.example.remusic.ui.components.BottomPlayerCard
+
 @Composable
 fun OfflinePlaylistScreen(
     playMusicViewModel: PlayMusicViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showBottomPlayer: Boolean = true,
+    onOpenPlayer: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = remember { UserPreferencesRepository(context) }
@@ -168,6 +172,8 @@ fun OfflinePlaylistScreen(
         offlineMusicViewModel = offlineMusicViewModel,
         playMusicViewModel = playMusicViewModel,
         onMoreClick = { selectedSong = it },
+        showBottomPlayer = showBottomPlayer,
+        onOpenPlayer = onOpenPlayer,
         onBack = onBack
     )
 
@@ -223,6 +229,8 @@ fun OfflinePlaylistContent(
     offlineMusicViewModel: OfflineMusicViewModel,
     playMusicViewModel: PlayMusicViewModel,
     onMoreClick: (SongWithArtist) -> Unit,
+    showBottomPlayer: Boolean,
+    onOpenPlayer: () -> Unit,
     onBack: () -> Unit
 ) {
     val accentBlue = Color(0xFF1E88E5)
@@ -553,6 +561,20 @@ fun OfflinePlaylistContent(
             ) {
                 CircularProgressIndicator(color = accentBlue)
             }
+        }
+
+        // Bottom Player
+        if (showBottomPlayer) {
+            BottomPlayerCard(
+                uiState = playerUiState,
+                onPlayPauseClick = { playMusicViewModel.togglePlayPause() },
+                onNextClick = { playMusicViewModel.nextSong() },
+                onCardClick = onOpenPlayer,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp) // Beri jarak sedikit dari bawah
+            )
         }
     }
 }

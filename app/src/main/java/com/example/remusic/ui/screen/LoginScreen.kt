@@ -43,7 +43,7 @@ import com.example.remusic.R
 import com.example.remusic.ui.theme.AppFont
 
 @Composable
-fun LoginScreen(onGoogleSignInClick: () -> Unit) {
+fun LoginScreen(onGoogleSignInClick: () -> Unit, onOfflineClick: () -> Unit = {}) {
 
     // --- State untuk mengontrol animasi muncul (Fade & Slide In) ---
     var startAnimation by remember { mutableStateOf(false) }
@@ -135,31 +135,81 @@ fun LoginScreen(onGoogleSignInClick: () -> Unit) {
             )
         }
 
-        // 🔹 Tombol Google di bawah layar
-        Button(
-            onClick = onGoogleSignInClick,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+        // 🔹 Container Tombol di bawah layar
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(start = 15.dp, end = 15.dp, bottom = 60.dp)
                 .fillMaxWidth()
-                // Terapkan animasi pada tombol juga
                 .alpha(alphaAnim.value)
                 .offset(y = yOffsetAnim.value.dp),
-            shape = RoundedCornerShape(20),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.google),
-                contentDescription = "Google Icon",
+            Button(
+                onClick = onGoogleSignInClick,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20),
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.google),
+                    contentDescription = "Google Icon",
+                    modifier = Modifier
+                        .size(34.dp)
+                        .padding(end = 8.dp)
+                )
+                Text(
+                    text = "Login with Google",
+                    color = Color.Black,
+                    fontSize = 16.sp,
+                    fontFamily = AppFont.RobotoMedium
+                )
+            }
+            androidx.compose.foundation.layout.Row(
                 modifier = Modifier
-                    .size(34.dp)
-                    .padding(end = 8.dp)
-            )
-            Text(
-                text = "Login with Google",
-                color = Color.Black,
-                fontSize = 16.sp,
-                fontFamily = AppFont.RobotoMedium
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp, horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.5f))
+                            )
+                        )
+                )
+                Text(
+                    text = "or",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
+                    fontFamily = AppFont.Poppins,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                colors = listOf(Color.White.copy(alpha = 0.5f), Color.Transparent)
+                            )
+                        )
+                )
+            }
+
+            androidx.compose.foundation.text.ClickableText(
+                text = androidx.compose.ui.text.AnnotatedString("listening offline musics"),
+                onClick = { onOfflineClick() },
+                style = androidx.compose.ui.text.TextStyle(
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontFamily = AppFont.Poppins,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                ),
+                modifier = Modifier.padding(bottom = 8.dp)
             )
         }
     }

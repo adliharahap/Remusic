@@ -70,6 +70,7 @@ data class Song2(
 fun SearchScreen(
     searchViewModel: com.example.remusic.viewmodel.searchviewmodel.SearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     playMusicViewModel: com.example.remusic.viewmodel.playmusic.PlayMusicViewModel,
+    rootNavController: androidx.navigation.NavController,
     isSearchActive: Boolean = false,
     onSearchActiveChange: (Boolean) -> Unit = {}
 ) {
@@ -178,7 +179,10 @@ fun SearchScreen(
                 playlistCoverUrl = "", // Will be fetched
                 playlistType = type,
                 playlistId = id,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onAddSongClick = {
+                    rootNavController.navigate("add_song_to_playlist/$id")
+                }
             )
         }
         composable("request_song") {

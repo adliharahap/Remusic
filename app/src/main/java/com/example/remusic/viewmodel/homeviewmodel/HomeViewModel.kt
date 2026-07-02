@@ -211,7 +211,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     SongWithArtist(song = song, artist = artist)
                 }
 
-            val quickPickSongs = mapToSongWithArtist(quickPickRaw)
+            val quickPickSongs = mapToSongWithArtist(quickPickRaw).shuffled()
             val recentlyPlayed = mapToSongWithArtist(recentlyPlayedRaw)
             val mostLoved = mapToSongWithArtist(mostLovedRaw)
             val topTrending = mapToSongWithArtist(topTrendingRaw)

@@ -61,7 +61,8 @@ fun UserPlaylistHeader(
     playlistId: String? = null,
     onDeleteComplete: () -> Unit = {},
     isEditMode: Boolean = false,
-    onEditModeToggle: () -> Unit = {}
+    onEditModeToggle: () -> Unit = {},
+    onAddSongClick: () -> Unit = {}
 ) {
     val playlist = uiState?.currentPlaylistDetails
     val owner = uiState?.playlistOwner
@@ -220,7 +221,7 @@ fun UserPlaylistHeader(
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(0.1f))
-                            .clickable { /* border radius for click effect */ },
+                            .clickable { onAddSongClick() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -233,14 +234,18 @@ fun UserPlaylistHeader(
 
                     // Edit Button (Only for owner)
                     if (currentUserId != null && owner?.uid == currentUserId) {
+                        val canEdit = currentSort == SortOrder.DEFAULT
                         IconButton(
-                            onClick = onEditModeToggle,
-                            modifier = Modifier.size(36.dp)
+                            onClick = {
+                                if (canEdit) onEditModeToggle()
+                            },
+                            modifier = Modifier.size(36.dp),
+                            enabled = canEdit
                         ) {
                             Icon(
                                 painter = if (isEditMode) androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Check) else androidx.compose.ui.res.painterResource(com.example.remusic.R.drawable.ic_drag_vertical),
                                 contentDescription = if (isEditMode) "Selesai Edit" else "Edit Urutan",
-                                tint = if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
+                                tint = if (!canEdit) Color.White.copy(alpha = 0.3f) else if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }

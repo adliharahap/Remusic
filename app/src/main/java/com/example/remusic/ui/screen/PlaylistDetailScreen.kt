@@ -121,7 +121,8 @@ fun PlaylistDetailScreen(
     playlistCoverUrl: String, // Fallback jika songs empty
     playlistType: PlaylistType = PlaylistType.AUTO, // Default type
     playlistId: String? = null, // New Param for ID-based fetching
-    playMusicViewModel: PlayMusicViewModel? = null
+    playMusicViewModel: PlayMusicViewModel? = null,
+    onAddSongClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -363,7 +364,8 @@ fun PlaylistDetailScreen(
             searchScale = searchScale,
             showSortMenu = showSortMenu,
             onShowSortMenuChange = { showSortMenu = it },
-            isInitialLoading = isInitialLoading
+            isInitialLoading = isInitialLoading,
+            onAddSongClick = onAddSongClick
         )
     }
 }
@@ -395,13 +397,21 @@ fun PlaylistDetailContent(
     searchScale: Float,
     showSortMenu: Boolean,
     onShowSortMenuChange: (Boolean) -> Unit,
-    isInitialLoading: Boolean
+    isInitialLoading: Boolean,
+    onAddSongClick: () -> Unit = {}
 ) {
     var isEditMode by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var hasEdited by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     
-    val mutableSongs = androidx.compose.runtime.remember(filteredAndSortedSongs) {
-        androidx.compose.runtime.mutableStateListOf(*filteredAndSortedSongs.toTypedArray())
+    val mutableSongs = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateListOf<SongWithArtist>()
+    }
+
+    androidx.compose.runtime.LaunchedEffect(filteredAndSortedSongs) {
+        if (!isEditMode) {
+            mutableSongs.clear()
+            mutableSongs.addAll(filteredAndSortedSongs)
+        }
     }
 
     val reorderableState = rememberReorderableLazyListState(
@@ -422,9 +432,9 @@ fun PlaylistDetailContent(
         if (!isEditMode && hasEdited) {
             hasEdited = false
             if (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") {
-                playMusicViewModel?.updateLikedSongsOrder(mutableSongs)
+                playMusicViewModel?.updateLikedSongsOrder(mutableSongs.toList())
             } else if (playlistType == PlaylistType.USER_CREATED && playlistId != null) {
-                playMusicViewModel?.updatePlaylistOrder(playlistId, mutableSongs)
+                playMusicViewModel?.updatePlaylistOrder(playlistId, mutableSongs.toList())
             }
         }
     }
@@ -442,6 +452,11 @@ fun PlaylistDetailContent(
             // This resets the view to the header cleanly.
             listState.animateScrollToItem(index = 1, scrollOffset = 0)
         }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = isSearching) {
+        onSearchChange(false)
+        onSearchQueryChange("")
     }
 
     // --- SNAP LOGIC (Pull-to-Reveal 60%) ---
@@ -682,6 +697,9 @@ fun PlaylistDetailContent(
                                         showSortMenu = showSortMenu,
                                         onSortMenuDismiss = { onShowSortMenuChange(false) },
                                         onSortOptionSelected = { sortOption ->
+                                            if (sortOption != currentSort) {
+                                                isEditMode = false
+                                            }
                                             onSortChange(sortOption)
                                             onShowSortMenuChange(false)
                                         },
@@ -705,6 +723,9 @@ fun PlaylistDetailContent(
                                         showSortMenu = showSortMenu,
                                         onSortMenuDismiss = { onShowSortMenuChange(false) },
                                         onSortOptionSelected = { sortOption ->
+                                            if (sortOption != currentSort) {
+                                                isEditMode = false
+                                            }
                                             onSortChange(sortOption)
                                             onShowSortMenuChange(false)
                                         },
@@ -718,7 +739,8 @@ fun PlaylistDetailContent(
                                             (context as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()
                                         },
                                         isEditMode = isEditMode,
-                                        onEditModeToggle = { isEditMode = !isEditMode }
+                                        onEditModeToggle = { isEditMode = !isEditMode },
+                                        onAddSongClick = onAddSongClick
                                     )
                                 }
                                 PlaylistType.OFFICIAL -> {

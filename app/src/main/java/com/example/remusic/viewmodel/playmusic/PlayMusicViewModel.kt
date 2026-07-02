@@ -884,62 +884,92 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updatePlaylistOrder(playlistId: String, newOrderedSongs: List<SongWithArtist>) {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                kotlinx.coroutines.coroutineScope {
-                    val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
-                        async {
-                            com.example.remusic.data.SupabaseManager.client.from("playlist_songs")
-                                .update({ set("position", index) }) {
-                                    filter {
-                                        eq("playlist_id", playlistId)
-                                        eq("song_id", songWithArtist.song.id)
+            var attempt = 0
+            val maxRetries = 3
+            var success = false
+
+            while (attempt < maxRetries && !success) {
+                try {
+                    kotlinx.coroutines.coroutineScope {
+                        val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
+                            async {
+                                com.example.remusic.data.SupabaseManager.client.from("playlist_songs")
+                                    .update({ set("position", newOrderedSongs.size - 1 - index) }) {
+                                        filter {
+                                            eq("playlist_id", playlistId)
+                                            eq("song_id", songWithArtist.song.id)
+                                        }
                                     }
-                                }
+                            }
+                        }
+                        kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
+                    }
+                    Timber.tag("DEBUG_PLAYER").d("Successfully updated playlist order in DB.")
+                    success = true
+                    _uiState.update { state ->
+                        val currentPlaylistId = state.currentPlaylistDetails?.id
+                        if (currentPlaylistId == playlistId) {
+                            state.copy(artistSongs = newOrderedSongs)
+                        } else {
+                            state
                         }
                     }
-                    kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
-                }
-                Timber.tag("DEBUG_PLAYER").d("Successfully updated playlist order in DB.")
-                _uiState.update { state ->
-                    val currentPlaylistId = state.currentPlaylistDetails?.id
-                    if (currentPlaylistId == playlistId) {
-                        state.copy(artistSongs = newOrderedSongs)
+                } catch (e: Exception) {
+                    attempt++
+                    Timber.tag("DEBUG_PLAYER").e("Failed to update playlist order (Attempt $attempt/$maxRetries): ${e.message}", e)
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(2000L) // Wait before retrying
                     } else {
-                        state
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(getApplication(), "Gagal menyimpan urutan playlist, periksa koneksi internet.", android.widget.Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                Timber.tag("DEBUG_PLAYER").e("Failed to update playlist order: ${e.message}", e)
             }
         }
     }
 
     fun updateLikedSongsOrder(newOrderedSongs: List<SongWithArtist>) {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val userId = com.example.remusic.data.UserManager.currentUser?.uid ?: return@launch
-                Timber.tag("DEBUG_PLAYER").d("Updating liked songs order for $userId. Total: ${newOrderedSongs.size}")
-                kotlinx.coroutines.coroutineScope {
-                    val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
-                        async {
-                            Timber.tag("DEBUG_PLAYER").d("Updating liked song ${songWithArtist.song.id} to position $index")
-                            com.example.remusic.data.SupabaseManager.client.from("user_song_likes")
-                                .update({ set("position", index) }) {
-                                    filter {
-                                        eq("user_id", userId)
-                                        eq("song_id", songWithArtist.song.id)
+            var attempt = 0
+            val maxRetries = 3
+            var success = false
+
+            while (attempt < maxRetries && !success) {
+                try {
+                    val userId = com.example.remusic.data.UserManager.currentUser?.uid ?: return@launch
+                    Timber.tag("DEBUG_PLAYER").d("Updating liked songs order for $userId. Total: ${newOrderedSongs.size}")
+                    kotlinx.coroutines.coroutineScope {
+                        val deferreds = newOrderedSongs.mapIndexed { index, songWithArtist ->
+                            async {
+                                Timber.tag("DEBUG_PLAYER").d("Updating liked song ${songWithArtist.song.id} to position $index")
+                                com.example.remusic.data.SupabaseManager.client.from("user_song_likes")
+                                    .update({ set("position", index) }) {
+                                        filter {
+                                            eq("user_id", userId)
+                                            eq("song_id", songWithArtist.song.id)
+                                        }
                                     }
-                                }
+                            }
+                        }
+                        kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
+                    }
+                    Timber.tag("DEBUG_PLAYER").d("Successfully updated liked songs order in DB.")
+                    success = true
+                    _uiState.update { state ->
+                        state.copy(artistSongs = newOrderedSongs)
+                    }
+                } catch (e: Exception) {
+                    attempt++
+                    Timber.tag("DEBUG_PLAYER").e(e, "Failed to update liked songs order (Attempt $attempt/$maxRetries): ${e.message}")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(2000L) // Wait before retrying
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(getApplication(), "Gagal menyimpan urutan liked songs, periksa koneksi internet.", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
-                    kotlinx.coroutines.awaitAll(*deferreds.toTypedArray())
                 }
-                Timber.tag("DEBUG_PLAYER").d("Successfully updated liked songs order in DB.")
-                _uiState.update { state ->
-                    state.copy(artistSongs = newOrderedSongs)
-                }
-            } catch (e: Exception) {
-                Timber.tag("DEBUG_PLAYER").e(e, "Failed to update liked songs order: ${e.message}")
             }
         }
     }

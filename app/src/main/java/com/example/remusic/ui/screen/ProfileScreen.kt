@@ -236,7 +236,10 @@ fun ProfileScreen(
                 playlistCoverUrl = "",
                 playlistType = playlistType,
                 playlistId = id,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onAddSongClick = {
+                    navController.navigate("add_song_to_playlist/$id")
+                }
             )
         }
         composable("request_song") {

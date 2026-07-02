@@ -83,10 +83,11 @@ fun BottomPlayerCard(
         visible = uiState.currentSong != null,
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+        modifier = modifier
     ) {
         // Menempel ke bawah, full width, sudut bawah siku agar rata dengan BottomNav
         Card(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp))

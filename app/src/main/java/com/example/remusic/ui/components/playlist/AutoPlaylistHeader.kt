@@ -201,14 +201,16 @@ fun AutoPlaylistHeader(
             ) {
                 // Edit Button (Only for Liked Songs)
                 if (playlistId == "LIKED_SONGS") {
+                    val canEdit = currentSort == SortOrder.DEFAULT
                     IconButton(
-                        onClick = onEditModeToggle,
-                        modifier = Modifier.size(36.dp)
+                        onClick = { if (canEdit) onEditModeToggle() },
+                        modifier = Modifier.size(36.dp),
+                        enabled = canEdit
                     ) {
                         Icon(
                             painter = if (isEditMode) androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Check) else androidx.compose.ui.res.painterResource(com.example.remusic.R.drawable.ic_drag_vertical),
                             contentDescription = if (isEditMode) "Selesai Edit" else "Edit Urutan",
-                            tint = if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
+                            tint = if (!canEdit) Color.White.copy(alpha = 0.3f) else if (isEditMode) Color.White else Color.White.copy(alpha = 0.8f),
                             modifier = Modifier.size(20.dp)
                         )
                     }

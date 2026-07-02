@@ -86,8 +86,12 @@ class UserSocialRepository(
                 }
                 Log.d(TAG, "☁️ [SYNC] Unlike berhasil disinkronkan ke server.")
             } else {
-                // INSERT (Like)
-                val data = mapOf("user_id" to userId, "song_id" to effectiveSongId)
+                // INSERT (Like), position diset ke epoch time agar saat DESCENDING lagu baru ada di atas
+                val data = mapOf(
+                    "user_id" to userId, 
+                    "song_id" to effectiveSongId,
+                    "position" to (System.currentTimeMillis() / 1000L).toInt()
+                )
                 SupabaseManager.client.from("user_song_likes").insert(data)
                 Log.d(TAG, "☁️ [SYNC] Like berhasil disinkronkan ke server.")
             }

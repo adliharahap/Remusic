@@ -528,7 +528,7 @@ import timber.log.Timber
                         val likedSongsRel = SupabaseManager.client.from("user_song_likes")
                             .select { 
                                 filter { eq("user_id", userId) } 
-                                order("position", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                                order("position", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                             }
                             .decodeList<PlaylistSongRelation>()
 
@@ -631,7 +631,7 @@ import timber.log.Timber
                 val playlistSongsRelation = SupabaseManager.client.from("playlist_songs")
                     .select { 
                         filter { eq("playlist_id", playlistId) } 
-                        order("position", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                        order("position", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                     }
                     .decodeList<PlaylistSongRelation>()
 
@@ -992,16 +992,17 @@ import timber.log.Timber
                     return@launch
                 }
                 
-                // Tambahkan lagu
+                // Tambahkan lagu, position diset ke epoch time (seconds) agar pas di integer dan DESCENDING lagu baru ada di atas
                 val insertData = PlaylistSongInsertReq(
                     playlistId = playlistId,
                     songId = effectiveSongId,
-                    addedBy = userId
+                    addedBy = userId,
+                    position = (System.currentTimeMillis() / 1000L).toInt().toLong()
                 )
                 SupabaseManager.client.from("playlist_songs").insert(insertData)
                 withContext(Dispatchers.Main) { onResult(true, "Berhasil menambahkan lagu ke playlist") }
             } catch (e: Exception) {
-               Timber.tag("DEBUG_PLAYER").e( "Error adding song to playlist: ${e.message}", e)
+               Timber.tag("DEBUG_PLAYER").e(e, "Error adding song to playlist: %s", e.message)
                 withContext(Dispatchers.Main) { onResult(false, "Gagal menambahkan lagu: ${e.message}") }
             }
         }
@@ -1049,6 +1050,7 @@ internal data class PlaylistSongRelation(
 internal data class PlaylistSongInsertReq(
         @kotlinx.serialization.SerialName("playlist_id") val playlistId: String,
         @kotlinx.serialization.SerialName("song_id") val songId: String,
-        @kotlinx.serialization.SerialName("added_by") val addedBy: String
+        @kotlinx.serialization.SerialName("added_by") val addedBy: String,
+        @kotlinx.serialization.SerialName("position") val position: Long? = null
     )
 

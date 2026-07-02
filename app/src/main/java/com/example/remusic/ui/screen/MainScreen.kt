@@ -192,6 +192,7 @@ fun BottomNavGraph(
         composable(BottomNavItem.Search.route) {
             SearchScreen(
                 playMusicViewModel = playMusicViewModel, // Pass ViewModel
+                rootNavController = rootNavController, // Pass root nav controller
                 isSearchActive = isSearchActive, // Pass hoisted state
                 onSearchActiveChange = onSearchActiveChange // Pass callback
             )
@@ -201,7 +202,8 @@ fun BottomNavGraph(
         composable(BottomNavItem.Playlist.route) { 
             PlaylistScreen(
                 onCreatePlaylistClick = onCreatePlaylistClick,
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                rootNavController = rootNavController
             ) 
         }
         composable(BottomNavItem.Profile.route) {
