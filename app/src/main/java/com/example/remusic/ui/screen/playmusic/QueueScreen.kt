@@ -76,7 +76,7 @@ fun QueueScreen(
 ) {
     // 1. Definisikan ID lagu yang sedang diputar sebagai String
     val currentlyPlayingId = songWithArtist?.song?.id
-    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT
+    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LINEAR_GRADIENT
     var isEditMode by remember { mutableStateOf(false) }
 
     // --- Bottom Sheet State ---

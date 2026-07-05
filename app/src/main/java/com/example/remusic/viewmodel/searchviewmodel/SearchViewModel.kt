@@ -28,6 +28,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.example.remusic.data.model.SongWithArtistRpcResult
+import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import io.github.jan.supabase.postgrest.postgrest
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
@@ -60,8 +63,12 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _topArtist = MutableStateFlow<Artist?>(null)
     val topArtist: StateFlow<Artist?> = _topArtist.asStateFlow()
 
-    // History dari Room (Flow dikonversi ke StateFlow di UI atau collect langsung)
-    val searchHistory = musicDao.getSearchHistory()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchHistory = com.example.remusic.data.SupabaseManager.client.auth.sessionStatus
+        .map { com.example.remusic.data.SupabaseManager.client.auth.currentUserOrNull()?.id ?: "anon" }
+        .flatMapLatest { userId ->
+            musicDao.getSearchHistory(userId)
+        }
 
     private val _ytSearchResults = MutableStateFlow<List<SongItem>>(emptyList())
     val ytSearchResults: StateFlow<List<SongItem>> = _ytSearchResults.asStateFlow()
@@ -482,7 +489,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             // --- 🛑 DEBUG LOG END 🛑 ---
 
             musicDao.insertSong(cachedSong)
-            musicDao.insertSearchHistory(SearchHistoryEntity(songId = song.id))
+            
+            val userId = SupabaseManager.client.auth.currentUserOrNull()?.id ?: "anon"
+            musicDao.insertSearchHistory(SearchHistoryEntity(songId = song.id, userId = userId))
         }
     }
 

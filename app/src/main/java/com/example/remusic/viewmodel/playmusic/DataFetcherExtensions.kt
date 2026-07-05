@@ -969,11 +969,22 @@ import timber.log.Timber
                 val isYouTubeId = songId.length == 11 || songMetadata?.source?.startsWith("youtube") == true
                 val effectiveSongId = if (isYouTubeId && songMetadata != null) {
                    Timber.tag("DEBUG_PLAYER").d( "🔍 [PLAYLIST] YouTube song, ensuring shadow entry exists...")
-                    repository.upsertYouTubeSong(
-                        song = songMetadata,
-                        artistName = songWithArtist.displayArtistName,
-                        artistPhoto = songWithArtist.artist?.photoUrl
-                    ) ?: songId
+                    try {
+                        val uuid = repository.upsertYouTubeSong(
+                            song = songMetadata,
+                            artistName = songWithArtist.displayArtistName,
+                            artistPhoto = songWithArtist.artist?.photoUrl
+                        )
+                        if (uuid == null) {
+                            withContext(Dispatchers.Main) { onResult(false, "Gagal menambahkan referensi lagu ke server.") }
+                            return@launch
+                        }
+                        uuid
+                    } catch (e: Exception) {
+                        Timber.tag("DEBUG_PLAYER").e(e, "Error adding shadow entry: %s", e.message)
+                        withContext(Dispatchers.Main) { onResult(false, "Error Database: ${e.message}") }
+                        return@launch
+                    }
                 } else {
                     songId
                 }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.example.remusic.data.local.entity.CachedArtist
 import com.example.remusic.data.local.entity.CachedSong
 import com.example.remusic.data.local.entity.LikedSong
@@ -109,10 +110,11 @@ interface MusicDao {
     @Query("""
         SELECT * FROM cached_songs 
         INNER JOIN search_history ON cached_songs.id = search_history.songId 
+        WHERE search_history.userId = :userId
         ORDER BY search_history.searchedAt DESC
         LIMIT 20
     """)
-    fun getSearchHistory(): Flow<List<CachedSong>>
+    fun getSearchHistory(userId: String): Flow<List<CachedSong>>
     // --- PLAYBACK QUEUE ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaybackQueue(queue: List<PlaybackQueueEntity>)
@@ -122,6 +124,28 @@ interface MusicDao {
 
     @Query("SELECT * FROM playback_queue ORDER BY listOrder ASC")
     suspend fun getPlaybackQueue(): List<PlaybackQueueEntity>
+
+    @Query("DELETE FROM cached_followed_artists")
+    suspend fun clearCachedFollowedArtists()
+
+    @Query("DELETE FROM cached_playlists")
+    suspend fun clearCachedPlaylists()
+
+    // --- CLEAR USER DATA ON LOGOUT ---
+    @Transaction
+    suspend fun clearUserData() {
+        clearLikedSongs()
+        clearCachedFollowedArtists()
+        clearPlaybackQueue()
+        clearCachedPlaylists()
+        clearOrphanedCachedSongs()
+    }
+
+    @Query("""
+        DELETE FROM cached_songs 
+        WHERE id NOT IN (SELECT songId FROM search_history)
+    """)
+    suspend fun clearOrphanedCachedSongs()
 
     // --- USER PLAYLISTS CACHE ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)

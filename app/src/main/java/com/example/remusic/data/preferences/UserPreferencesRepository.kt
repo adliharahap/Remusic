@@ -217,7 +217,7 @@ class UserPreferencesRepository(private val context: Context) {
     private val GRADIENT_BOTTOM_COLOR_INDEX_KEY = intPreferencesKey("gradient_bottom_color_index")
     private val PREVIOUS_GRADIENT_TOP_COLOR_INDEX_KEY = intPreferencesKey("previous_gradient_top_color_index")
     private val PREVIOUS_GRADIENT_BOTTOM_COLOR_INDEX_KEY = intPreferencesKey("previous_gradient_bottom_color_index")
-    private val PLAYER_BACKGROUND_STYLE_KEY = stringPreferencesKey("player_background_style")
+    private val PLAYER_BACKGROUND_STYLE_KEY = stringPreferencesKey("player_bg_style_v2")
 
     val playerBackgroundStyleFlow: Flow<PlayerBackgroundStyle> =
         context.dataStore.data.map { preferences ->

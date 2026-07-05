@@ -38,9 +38,22 @@ fun LyricsOptionsBottomSheet(
     topPlayerColor: Color,
     trackName: String,
     artistName: String,
-    isTelegramSong: Boolean = false
+    isTelegramSong: Boolean = false,
+    onRegenerateTranslation: () -> Unit,
+    onRegenerateGemini: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    
+    val geminiModels = listOf(
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-3.1-pro",
+        "gemini-3-flash"
+    )
+    var selectedGeminiModel by remember { mutableStateOf(geminiModels[0]) }
+    var isGeminiDropdownExpanded by remember { mutableStateOf(false) }
 
     // AUTO SEARCH ON OPEN (Only for non-telegram songs)
     LaunchedEffect(Unit) {
@@ -93,7 +106,92 @@ fun LyricsOptionsBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- SECTION 2: LYRICS SOURCE / ALTERNATIVE ---
+            // --- SECTION 2: TERJEMAHAN LIRIK ---
+            Button(
+                onClick = { 
+                    onRegenerateTranslation() 
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E))
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Translate,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Terjemahkan Ulang (ML Kit Kaku)",
+                    color = Color.White,
+                    fontFamily = AppFont.Poppins,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Gemini Model Selector
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { isGeminiDropdownExpanded = true },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                ) {
+                    Text(text = "Model AI: $selectedGeminiModel", fontFamily = AppFont.Poppins)
+                }
+                DropdownMenu(
+                    expanded = isGeminiDropdownExpanded,
+                    onDismissRequest = { isGeminiDropdownExpanded = false },
+                    modifier = Modifier.background(Color(0xFF2C2C2C))
+                ) {
+                    geminiModels.forEach { model ->
+                        DropdownMenuItem(
+                            text = { Text(model, color = Color.White, fontFamily = AppFont.Poppins) },
+                            onClick = {
+                                selectedGeminiModel = model
+                                isGeminiDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = { 
+                    onRegenerateGemini(selectedGeminiModel) 
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)) // Blue for Gemini
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Translate,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Terjemahkan Akurat (Gemini AI)",
+                    color = Color.White,
+                    fontFamily = AppFont.Poppins,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- SECTION 3: LYRICS SOURCE / ALTERNATIVE ---
             Text(
                 text = "Sumber Lirik",
                 color = Color.White,

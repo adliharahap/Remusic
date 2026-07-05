@@ -38,6 +38,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
@@ -385,7 +386,7 @@ import timber.log.Timber
      * and instead fetches the "Up Next / Related" list which has much better genre matching and variety.
      */
     suspend fun PlayMusicViewModel.fetchYouTubeRecommendations(seedSong: SongWithArtist) {
-        val videoId = seedSong.song.id
+        val videoId = seedSong.song.effectiveId
 
         smartQueueMutex.withLock {
             try {
@@ -397,10 +398,20 @@ import timber.log.Timber
                 Timber.tag("DEBUG_PLAYER").d("▶ [YT RECO] Strategi 1: Fetch Related Endpoint")
                 val endpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = videoId)
                 val nextResult = com.metrolist.innertube.YouTube.next(endpoint, null).getOrNull()
+                
+                Timber.tag("DEBUG_PLAYER_VERBOSE").d("RAW Next Result (Strategi 1): items size=${nextResult?.items?.size}, hasRelatedEndpoint=${nextResult?.relatedEndpoint != null}")
+                if (nextResult?.items?.isNotEmpty() == true) {
+                    nextResult.items.forEachIndexed { i, it -> Timber.tag("DEBUG_PLAYER_VERBOSE").d("  S1_Next[$i]: ${it.id} - ${it.title}") }
+                }
+
                 val relEndpoint = nextResult?.relatedEndpoint
 
                 if (relEndpoint != null) {
                     val relatedPage = com.metrolist.innertube.YouTube.related(relEndpoint).getOrNull()
+                    Timber.tag("DEBUG_PLAYER_VERBOSE").d("RAW Related Page (Strategi 1): songs size=${relatedPage?.songs?.size}")
+                    if (relatedPage?.songs?.isNotEmpty() == true) {
+                        relatedPage.songs.forEachIndexed { i, it -> Timber.tag("DEBUG_PLAYER_VERBOSE").d("  S1_Rel[$i]: ${it.id} - ${it.title}") }
+                    }
                     if (relatedPage != null && relatedPage.songs.isNotEmpty()) {
                         // Gabungkan Up Next items dan Related items
                         val upNextItems = nextResult.items ?: emptyList()
@@ -416,6 +427,12 @@ import timber.log.Timber
                     Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Strategi 1 Gagal. Fallback ke Strategi 2: Automix (RDAMVM)")
                     val rdamvmEndpoint = com.metrolist.innertube.models.WatchEndpoint(videoId = videoId, playlistId = "RDAMVM$videoId")
                     val rdamvmResult = com.metrolist.innertube.YouTube.next(rdamvmEndpoint, null).getOrNull()
+                    
+                    Timber.tag("DEBUG_PLAYER_VERBOSE").d("RAW Automix Result (Strategi 2): items size=${rdamvmResult?.items?.size}")
+                    if (rdamvmResult?.items?.isNotEmpty() == true) {
+                        rdamvmResult.items.forEachIndexed { i, it -> Timber.tag("DEBUG_PLAYER_VERBOSE").d("  S2_Auto[$i]: ${it.id} - ${it.title}") }
+                    }
+
                     if (rdamvmResult != null && rdamvmResult.items.isNotEmpty()) {
                         recommendedSongItems = rdamvmResult.items
                         Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Strategi 2 Sukses: Didapat ${recommendedSongItems.size} lagu")
@@ -428,6 +445,12 @@ import timber.log.Timber
                 if (recommendedSongItems.isEmpty()) {
                     Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Strategi 2 Gagal. Fallback ke Strategi 3: GetQueue API")
                     val queueResult = com.metrolist.innertube.YouTube.queue(videoIds = listOf(videoId)).getOrNull()
+                    
+                    Timber.tag("DEBUG_PLAYER_VERBOSE").d("RAW Queue Result (Strategi 3): items size=${queueResult?.size}")
+                    if (queueResult?.isNotEmpty() == true) {
+                        queueResult.forEachIndexed { i, it -> Timber.tag("DEBUG_PLAYER_VERBOSE").d("  S3_Queue[$i]: ${it.id} - ${it.title}") }
+                    }
+
                     if (queueResult != null && queueResult.isNotEmpty()) {
                         recommendedSongItems = queueResult
                         Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Strategi 3 Sukses: Didapat ${recommendedSongItems.size} lagu")
@@ -445,16 +468,84 @@ import timber.log.Timber
                 }
 
                 val seedNormalizedTitle = seedSong.song.title.normalizeForDeduplication()
+                Timber.tag("DEBUG_PLAYER_VERBOSE").d("SEED SONG NORMALIZED TITLE: '$seedNormalizedTitle'")
 
-                recommendedSongItems = recommendedSongItems
-                    .filter { it.id != videoId }
-                    .distinctBy { it.title.normalizeForDeduplication() }
-                    .filter { it.title.normalizeForDeduplication() != seedNormalizedTitle }
+                val initialSize = recommendedSongItems.size
+                
+                val filtered1 = recommendedSongItems.filter { it.id != videoId }
+                Timber.tag("DEBUG_PLAYER_VERBOSE").d("Filter 1 (Remove seed ID): $initialSize -> ${filtered1.size}")
+                
+                val filtered2 = filtered1.distinctBy { it.title.normalizeForDeduplication() }
+                Timber.tag("DEBUG_PLAYER_VERBOSE").d("Filter 2 (Distinct titles): ${filtered1.size} -> ${filtered2.size}")
+                
+                recommendedSongItems = filtered2.filter { it.title.normalizeForDeduplication() != seedNormalizedTitle }
+                Timber.tag("DEBUG_PLAYER_VERBOSE").d("Filter 3 (Remove identical title): ${filtered2.size} -> ${recommendedSongItems.size}")
+                
                 if (recommendedSongItems.isEmpty()) {
-                    Timber.tag("DEBUG_PLAYER").e("❌ [YT RECO] Gagal mendapatkan rekomendasi YouTube sama sekali.")
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(getApplication(), "Gagal memuat antrean rekomendasi YouTube.", android.widget.Toast.LENGTH_LONG).show()
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ [YT RECO] Level 1 Gagal. Fallback ke Level 2: YouTube Search")
+                    val query = "${seedSong.artist?.name ?: ""} ${seedSong.song.title}".trim()
+                    val searchResult = com.metrolist.innertube.YouTube.search(query, com.metrolist.innertube.YouTube.SearchFilter.FILTER_SONG).getOrNull()
+                    
+                    if (searchResult != null && searchResult.items.isNotEmpty()) {
+                        val songItems = searchResult.items.filterIsInstance<com.metrolist.innertube.models.SongItem>()
+                        
+                        val l2Filtered = songItems
+                            .filter { it.id != videoId }
+                            .distinctBy { it.title.normalizeForDeduplication() }
+                            .filter { it.title.normalizeForDeduplication() != seedNormalizedTitle }
+                            .take(15)
+                            
+                        recommendedSongItems = l2Filtered
+                        Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Level 2 Sukses: Didapat ${recommendedSongItems.size} lagu dari pencarian")
                     }
+                }
+
+                // ==========================================
+                // STRATEGI 5: Offline/Local Fallback (Level 3)
+                // ==========================================
+                if (recommendedSongItems.isEmpty()) {
+                    Timber.tag("DEBUG_PLAYER").e("❌ [YT RECO] Level 2 Gagal. Fallback ke Level 3: Database Lokal / Offline")
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(getApplication(), "Koneksi terputus. Memuat lagu acak dari perpustakaan lokal...", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    
+                    val musicDao = MusicDatabase.getDatabase(getApplication()).musicDao()
+                    val localSongsFlow = musicDao.getRecentSongs()
+                    val localSongs = localSongsFlow.firstOrNull() ?: emptyList()
+                    
+                    if (localSongs.isNotEmpty()) {
+                        val existingIds = _uiState.value.playlist.map { it.song.id }.toSet()
+                        val randomLocal = localSongs
+                            .filter { it.id !in existingIds && it.id != videoId }
+                            .shuffled()
+                            .take(15)
+                            .map { cached ->
+                                SongWithArtist(
+                                    song = cached.toSong(),
+                                    artist = Artist(id = cached.artistId ?: "", name = cached.artistName)
+                                )
+                            }
+                            
+                        if (randomLocal.isNotEmpty()) {
+                            Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Level 3 Sukses: Didapat ${randomLocal.size} lagu offline")
+                            val currentPlaylist = _uiState.value.playlist.toMutableList()
+                            currentPlaylist.addAll(randomLocal)
+                            val finalPlaylist = currentPlaylist.toList()
+                            
+                            _uiState.update { it.copy(playlist = finalPlaylist) }
+                            repository.queue.savePlaybackQueue(finalPlaylist, _uiState.value.playingMusicFromPlaylist)
+
+                            withContext(Dispatchers.Main) {
+                                val controller = mediaController ?: return@withContext
+                                val newMediaItems = randomLocal.map { createMediaItem(it, "") }
+                                controller.addMediaItems(newMediaItems)
+                                Timber.tag("DEBUG_PLAYER").d("✅ [YT RECO] Berhasil menambahkan ${newMediaItems.size} lagu offline ke MediaController")
+                            }
+                            return@withLock
+                        }
+                    }
+                    
+                    Timber.tag("DEBUG_PLAYER").e("❌ [YT RECO] Semua Fallback Gagal. Tidak ada lagu yang bisa ditambahkan.")
                     return@withLock
                 }
 

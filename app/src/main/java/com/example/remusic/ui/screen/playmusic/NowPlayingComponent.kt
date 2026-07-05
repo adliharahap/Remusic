@@ -59,7 +59,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -220,7 +222,26 @@ fun NowPlaying(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState) // Scrollable container utama
-                .nestedScroll(nestedScrollConnection),
+                .nestedScroll(nestedScrollConnection)
+                .graphicsLayer { alpha = 0.99f }
+                .drawWithContent {
+                    drawContent()
+                    val topFadeEndPx = (headerHeight - 10.dp).toPx()
+                    val topFadeStartPx = (headerHeight + 70.dp).toPx()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                (topFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                (topFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
+                                1.0f to Color.Black
+                            ),
+                            startY = 0f,
+                            endY = size.height
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ==========================================
@@ -1126,43 +1147,7 @@ fun NowPlaying(
             }
         }
 
-        // 1. Hitung titik Start dan End (Pakai remember biar nggak dihitung ulang terus-terusan)
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        val startFadePx = remember(isCanvasMode, density) {
-            with(density) { if (isCanvasMode) 500.dp.toPx() else 400.dp.toPx() }
-        }
-        val endFadePx = remember(isCanvasMode, density) {
-            with(density) { if (isCanvasMode) 600.dp.toPx() else 500.dp.toPx() }
-        }
 
-        // 2. Tentukan warna dasar biar kodingan Brush nggak dobel
-        val gradientBaseColor = if (isCanvasMode) Color.Black else topPlayerColor
-
-        // Nggak perlu pakai "if (alpha > 0)" di luar, biarkan graphicsLayer yang atur visibilitasnya
-        // biar UI tree-nya nggak bongkar-pasang pas lagi asik nge-scroll.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(headerHeight + 40.dp)
-                .heightIn(min = 100.dp, max = 200.dp)
-                .align(Alignment.TopCenter)
-                // 3. RAHASIA PERFORMA: Hitung alpha di dalam tahap "Drawing", bukan "Composition"
-                .graphicsLayer {
-                    val scrollPx = scrollState.value.toFloat()
-                    alpha = ((scrollPx - startFadePx) / (endFadePx - startFadePx)).coerceIn(0f, 1f)
-                }
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to gradientBaseColor,
-                            0.5f to gradientBaseColor,
-                            0.6f to gradientBaseColor.copy(alpha = 0.8f),
-                            0.8f to gradientBaseColor.copy(alpha = 0.5f),
-                            1.0f to Color.Transparent
-                        )
-                    )
-                )
-        )
 
     }
 }

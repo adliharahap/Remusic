@@ -26,7 +26,7 @@ import com.example.remusic.data.local.entity.LocalPlayHistory
                         PlaybackQueueEntity::class,
                         com.example.remusic.data.local.entity.CachedPlaylist::class,
                         LocalPlayHistory::class],
-        version = 15,
+        version = 16,
         exportSchema = false
 )
 @TypeConverters(Converters::class) // Registrasi TypeConverter di sini
@@ -174,6 +174,20 @@ abstract class MusicDatabase : RoomDatabase() {
                     }
                 }
 
+        val MIGRATION_15_16 =
+                object : Migration(15, 16) {
+                    override fun migrate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                                "CREATE TABLE IF NOT EXISTS `search_history_new` (`songId` TEXT NOT NULL, `userId` TEXT NOT NULL, `searchedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`, `userId`), FOREIGN KEY(`songId`) REFERENCES `cached_songs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                        )
+                        db.execSQL(
+                                "INSERT INTO `search_history_new` (songId, userId, searchedAt) SELECT songId, 'anon', searchedAt FROM `search_history`"
+                        )
+                        db.execSQL("DROP TABLE search_history")
+                        db.execSQL("ALTER TABLE search_history_new RENAME TO search_history")
+                    }
+                }
+
         fun getDatabase(context: Context): MusicDatabase {
             return INSTANCE
                     ?: synchronized(this) {
@@ -196,7 +210,8 @@ abstract class MusicDatabase : RoomDatabase() {
                                                 MIGRATION_11_12,
                                                 MIGRATION_12_13,
                                                 MIGRATION_13_14,
-                                                MIGRATION_14_15
+                                                MIGRATION_14_15,
+                                                MIGRATION_15_16
                                         )
                                         .fallbackToDestructiveMigration(true)
                                         .build()

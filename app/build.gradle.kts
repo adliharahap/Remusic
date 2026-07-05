@@ -40,8 +40,8 @@ android {
         applicationId = "com.example.remusic"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.8.0.0"
+        versionCode = 11
+        versionName = "1.8.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -51,6 +51,7 @@ android {
         val appSecret = localProperties.getProperty("APP_SECRET") ?: ""
         val telegramTokenBot = localProperties.getProperty("TELEGRAM_TOKEN_BOT") ?: ""
         val googleApiKey = localProperties.getProperty("GOOGLE_API_KEY") ?: ""
+        val googleAiApiKey = localProperties.getProperty("GOOGLE_AI_API_KEY") ?: ""
 
         // Inject ke BuildConfig (Dibungkus kutip miring \")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -58,6 +59,7 @@ android {
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "APP_SECRET", "\"$appSecret\"")
         buildConfigField("String", "TELEGRAM_TOKEN_BOT", "\"$telegramTokenBot\"")
+        buildConfigField("String", "GOOGLE_AI_API_KEY", "\"$googleAiApiKey\"")
         buildConfigField("String", "GOOGLE_API_KEY", "\"$googleApiKey\"")
     }
 
@@ -79,6 +81,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -197,6 +200,10 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.4.0")
     implementation("io.ktor:ktor-client-content-negotiation:3.4.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+    
+    // AI & ML
+    implementation("com.google.mlkit:language-id:17.0.6")
+    implementation("com.google.mlkit:translate:17.0.3")
 }
 
 kotlin {

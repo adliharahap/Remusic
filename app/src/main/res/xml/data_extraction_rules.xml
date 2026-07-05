@@ -6,13 +6,22 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Exclude auth-related SharedPreferences from cloud backup -->
-        <exclude domain="sharedpref" path="supa_auth_session.xml"/>
-        <exclude domain="sharedpref" path="remusic_user_cache.xml"/>
+        <!-- Exclude all SharedPreferences from cloud backup -->
+        <exclude domain="sharedpref" path="."/>
+        <!-- Exclude DataStore settings -->
+        <exclude domain="file" path="datastore"/>
+        <!-- Exclude Room Database -->
+        <exclude domain="database" path="music_database.db"/>
+        <exclude domain="database" path="music_database.db-shm"/>
+        <exclude domain="database" path="music_database.db-wal"/>
     </cloud-backup>
     <device-transfer>
         <!-- Also exclude from device-to-device transfer -->
-        <exclude domain="sharedpref" path="supa_auth_session.xml"/>
-        <exclude domain="sharedpref" path="remusic_user_cache.xml"/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="file" path="datastore"/>
+        <!-- Exclude Room Database -->
+        <exclude domain="database" path="music_database.db"/>
+        <exclude domain="database" path="music_database.db-shm"/>
+        <exclude domain="database" path="music_database.db-wal"/>
     </device-transfer>
 </data-extraction-rules>

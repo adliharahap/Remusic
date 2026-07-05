@@ -147,6 +147,7 @@ fun LyricsScreen(
     val lyrics by lyricsViewModel.lyrics.collectAsState()
     val activeIndex by lyricsViewModel.activeLyricIndex.collectAsState()
     val isTranslateLyrics by lyricsViewModel.isTranslateLyrics.collectAsState()
+    val isAutoTranslated by lyricsViewModel.isAutoTranslated.collectAsState()
     val currentPosition by lyricsViewModel.currentPosition.collectAsState()
     val hasAutoScrolledToTop by lyricsViewModel.hasAutoScrolledToTop.collectAsState()
 
@@ -160,9 +161,10 @@ fun LyricsScreen(
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     
-    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT
+    val isBlurredOrMesh = playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER || playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT || playerBackgroundStyle == PlayerBackgroundStyle.LINEAR_GRADIENT
     
     var showLyricsOptions by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     // 🔥 2. PERBAIKAN OFFSET TENGAH (Mencegah bug lirik terlalu ke bawah/atas)
     val topPadding = 200.dp
@@ -480,6 +482,15 @@ fun LyricsScreen(
             onPlayPauseClick = onPlayPauseClick,
             isTranslateLyrics = isTranslateLyrics,
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
+            onTranslateRequest = { 
+                if (currentSongId != null && songWithArtist?.song?.lyrics != null) {
+                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
+                    lyricsViewModel.translateCurrentLyrics(currentSongId, songWithArtist.song.lyrics, musicDao)
+                } else {
+                    android.widget.Toast.makeText(context, "Tidak ada lirik untuk diterjemahkan", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            isTranslating = lyricsViewModel.isTranslating.collectAsState().value,
             onShowOptions = { showLyricsOptions = true },
             lyrics = lyrics,
             playbackSpeed = playbackSpeed
@@ -515,6 +526,65 @@ fun LyricsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Menyinkronkan lirik...",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        fontFamily = AppFont.RobotoMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // 🌐 FLOATING BANNER "Terjemahan Offline"
+        val hasTranslationMsg = remember(lyrics, isAutoTranslated) { 
+            lyrics.any { it.translatedText != null } && isAutoTranslated 
+        }
+        var showTranslationWarning by remember { androidx.compose.runtime.mutableStateOf(false) }
+        var translationToggleCounter by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+
+        androidx.compose.runtime.LaunchedEffect(isTranslateLyrics) {
+            translationToggleCounter++
+        }
+
+        androidx.compose.runtime.LaunchedEffect(translationToggleCounter, hasTranslationMsg) {
+            if (isTranslateLyrics && hasTranslationMsg) {
+                showTranslationWarning = true
+                kotlinx.coroutines.delay(4000)
+                showTranslationWarning = false
+            } else {
+                showTranslationWarning = false
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showTranslationWarning && isAutoScrollEnabled,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 155.dp) // Sesuaikan dengan posisi banner lain
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Translate,
+                        contentDescription = "Translate Warning",
+                        tint = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Terjemahan offline otomatis. Maklumi jika kaku.",
                         color = Color.White.copy(alpha = 0.7f),
                         fontSize = 11.sp,
                         fontFamily = AppFont.RobotoMedium,
@@ -626,7 +696,44 @@ fun LyricsScreen(
                 topPlayerColor = topPlayerColor,
                 trackName = songWithArtist?.song?.title ?: "",
                 artistName = songWithArtist?.displayArtistName ?: "",
-                isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null
+                isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null,
+                onRegenerateTranslation = {
+                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
+                    currentSongId?.let { id -> 
+                        lyricsViewModel.regenerateTranslation(id, musicDao)
+                    }
+                },
+                onRegenerateGemini = { modelName ->
+                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
+                    currentSongId?.let { id ->
+                        val rawLrcBuilder = java.lang.StringBuilder()
+                        for (line in lyricsViewModel.lyrics.value) {
+                            if (line.originalText == "[tool:MLKit]" || line.originalText == "[tool:Gemini]") continue
+                            
+                            if (line.timestamp == -1L) {
+                                rawLrcBuilder.append(line.originalText).append("\n")
+                            } else {
+                                val totalMs = line.timestamp
+                                val min = totalMs / 60000
+                                val sec = (totalMs % 60000) / 1000
+                                val ms = (totalMs % 1000) / 10
+                                val tsString = String.format("[%02d:%02d.%02d]", min, sec, ms)
+                                rawLrcBuilder.append(tsString).append(line.originalText).append("\n")
+                            }
+                        }
+                        val rawLrc = rawLrcBuilder.toString()
+                        val title = songWithArtist?.song?.title ?: ""
+                        val artist = songWithArtist?.displayArtistName ?: ""
+                        lyricsViewModel.translateWithGemini(
+                            rawLrc = rawLrc,
+                            songId = id,
+                            modelName = modelName,
+                            songTitle = title,
+                            artistName = artist,
+                            musicDao = musicDao
+                        )
+                    }
+                }
             )
         }
     }
@@ -996,6 +1103,8 @@ fun LyricsBottomPanel(
     onPlayPauseClick: () -> Unit,
     isTranslateLyrics: Boolean,
     onToggleTranslateLyrics: () -> Unit,
+    onTranslateRequest: () -> Unit,
+    isTranslating: Boolean = false,
     onShowOptions: () -> Unit,
     lyrics: List<LyricLine>,
     playbackSpeed: Float = 1.0f
@@ -1096,38 +1205,43 @@ fun LyricsBottomPanel(
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
-            Row(modifier = Modifier
-                .weight(0.3f)
-                .fillMaxHeight()
-                .padding(end = 5.dp),
+            Row(
+                modifier = Modifier
+                    .weight(0.3f)
+                    .fillMaxHeight()
+                    .padding(end = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
                 val hasTranslation = lyrics.any { it.translatedText != null }
                 
-                Icon(
-                    imageVector = Icons.Filled.Translate,
-                    contentDescription = "Translate",
-                    tint = if (isTranslateLyrics && hasTranslation) Color.White else Color.White.copy(0.6f),
-                    modifier = Modifier.size(26.dp).combinedClickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {
-                            if (hasTranslation) {
-                                onToggleTranslateLyrics()
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Lirik terjemahan tidak tersedia",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        onLongClick = {
-                            onShowOptions()
-                        }
+                if (isTranslating) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).padding(2.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
                     )
-                )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Translate,
+                        contentDescription = "Translate",
+                        tint = if (isTranslateLyrics && hasTranslation) Color.White else Color.White.copy(0.6f),
+                        modifier = Modifier.size(26.dp).combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                if (hasTranslation) {
+                                    onToggleTranslateLyrics()
+                                } else {
+                                    onTranslateRequest()
+                                }
+                            },
+                            onLongClick = {
+                                onShowOptions()
+                            }
+                        )
+                    )
+                }
                 
                 Spacer(modifier = Modifier.width(16.dp))
 

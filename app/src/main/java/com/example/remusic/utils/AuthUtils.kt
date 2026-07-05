@@ -53,6 +53,12 @@ object AuthUtils {
                 // 3. Membersihkan cache lokal di memori & SharedPrefs
                 UserManager.clearUser()
                 UserManager.saveCachedFcmToken(null)
+
+                // 3.5 Bersihkan Room Database
+                val db = com.example.remusic.data.local.MusicDatabase.getDatabase(context)
+                db.musicDao().clearUserData()
+                db.localPlayHistoryDao().clearAll()
+
                 
                 // 4. Kembali ke UI dan pindah ke halaman Login
                 withContext(Dispatchers.Main) {

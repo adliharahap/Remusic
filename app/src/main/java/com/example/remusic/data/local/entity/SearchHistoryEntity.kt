@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "search_history",
+    primaryKeys = ["songId", "userId"],
     foreignKeys = [
         ForeignKey(
             entity = CachedSong::class,
@@ -16,7 +17,7 @@ import androidx.room.PrimaryKey
     ]
 )
 data class SearchHistoryEntity(
-    @PrimaryKey
-    val songId: String, // Kita gunakan songId sebagai PK karena 1 lagu cuma boleh muncul 1x di history (paling baru)
+    val songId: String,
+    val userId: String, // ID dari Supabase user
     val searchedAt: Long = System.currentTimeMillis()
 )

@@ -39,4 +39,7 @@ interface LocalPlayHistoryDao {
         ORDER BY RANDOM() LIMIT 10
     """)
     suspend fun getRandomHistory(): List<LocalPlayHistory>
+
+    @Query("DELETE FROM local_play_history")
+    suspend fun clearAll()
 }

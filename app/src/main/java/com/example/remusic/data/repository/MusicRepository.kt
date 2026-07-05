@@ -879,76 +879,84 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
      * Membuat atau mengambil UUID Artist YouTube di tabel 'artists'
      */
     suspend fun upsertYouTubeArtist(name: String, youtubeId: String, photoUrl: String? = null): String? {
-        return try {
-            val data = buildJsonObject {
-                put("name", name)
-                put("youtube_id", youtubeId)
-                if (photoUrl != null) put("photo_url", photoUrl)
-                put("source", "youtube")
-            }
-
-            val response = SupabaseManager.client.from("artists")
-                .upsert(data) {
-                    onConflict = "youtube_id"
-                    select(Columns.list("id"))
-                }
-                .decodeSingle<JsonObject>()
-            
-            response["id"]?.jsonPrimitive?.content
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [UPSERT ARTIST YT] Gagal: ${e.message}")
-            null
+        val existing = SupabaseManager.client.from("artists")
+            .select(Columns.list("id")) {
+                filter { eq("youtube_id", youtubeId) }
+            }.decodeList<JsonObject>()
+        
+        if (existing.isNotEmpty()) {
+            return existing.first()["id"]?.jsonPrimitive?.content
         }
+
+        val data = buildJsonObject {
+            put("name", name)
+            put("youtube_id", youtubeId)
+            if (photoUrl != null) put("photo_url", photoUrl)
+            put("source", "youtube")
+        }
+
+        val response = SupabaseManager.client.from("artists")
+            .insert(data) {
+                select(Columns.list("id"))
+            }
+            .decodeSingle<JsonObject>()
+        
+        return response["id"]?.jsonPrimitive?.content
     }
 
     suspend fun upsertYouTubeSong(song: Song, artistName: String? = null, artistPhoto: String? = null): String? {
-        return try {
-            // 1. Pastikan Artist YouTube tersimpan di tabel 'artists' dulu
-            var finalArtistId: String? = null
-            if (!song.artistId.isNullOrBlank()) {
-                finalArtistId = upsertYouTubeArtist(
-                    name = artistName ?: song.featuredArtists.firstOrNull() ?: "Unknown Artist",
-                    youtubeId = song.artistId,
-                    photoUrl = artistPhoto
-                )
-            }
-
-            // 2. Simpan data lagu dengan artist_id yang baru didapat
-            val data = buildJsonObject {
-                put("title", song.title)
-                put("cover_url", song.coverUrl)
-                put("source", song.source ?: "youtube")
-                put("youtube_id", song.id)
-                put("duration_ms", song.durationMs)
-                if (finalArtistId != null) {
-                    put("artist_id", finalArtistId)
-                }
-                
-                // Simpan featured artists (penyanyi tambahan)
-                // Jika artistName sama dengan artis utama, jangan masukkan ke featured_artists
-                val additionalArtists = if (artistName != null) {
-                    song.featuredArtists.filter { it.trim().lowercase() != artistName.trim().lowercase() }
-                } else {
-                    song.featuredArtists
-                }
-                
-                put("featured_artists", JsonArray(additionalArtists.map { JsonPrimitive(it) }))
-            }
-            
-            val response = SupabaseManager.client.from("songs")
-                .upsert(data) {
-                    onConflict = "youtube_id"
-                    select(Columns.list("id"))
-                }
-                .decodeSingle<JsonObject>()
-            
-            val uuid = response["id"]?.jsonPrimitive?.content
-            Log.d(TAG, "✅ [UPSERT YT] Berhasil. YT_ID: ${song.id} -> SongUUID: $uuid, ArtistUUID: $finalArtistId")
-            uuid
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [UPSERT YT ERROR] ${e.message}")
-            null
+        val existing = SupabaseManager.client.from("songs")
+            .select(Columns.list("id")) {
+                filter { eq("youtube_id", song.id) }
+            }.decodeList<JsonObject>()
+        
+        if (existing.isNotEmpty()) {
+            val uuid = existing.first()["id"]?.jsonPrimitive?.content
+            Log.d(TAG, "✅ [UPSERT YT] Lagu sudah ada. YT_ID: ${song.id} -> SongUUID: $uuid")
+            return uuid
         }
+
+        // 1. Pastikan Artist YouTube tersimpan di tabel 'artists' dulu
+        var finalArtistId: String? = null
+        if (!song.artistId.isNullOrBlank()) {
+            finalArtistId = upsertYouTubeArtist(
+                name = artistName ?: song.featuredArtists.firstOrNull() ?: "Unknown Artist",
+                youtubeId = song.artistId,
+                photoUrl = artistPhoto
+            )
+        }
+
+        // 2. Simpan data lagu dengan artist_id yang baru didapat
+        val data = buildJsonObject {
+            put("title", song.title)
+            put("cover_url", song.coverUrl)
+            put("source", song.source ?: "youtube")
+            put("youtube_id", song.id)
+            put("duration_ms", song.durationMs)
+            if (finalArtistId != null) {
+                put("artist_id", finalArtistId)
+            }
+            
+            // Simpan featured artists (penyanyi tambahan)
+            // Jika artistName sama dengan artis utama, jangan masukkan ke featured_artists
+            val additionalArtists = if (artistName != null) {
+                song.featuredArtists.filter { it.trim().lowercase() != artistName.trim().lowercase() }
+            } else {
+                song.featuredArtists
+            }
+            
+            put("featured_artists", JsonArray(additionalArtists.map { JsonPrimitive(it) }))
+        }
+        
+        val response = SupabaseManager.client.from("songs")
+            .insert(data) {
+                select(Columns.list("id"))
+            }
+            .decodeSingle<JsonObject>()
+        
+        val uuid = response["id"]?.jsonPrimitive?.content
+        Log.d(TAG, "✅ [UPSERT YT] Berhasil. YT_ID: ${song.id} -> SongUUID: $uuid, ArtistUUID: $finalArtistId")
+        return uuid
     }
 
     // --- LOGIC 4: FETCH USER DETAILS (WITH RETRY) ---

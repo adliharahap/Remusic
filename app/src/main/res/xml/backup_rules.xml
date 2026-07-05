@@ -5,7 +5,14 @@
    to prevent stale/invalid sessions from being restored after reinstall.
 -->
 <full-backup-content>
-    <!-- Exclude auth-related SharedPreferences from backup -->
-    <exclude domain="sharedpref" path="supa_auth_session.xml"/>
-    <exclude domain="sharedpref" path="remusic_user_cache.xml"/>
+    <!-- Exclude auth-related and all SharedPreferences from backup -->
+    <exclude domain="sharedpref" path="."/>
+    
+    <!-- Exclude DataStore settings to prevent queue/state restoration -->
+    <exclude domain="file" path="datastore"/>
+    
+    <!-- Exclude Room Database -->
+    <exclude domain="database" path="music_database.db"/>
+    <exclude domain="database" path="music_database.db-shm"/>
+    <exclude domain="database" path="music_database.db-wal"/>
 </full-backup-content>
