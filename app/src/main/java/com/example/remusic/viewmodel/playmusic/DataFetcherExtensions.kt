@@ -529,6 +529,7 @@ import timber.log.Timber
                             .select { 
                                 filter { eq("user_id", userId) } 
                                 order("position", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                                order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                             }
                             .decodeList<PlaylistSongRelation>()
 
@@ -632,6 +633,7 @@ import timber.log.Timber
                     .select { 
                         filter { eq("playlist_id", playlistId) } 
                         order("position", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                        order("added_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                     }
                     .decodeList<PlaylistSongRelation>()
 
@@ -1003,12 +1005,12 @@ import timber.log.Timber
                     return@launch
                 }
                 
-                // Tambahkan lagu, position diset ke epoch time (seconds) agar pas di integer dan DESCENDING lagu baru ada di atas
+                // Tambahkan lagu, position diset ke 0 agar sama dengan default database, dan diurutkan menggunakan added_at DESC
                 val insertData = PlaylistSongInsertReq(
                     playlistId = playlistId,
                     songId = effectiveSongId,
                     addedBy = userId,
-                    position = (System.currentTimeMillis() / 1000L).toInt().toLong()
+                    position = 0L
                 )
                 SupabaseManager.client.from("playlist_songs").insert(insertData)
                 withContext(Dispatchers.Main) { onResult(true, "Berhasil menambahkan lagu ke playlist") }

@@ -308,6 +308,7 @@ import timber.log.Timber
                                             hasError = false, // Reset error state on new song
                                             errorType = null,
                                             lyricsOffset = 0L, // Reset offset on transition
+                                            temporaryTranslatedLyrics = null, // Clear MLKit translated lyrics
                                             alternativeLyricsResults = emptyList() // Clear cached search results for new song
                                     )
                                 }

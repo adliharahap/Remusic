@@ -98,6 +98,8 @@ data class PlayerUiState(
         val errorMessage: String? = null,
         val isLiked: Boolean = false,
         val isArtistFollowed: Boolean = false, // New State
+        val temporaryTranslatedLyrics: String? = null, // Temporary MLKit lyrics
+
 
         // --- Artist Songs Pagination ---
         val artistSongs: List<SongWithArtist> = emptyList(),
@@ -244,7 +246,24 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     internal val userPreferencesRepository = UserPreferencesRepository(getApplication())
 
+    fun showQueueInfoSnackbar() {
+        _uiState.update { it.copy(showQueueInfoSnackbar = true) }
+    }
 
+    fun hideQueueInfoSnackbar() {
+        _uiState.update { it.copy(showQueueInfoSnackbar = false) }
+    }
+
+    fun setTemporaryTranslatedLyrics(lyrics: String?) {
+        _uiState.update { state ->
+            val current = state.currentSong
+            val updatedCurrent = if (current != null && lyrics != null) {
+                current.copy(song = current.song.copy(lyrics = lyrics))
+            } else current
+            
+            state.copy(temporaryTranslatedLyrics = lyrics, currentSong = updatedCurrent)
+        }
+    }
 
     init {
         connectToService()
@@ -944,7 +963,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                             async {
                                 Timber.tag("DEBUG_PLAYER").d("Updating liked song ${songWithArtist.song.id} to position $index")
                                 com.example.remusic.data.SupabaseManager.client.from("user_song_likes")
-                                    .update({ set("position", index) }) {
+                                    .update({ set("position", newOrderedSongs.size - 1 - index) }) {
                                         filter {
                                             eq("user_id", userId)
                                             eq("song_id", songWithArtist.song.id)

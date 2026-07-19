@@ -107,13 +107,13 @@ fun PlayMusicScreen(
     }
 
     // 2. Monitor Lyrics: Pass raw lyrics from PlayMusicVM to LyricsVM
-    LaunchedEffect(uiState.currentSong?.song?.id, uiState.currentSong?.song?.lyrics) {
-        val rawLyrics = uiState.currentSong?.song?.lyrics
+    LaunchedEffect(uiState.currentSong?.song?.id, uiState.currentSong?.song?.lyrics, uiState.temporaryTranslatedLyrics) {
+        val finalLyricsToLoad = uiState.temporaryTranslatedLyrics ?: uiState.currentSong?.song?.lyrics
         // RESET STATE SCROLL SETIAP GANTI LAGU
         lyricsViewModel.resetScrollState()
         
-        if (!rawLyrics.isNullOrBlank()) {
-            lyricsViewModel.loadLyrics(rawLyrics)
+        if (!finalLyricsToLoad.isNullOrBlank()) {
+            lyricsViewModel.loadLyrics(finalLyricsToLoad)
         } else {
             lyricsViewModel.loadLyrics("")
         }
@@ -397,7 +397,8 @@ fun PlayMusicScreen(
                     searchResults = uiState.alternativeLyricsResults,
                     onApplyLyrics = { playMusicViewModel.applyAlternativeLyrics(it) },
                     isFetchingSyncedLyrics = uiState.isFetchingSyncedLyrics,
-                    meshColors = uiState.dominantColors
+                    meshColors = uiState.dominantColors,
+                    onTranslateLyrics = { playMusicViewModel.setTemporaryTranslatedLyrics(it) }
                 )
             }
         }

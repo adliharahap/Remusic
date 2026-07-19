@@ -198,6 +198,11 @@ fun NowPlaying(
 
     // Tentukan State apakah Canvas Aktif atau Tidak (Ditambah cek Mode Hemat Data)
     val isCanvasMode = !isDataSaverModeEnabled && !songWithArtist?.song?.canvasUrl.isNullOrBlank()
+    val shouldFadeBehindHeader =
+        playerBackgroundStyle == PlayerBackgroundStyle.BLURRED_COVER ||
+            playerBackgroundStyle == PlayerBackgroundStyle.MESH_GRADIENT ||
+            playerBackgroundStyle == PlayerBackgroundStyle.LIQUID_GRADIENT ||
+            playerBackgroundStyle == PlayerBackgroundStyle.LINEAR_GRADIENT
 
 
     // 1. Gunakan BoxWithConstraints untuk mendapatkan tinggi layar (viewport)
@@ -223,25 +228,32 @@ fun NowPlaying(
                 .fillMaxSize()
                 .verticalScroll(scrollState) // Scrollable container utama
                 .nestedScroll(nestedScrollConnection)
-                .graphicsLayer { alpha = 0.99f }
-                .drawWithContent {
-                    drawContent()
-                    val topFadeEndPx = (headerHeight - 10.dp).toPx()
-                    val topFadeStartPx = (headerHeight + 70.dp).toPx()
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Transparent,
-                                (topFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
-                                (topFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
-                                1.0f to Color.Black
-                            ),
-                            startY = 0f,
-                            endY = size.height
-                        ),
-                        blendMode = BlendMode.DstIn
-                    )
-                },
+                .then(
+                    if (shouldFadeBehindHeader) {
+                        Modifier
+                            .graphicsLayer { alpha = 0.99f }
+                            .drawWithContent {
+                                drawContent()
+                                val topFadeEndPx = (headerHeight - 10.dp).toPx()
+                                val topFadeStartPx = (headerHeight + 70.dp).toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(
+                                            0.0f to Color.Transparent,
+                                            (topFadeEndPx / size.height).coerceIn(0f, 1f) to Color.Transparent,
+                                            (topFadeStartPx / size.height).coerceIn(0f, 1f) to Color.Black,
+                                            1.0f to Color.Black
+                                        ),
+                                        startY = 0f,
+                                        endY = size.height
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
+                    } else {
+                        Modifier
+                    }
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ==========================================
@@ -1147,6 +1159,23 @@ fun NowPlaying(
             }
         }
 
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(headerHeight + 40.dp)
+                .heightIn(min = 100.dp, max = 200.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Black.copy(alpha = 0.85f),
+                            0.4f to Color.Black.copy(alpha = 0.65f),
+                            0.7f to Color.Black.copy(alpha = 0.25f),
+                            1.0f to Color.Transparent
+                        )
+                    )
+                )
+        )
 
 
     }

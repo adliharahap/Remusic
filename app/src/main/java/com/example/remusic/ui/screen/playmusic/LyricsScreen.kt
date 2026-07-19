@@ -141,7 +141,8 @@ fun LyricsScreen(
     playerBackgroundStyle: PlayerBackgroundStyle = PlayerBackgroundStyle.LIQUID_GRADIENT,
     gradientBrush: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
     isFetchingSyncedLyrics: Boolean = false,
-    meshColors: List<Color> = emptyList()
+    meshColors: List<Color> = emptyList(),
+    onTranslateLyrics: (String) -> Unit = {}
 ) {
     // 1. Ambil State dari ViewModel
     val lyrics by lyricsViewModel.lyrics.collectAsState()
@@ -484,8 +485,9 @@ fun LyricsScreen(
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
             onTranslateRequest = { 
                 if (currentSongId != null && songWithArtist?.song?.lyrics != null) {
-                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
-                    lyricsViewModel.translateCurrentLyrics(currentSongId, songWithArtist.song.lyrics, musicDao)
+                    lyricsViewModel.translateCurrentLyrics(currentSongId, songWithArtist.song.lyrics) { translatedText ->
+                        onTranslateLyrics(translatedText)
+                    }
                 } else {
                     android.widget.Toast.makeText(context, "Tidak ada lirik untuk diterjemahkan", android.widget.Toast.LENGTH_SHORT).show()
                 }
@@ -696,11 +698,12 @@ fun LyricsScreen(
                 topPlayerColor = topPlayerColor,
                 trackName = songWithArtist?.song?.title ?: "",
                 artistName = songWithArtist?.displayArtistName ?: "",
-                isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null,
+                isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null || songWithArtist?.song?.uploaderUserId != null,
                 onRegenerateTranslation = {
-                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
                     currentSongId?.let { id -> 
-                        lyricsViewModel.regenerateTranslation(id, musicDao)
+                        lyricsViewModel.regenerateTranslation(id) { translated ->
+                            onTranslateLyrics(translated)
+                        }
                     }
                 },
                 onRegenerateGemini = { modelName ->
@@ -730,7 +733,10 @@ fun LyricsScreen(
                             modelName = modelName,
                             songTitle = title,
                             artistName = artist,
-                            musicDao = musicDao
+                            musicDao = musicDao,
+                            onSuccess = { translatedText ->
+                                onTranslateLyrics(translatedText)
+                            }
                         )
                     }
                 }

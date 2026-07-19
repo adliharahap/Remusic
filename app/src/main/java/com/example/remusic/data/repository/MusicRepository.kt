@@ -895,8 +895,10 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
             put("source", "youtube")
         }
 
+        // Gunakan upsert (Atomic) agar tidak ada duplikasi walau di-klik bersamaan
         val response = SupabaseManager.client.from("artists")
-            .insert(data) {
+            .upsert(data) {
+                onConflict = "youtube_id"
                 select(Columns.list("id"))
             }
             .decodeSingle<JsonObject>()
@@ -949,7 +951,8 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
         }
         
         val response = SupabaseManager.client.from("songs")
-            .insert(data) {
+            .upsert(data) {
+                onConflict = "youtube_id"
                 select(Columns.list("id"))
             }
             .decodeSingle<JsonObject>()

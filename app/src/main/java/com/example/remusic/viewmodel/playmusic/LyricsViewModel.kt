@@ -104,7 +104,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     private val _translationProgress = MutableStateFlow("")
     val translationProgress = _translationProgress.asStateFlow()
 
-    fun translateCurrentLyrics(songId: String, rawLrc: String, musicDao: com.example.remusic.data.local.MusicDao) {
+    fun translateCurrentLyrics(songId: String, rawLrc: String, onTranslated: (String) -> Unit) {
         if (_isTranslating.value) return
         _isTranslating.value = true
         _translationProgress.value = "Menyiapkan terjemahan..."
@@ -116,8 +116,10 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 if (translatedLrc != null) {
-                    // Update database
-                    musicDao.updateLyrics(songId, translatedLrc)
+                    // Update global state instead of database
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onTranslated(translatedLrc)
+                    }
                     
                     // Update current parsed lyrics in UI
                     val parsed = parseLrc(translatedLrc)
@@ -139,7 +141,15 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun translateWithGemini(rawLrc: String, songId: String, modelName: String, songTitle: String, artistName: String, musicDao: com.example.remusic.data.local.MusicDao) {
+    fun translateWithGemini(
+        modelName: String,
+        songId: String,
+        songTitle: String,
+        artistName: String,
+        rawLrc: String,
+        musicDao: com.example.remusic.data.local.MusicDao,
+        onSuccess: (String) -> Unit
+    ) {
         if (_isTranslating.value) return
         _isTranslating.value = true
         _translationProgress.value = "Menghubungkan ke Gemini ($modelName)..."
@@ -225,12 +235,28 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                     // 1. Update local DB
                     musicDao.updateLyrics(songId, translatedText)
                     
+                    // Update Supabase in background
+                    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            com.example.remusic.data.SupabaseManager.client.from("songs").update({
+                                set("lyrics", translatedText)
+                            }) { filter { eq("id", songId) } }
+                        } catch (e: Exception) { Timber.tag("LyricsViewModel").e(e, "Gagal update supabase lyrics") }
+                    }
+
                     // 2. Update UI
                     val parsed = parseLrc(translatedText)
                     _lyrics.value = parsed
-                    // Do not set _isAutoTranslated to true because user does not want the message for AI translated lyrics
+                    // Set _isAutoTranslated to false explicitly for Gemini AI translations
+                    _isAutoTranslated.value = false
+                    
                     if (!isTranslateLyrics.value) {
                         userPreferencesRepository.setTranslateLyrics(true)
+                    }
+
+                    // Notifikasi ke PlayMusicViewModel
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onSuccess(translatedText)
                     }
 
                     // 3. Upload to Supabase lyrics_hub
@@ -263,7 +289,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun regenerateTranslation(songId: String, musicDao: com.example.remusic.data.local.MusicDao) {
+    fun regenerateTranslation(songId: String, onTranslated: (String) -> Unit) {
         if (_isTranslating.value) return
         val currentLyrics = _lyrics.value
         if (currentLyrics.isEmpty()) return
@@ -285,6 +311,6 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         
-        translateCurrentLyrics(songId, rawLrcBuilder.toString().trim(), musicDao)
+        translateCurrentLyrics(songId, rawLrcBuilder.toString().trim(), onTranslated)
     }
 }

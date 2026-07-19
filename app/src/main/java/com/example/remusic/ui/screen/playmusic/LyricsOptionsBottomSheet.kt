@@ -107,7 +107,8 @@ fun LyricsOptionsBottomSheet(
             Spacer(modifier = Modifier.height(24.dp))
 
             // --- SECTION 2: TERJEMAHAN LIRIK ---
-            Button(
+            if (!isTelegramSong) {
+                Button(
                 onClick = { 
                     onRegenerateTranslation() 
                     onDismiss()
@@ -187,6 +188,7 @@ fun LyricsOptionsBottomSheet(
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp
                 )
+            }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

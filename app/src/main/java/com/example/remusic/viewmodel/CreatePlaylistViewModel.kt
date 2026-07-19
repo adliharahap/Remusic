@@ -7,6 +7,7 @@ import com.example.remusic.data.SupabaseManager
 import com.example.remusic.data.UserManager
 import com.example.remusic.data.model.Playlist
 import com.example.remusic.ui.screen.PlaylistPrivacy
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,12 +97,15 @@ class CreatePlaylistViewModel : ViewModel() {
                     }
                 }
 
+                // Dapatkan ID yang 100% akurat dari Token JWT Supabase (bukan cache lokal)
+                val actualAuthId = SupabaseManager.client.auth.currentUserOrNull()?.id ?: currentUser.uid
+                
                 // Create the playlist object using mapping to match Supabase expectations
                 val playlistData = CreatePlaylistRequest(
                     id = playlistId,
                     title = title,
                     description = description,
-                    ownerUserId = currentUser.uid,
+                    ownerUserId = actualAuthId,
                     visibility = visibilityText,
                     isOfficial = false,
                     coverUrl = finalCoverUrl

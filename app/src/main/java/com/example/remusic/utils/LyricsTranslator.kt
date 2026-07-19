@@ -76,7 +76,14 @@ object LyricsTranslator {
                             translatedLines.add(line)
                         }
                     } else {
-                        translatedLines.add(line)
+                        // Handle plain text lyrics (no timestamps)
+                        if (line.isNotBlank() && !line.startsWith("[")) {
+                            val englishText = srcEnTranslator.translate(line.trim()).await()
+                            val indoText = enIdTranslator.translate(englishText).await()
+                            translatedLines.add("${line.trim()} | ${postProcessTranslation(indoText)}")
+                        } else {
+                            translatedLines.add(line)
+                        }
                     }
                 }
                 srcEnTranslator.close()
@@ -100,6 +107,12 @@ object LyricsTranslator {
             if (originalText.isNotEmpty() && !originalText.startsWith("[")) {
                 val translated = translator.translate(originalText).await()
                 return "$timestamp $originalText | ${postProcessTranslation(translated)}"
+            }
+        } else {
+            // Handle plain text lyrics
+            if (line.isNotBlank() && !line.startsWith("[")) {
+                val translated = translator.translate(line.trim()).await()
+                return "${line.trim()} | ${postProcessTranslation(translated)}"
             }
         }
         return line
@@ -127,6 +140,10 @@ object LyricsTranslator {
                 val text = matchResult.groupValues[2].trim()
                 if (text.isNotEmpty() && !text.startsWith("[")) {
                     pureLines.add(text)
+                }
+            } else {
+                if (line.isNotBlank() && !line.startsWith("[")) {
+                    pureLines.add(line.trim())
                 }
             }
         }
