@@ -313,6 +313,11 @@ import timber.log.Timber
                                     )
                                 }
 
+                                // 2. SAVE TO LOCAL PLAY HISTORY
+                                viewModelScope.launch {
+                                    repository.addToPlayHistory(matchedSong.song.id)
+                                }
+
                                 // Reset Smart Retry Flag on transition
                                 hasRetriedCurrentSong = false
 

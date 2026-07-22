@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.remusic.data.local.entity.LocalPlayHistory
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LocalPlayHistoryDao {
@@ -15,16 +16,19 @@ interface LocalPlayHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(history: LocalPlayHistory)
 
-    // Delete rows exceeding the limit of 40, keeping the 40 most recently played
+    // Delete rows exceeding the limit of 50, keeping the 50 most recently played
     @Query("""
         DELETE FROM local_play_history 
         WHERE songId NOT IN (
             SELECT songId FROM local_play_history 
             ORDER BY lastPlayedAt DESC 
-            LIMIT 40
+            LIMIT 50
         )
     """)
     suspend fun enforceLimit()
+
+    @Query("SELECT * FROM local_play_history ORDER BY lastPlayedAt DESC LIMIT 50")
+    fun getRecentHistory(): Flow<List<LocalPlayHistory>>
 
     // Get the top 10 most played songs
     @Query("SELECT * FROM local_play_history ORDER BY playCount DESC LIMIT 10")

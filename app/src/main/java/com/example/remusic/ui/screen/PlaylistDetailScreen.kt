@@ -111,7 +111,9 @@ enum class PlaylistType {
     USER_CREATED,
     OFFICIAL,
     AUTO, // Top Hits, Most Loved, etc.
-    UPLOADER // Songs uploaded by a specific user
+    UPLOADER, // Songs uploaded by a specific user
+    YOUTUBE_PLAYLIST, // Fetched from Innertube API
+    YOUTUBE_ALBUM // Fetched from Innertube API
 }
 
 @Composable
@@ -144,7 +146,7 @@ fun PlaylistDetailScreen(
 
     // --- Pagination Logic (Artist/User Playlist) ---
     // For Artist, User, Liked Songs (AUTO), Official, & UPLOADER playlists, we use fetched data from ViewModel
-    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL || playlistType == PlaylistType.UPLOADER) {
+    val effectiveSongs = if (playlistType == PlaylistType.ARTIST || playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL || playlistType == PlaylistType.UPLOADER || playlistType == PlaylistType.YOUTUBE_PLAYLIST || playlistType == PlaylistType.YOUTUBE_ALBUM) {
         uiState?.artistSongs ?: emptyList()
     } else {
         songs
@@ -176,7 +178,7 @@ fun PlaylistDetailScreen(
                     Log.d("PlaylistDetailScreen", "Artist Headers Colors: $headersColors")
                 }
             }
-            PlaylistType.USER_CREATED, PlaylistType.OFFICIAL -> {
+            PlaylistType.USER_CREATED, PlaylistType.OFFICIAL, PlaylistType.YOUTUBE_PLAYLIST, PlaylistType.YOUTUBE_ALBUM -> {
                  // For User and Official playlists, prioritize playlist custom cover
                  val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() } ?: playlistCoverUrl
                  when {
@@ -229,6 +231,10 @@ fun PlaylistDetailScreen(
              playMusicViewModel?.fetchUploaderSongs(playlistId)
         } else if ((playlistType == PlaylistType.USER_CREATED || (playlistType == PlaylistType.AUTO && playlistId == "LIKED_SONGS") || playlistType == PlaylistType.OFFICIAL) && !playlistId.isNullOrBlank()) {
              playMusicViewModel?.fetchPlaylistDetails(playlistId)
+        } else if (playlistType == PlaylistType.YOUTUBE_PLAYLIST && !playlistId.isNullOrBlank()) {
+             playMusicViewModel?.fetchYouTubePlaylist(playlistId)
+        } else if (playlistType == PlaylistType.YOUTUBE_ALBUM && !playlistId.isNullOrBlank()) {
+             playMusicViewModel?.fetchYouTubeAlbum(playlistId)
         }
     }
 
@@ -246,7 +252,16 @@ fun PlaylistDetailScreen(
                  // - Currently loading AND data not ready yet
                  (isLoadingSongs || isLoadingDetails) && (!hasSongs || !hasDetails)
             }
-            PlaylistType.USER_CREATED, PlaylistType.AUTO, PlaylistType.OFFICIAL -> {
+            PlaylistType.USER_CREATED, PlaylistType.OFFICIAL, PlaylistType.YOUTUBE_PLAYLIST, PlaylistType.YOUTUBE_ALBUM -> {
+                 val isLoadingDetails = uiState?.isLoadingArtistDetails == true // We reuse this flag for playlist header
+                 val isLoadingSongs = uiState?.isArtistSongsLoading == true // We reuse this flag for playlist songs
+                 
+                 // Show skeleton ONLY if:
+                 // 1. Initial loading is explicitly true (either header or songs is loading)
+                 // 2. AND we don't have the data yet.
+                 (isLoadingDetails || isLoadingSongs) && (uiState?.currentPlaylistDetails == null || effectiveSongs.isEmpty())
+            }
+            PlaylistType.AUTO -> {
                  if (playlistType == PlaylistType.AUTO && playlistId != "LIKED_SONGS") {
                      // For non-fetching AUTO playlists (like Home Top Hits), no skeleton loading needed
                      false
@@ -338,11 +353,19 @@ fun PlaylistDetailScreen(
         PlaylistDetailSkeleton()
     } else {
         // --- REAL CONTENT ---
+        val finalPlaylistName = if (playlistType == PlaylistType.YOUTUBE_PLAYLIST || playlistType == PlaylistType.YOUTUBE_ALBUM) {
+            uiState?.currentPlaylistDetails?.title ?: playlistName
+        } else playlistName
+        
+        val finalPlaylistCoverUrl = if (playlistType == PlaylistType.YOUTUBE_PLAYLIST || playlistType == PlaylistType.YOUTUBE_ALBUM) {
+            uiState?.currentPlaylistDetails?.coverUrl ?: playlistCoverUrl
+        } else playlistCoverUrl
+
         PlaylistDetailContent(
             songs = songs,
             effectiveSongs = effectiveSongs,
-            playlistName = playlistName,
-            playlistCoverUrl = playlistCoverUrl,
+            playlistName = finalPlaylistName,
+            playlistCoverUrl = finalPlaylistCoverUrl,
             playlistType = playlistType,
             playlistId = playlistId,
             playMusicViewModel = playMusicViewModel,
@@ -743,7 +766,7 @@ fun PlaylistDetailContent(
                                         onAddSongClick = onAddSongClick
                                     )
                                 }
-                                PlaylistType.OFFICIAL -> {
+                                PlaylistType.OFFICIAL, PlaylistType.YOUTUBE_PLAYLIST, PlaylistType.YOUTUBE_ALBUM -> {
                                      OfficialPlaylistHeader(
                                         songs = effectiveSongs,
                                         playlistName = playlistName,

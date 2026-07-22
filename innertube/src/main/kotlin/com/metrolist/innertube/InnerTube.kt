@@ -38,6 +38,10 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class InnerTube {
     private var httpClient = createClient()
 
+    private companion object {
+        const val PLAYBACK_TELEMETRY_VER = "2"
+    }
+
     var locale = YouTubeLocale(
         gl = Locale.getDefault().country,
         hl = Locale.getDefault().toLanguageTag()
@@ -197,13 +201,13 @@ class InnerTube {
         continuation: String? = null,
     ) = withRetry {
         httpClient.post("search") {
-            ytClient(client, setLogin = useLoginForBrowse)
+            ytClient(client, setLogin = false)
             setBody(
                 SearchBody(
                     context = client.toContext(
                         locale,
                         visitorData,
-                        if (useLoginForBrowse) dataSyncId else null
+                        null
                     ),
                     query = query,
                     params = params
@@ -259,9 +263,9 @@ class InnerTube {
     ) = withRetry {
         httpClient.get(url) {
             ytClient(client, true)
-            parameter("ver", "2")
             parameter("c", client.clientName)
             parameter("cpn", cpn)
+            parameter("ver", PLAYBACK_TELEMETRY_VER)
 
             if (playlistId != null) {
                 parameter("list", playlistId)
@@ -371,7 +375,7 @@ class InnerTube {
         videoId: String,
     ) = withRetry {
         httpClient.post("https://music.youtube.com/youtubei/v1/get_transcript") {
-            parameter("key", com.metrolist.innertube.BuildConfig.YOUTUBE_API_KEY)
+            parameter("key", "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3")
             headers {
                 append("Content-Type", "application/json")
             }
@@ -784,7 +788,7 @@ class InnerTube {
                     append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
                 }
             }
-            parameter("key", com.metrolist.innertube.BuildConfig.YOUTUBE_API_KEY)
+            parameter("key", "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3")
             parameter("prettyPrint", false)
             setBody(requestBody)
         }

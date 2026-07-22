@@ -1,13 +1,9 @@
 package com.metrolist.innertube.models
 
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonNames
 
-@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ThumbnailRenderer(
-    @JsonNames("croppedSquareThumbnailRenderer")
     val musicThumbnailRenderer: MusicThumbnailRenderer?,
     val musicAnimatedThumbnailRenderer: MusicAnimatedThumbnailRenderer?,
     val croppedSquareThumbnailRenderer: MusicThumbnailRenderer?,
@@ -18,26 +14,40 @@ data class ThumbnailRenderer(
         val thumbnailCrop: String?,
         val thumbnailScale: String?,
     ) {
-        fun getThumbnailUrl(): String? {
-            var url = thumbnail.thumbnails.lastOrNull()?.url ?: return null
-            if (url.contains("=")) {
-                // Force high resolution w800 and s800
-                url = url.replace(Regex("=w\\d+-h\\d+.*"), "=w800-h800-l90-rj")
-                         .replace(Regex("=s\\d+.*"), "=s800-l90-rj")
-            } else {
-                // If it doesn't have "=", it might be a direct link, but let's try appending
-                // if it looks like a googleusercontent/ggpht link
-                if (url.contains("googleusercontent.com") || url.contains("ggpht.com")) {
-                    url += "=w800-h800-l90-rj"
-                }
-            }
-            return url
-        }
+        fun getThumbnailUrl() = thumbnail.thumbnails.lastOrNull()?.url?.toHdUrl()
     }
+
+    fun getThumbnailUrl(): String? =
+        musicThumbnailRenderer?.getThumbnailUrl()
+            ?: musicAnimatedThumbnailRenderer?.backupRenderer?.getThumbnailUrl()
+            ?: croppedSquareThumbnailRenderer?.getThumbnailUrl()
 
     @Serializable
     data class MusicAnimatedThumbnailRenderer(
         val animatedThumbnail: Thumbnails,
         val backupRenderer: MusicThumbnailRenderer,
     )
+}
+
+fun String.toHdUrl(): String {
+    var url = this
+    
+    if (url.contains("googleusercontent.com") || url.contains("ggpht.com")) {
+        val index = url.lastIndexOf('=')
+        if (index != -1) {
+            val suffix = url.substring(index)
+            if (suffix.contains("w") || suffix.contains("s") || suffix.contains("h")) {
+                url = url.substring(0, index) + "=w544-h544-l90-rj"
+            }
+        }
+    }
+    
+    if (url.contains("ytimg.com")) {
+        url = url.replace("/default.jpg", "/maxresdefault.jpg")
+                 .replace("/hqdefault.jpg", "/maxresdefault.jpg")
+                 .replace("/mqdefault.jpg", "/maxresdefault.jpg")
+                 .replace("/sddefault.jpg", "/maxresdefault.jpg")
+    }
+    
+    return url
 }

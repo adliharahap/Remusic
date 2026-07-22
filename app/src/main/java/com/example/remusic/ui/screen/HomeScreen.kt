@@ -52,6 +52,10 @@ import com.example.remusic.data.UserManager
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.preferences.UserPreferencesRepository
 import com.example.remusic.navigation.HomeRoute
+import com.example.remusic.ui.components.homecomponents.ArtistRecommendationSection
+import com.example.remusic.ui.components.homecomponents.CommunityAlbumSection
+import com.example.remusic.ui.components.homecomponents.FeaturedPlaylistSection
+import com.example.remusic.ui.components.homecomponents.FeaturedPlaylist
 import com.example.remusic.ui.components.homecomponents.FollowedArtistsSection
 import com.example.remusic.ui.components.homecomponents.HomeHeader
 import com.example.remusic.ui.components.homecomponents.OfficialPlaylistSection
@@ -60,6 +64,9 @@ import com.example.remusic.ui.components.homecomponents.QuickPickCarousel
 import com.example.remusic.ui.components.homecomponents.QuickPickCarouselSkeleton
 import com.example.remusic.ui.components.homecomponents.SongSection
 import com.example.remusic.ui.components.homecomponents.SongSectionSkeleton
+import com.example.remusic.ui.components.homecomponents.SpeedDialSection
+import com.example.remusic.ui.components.homecomponents.SimilarArtistSection
+import com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSection
 import com.example.remusic.utils.GreetingUtils
 import com.example.remusic.viewmodel.homeviewmodel.HomeUiState
 import com.example.remusic.viewmodel.homeviewmodel.HomeViewModel
@@ -74,6 +81,14 @@ import androidx.compose.material.icons.rounded.BrowserUpdated
 import androidx.compose.ui.text.font.FontWeight
 import com.example.remusic.viewmodel.notification.NotificationViewModel
 import androidx.core.net.toUri
+import com.metrolist.innertube.models.AlbumItem
+import com.metrolist.innertube.models.ArtistItem
+import com.metrolist.innertube.models.EpisodeItem
+import com.metrolist.innertube.models.PlaylistItem
+import com.metrolist.innertube.models.PodcastItem
+import com.metrolist.innertube.models.SongItem
+import com.example.remusic.data.model.Song
+import com.example.remusic.data.model.Artist as DbArtist
 
 @Composable
 fun HomeScreen(
@@ -396,8 +411,7 @@ private fun HomeMainScreen(
                         // Gradient background with saved color
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(450.dp)
+                                .matchParentSize()
                                 .background(
                                     brush = Brush.verticalGradient(
                                         colorStops = arrayOf(
@@ -453,14 +467,13 @@ private fun HomeMainScreen(
                         // Gradient background with dynamic color
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(450.dp) // Extended height to cover header + carousel
+                                .matchParentSize()
                                 .background(
                                     brush = Brush.verticalGradient(
                                         colorStops = arrayOf(
                                             0.0f to lastSongColor,
-                                            0.35f to lastSongColor.copy(alpha = 0.7f).compositeOver(Color.Black),
-                                            0.65f to lastSongColor.copy(alpha = 0.4f).compositeOver(Color.Black),
+                                            0.2f to lastSongColor.copy(alpha = 0.7f).compositeOver(Color.Black),
+                                            0.5f to lastSongColor.copy(alpha = 0.4f).compositeOver(Color.Black),
                                             1.0f to Color.Black
                                         )
                                     )
@@ -490,6 +503,7 @@ private fun HomeMainScreen(
                             if (state.isRefreshing) {
                                 QuickPickCarouselSkeleton()
                             } else {
+                                // 1. Quick Picks (Pilihan Cepat)
                                 QuickPickCarousel(
                                     songs = state.quickPickSongs.take(20),
                                     onSongClick = { index ->
@@ -508,88 +522,149 @@ private fun HomeMainScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 2. Sering Kamu Putar (Recently Played)
+                    // 2. Dari Komunitas
+                    if (state.communityAlbums.isNotEmpty()) {
+                        CommunityAlbumSection(
+                            albums = state.communityAlbums,
+                            onAlbumClick = { id ->
+                                val type = state.communityAlbums.find { it.playlistId == id }?.playlistType ?: "YOUTUBE_PLAYLIST"
+                                homeNavController.navigate(HomeRoute.createRoute(id = id, type = type))
+                            },
+                            onSongClick = { song, albumTitle ->
+                                playMusicViewModel.playSongWithSmartQueue(song, albumTitle)
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
+                    // 3. Quick Mood (Chips)
+                    val chips = state.homePage?.chips
+                    if (!chips.isNullOrEmpty()) {
+                        com.example.remusic.ui.components.homecomponents.QuickMoodChips(
+                            chips = chips,
+                            activeParams = state.activeMoodParams,
+                            onChipClick = { chip ->
+                                val chipParams = chip.endpoint?.params
+                                if (chipParams == state.activeMoodParams) {
+                                    // User clicked the active mood again, turn it off (reset to default)
+                                    homeViewModel.fetchAllHomeData(null)
+                                } else {
+                                    // Set to new mood
+                                    homeViewModel.fetchAllHomeData(chipParams)
+                                }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+
+                    // 4. Baru Saja Diputar
                     if (state.recentlyPlayed.isNotEmpty()) {
-                        SongSection(
-                            title = "Baru Saja Ditambahkan",
-                            displayItems = state.recentlyPlayed.take(10),
-                            playMusicViewModel = playMusicViewModel,
-                            
-                            onSeeAllClick = {
-                                homeNavController.navigate(
-                                    HomeRoute.createRoute("baru_saja_ditambahkan", "AUTO")
-                                )
-                            },
-                            onLongClick = { song ->
-                                playMusicViewModel.showQueueOptions(song)
+                        com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSection(
+                            title = "Baru Saja Diputar",
+                            songs = state.recentlyPlayed.take(50),
+                            onSongClick = { song ->
+                                playMusicViewModel.playSongWithSmartQueue(song, "Baru Saja Diputar")
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                     }
 
-                    // 4. Lagu Paling Banyak Disukai (Most Loved)
-                    if (state.mostLoved.isNotEmpty()) {
-                        SongSection(
-                            title = "Lagu Paling Banyak Disukai",
-                            displayItems = state.mostLoved.take(10),
-                            playMusicViewModel = playMusicViewModel,
-                            onSeeAllClick = {
-                                homeNavController.navigate(
-                                    HomeRoute.createRoute("most_loved", "AUTO")
-                                )
-                            },
-                            onLongClick = { song ->
-                                playMusicViewModel.showQueueOptions(song)
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // 5. Top Trending
-                    if (state.topTrending.isNotEmpty()) {
-                        SongSection(
-                            title = "Top Trending",
-                            displayItems = state.topTrending.take(10),
-                            playMusicViewModel = playMusicViewModel,
-                            onSeeAllClick = {
-                                homeNavController.navigate(
-                                    HomeRoute.createRoute("top_trending", "AUTO")
-                                )
-                            },
-                            onLongClick = { song ->
-                                playMusicViewModel.showQueueOptions(song)
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
 
-                    // 1. Official Playlists (below carousel) //taruh bawah karena masih 1 playlist masih sikit
-                    if (state.officialPlaylists.isNotEmpty()) {
-                        OfficialPlaylistSection(
-                            playlists = state.officialPlaylists,
-                            onPlaylistClick = { playlist ->
-                                homeNavController.navigate(
-                                    HomeRoute.createRoute(
-                                        id = playlist.id,
-                                        type = "OFFICIAL"
+
+                    // 4. Baru Saja Diputar (Grid 3x3 Pager)
+                    state.homePage?.sections?.forEach { section ->
+                        val firstItem = section.items.firstOrNull()
+                        when (firstItem) {
+                            is AlbumItem, is PlaylistItem, is PodcastItem -> {
+                                val playlists = section.items.mapNotNull { item ->
+                                    when (item) {
+                                        is AlbumItem -> FeaturedPlaylist(item.title, item.thumbnail, item.browseId, "YOUTUBE_ALBUM")
+                                        is PlaylistItem -> FeaturedPlaylist(item.title, item.thumbnail ?: "", item.id, "YOUTUBE_PLAYLIST")
+                                        is PodcastItem -> FeaturedPlaylist(item.title, item.thumbnail ?: "", item.id, "YOUTUBE_PLAYLIST")
+                                        else -> null
+                                    }
+                                }
+                                
+                                if (section.title?.contains("Komunitas", ignoreCase = true) == true || section.title?.contains("Community", ignoreCase = true) == true) {
+                                    // Skip rendering Community section here since it is already rendered manually above
+                                } else {
+                                    FeaturedPlaylistSection(
+                                        title = section.title ?: "",
+                                        playlists = playlists,
+                                        onPlaylistClick = { playlist ->
+                                            homeNavController.navigate(HomeRoute.createRoute(id = playlist.playlistId, type = playlist.playlistType))
+                                        }
                                     )
-                                )
+                                }
+                                Spacer(modifier = Modifier.height(24.dp))
                             }
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
+                            is SongItem, is EpisodeItem -> {
+                                val songs = section.items.mapNotNull { item ->
+                                    when (item) {
+                                        is SongItem -> {
+                                            SongWithArtist(
+                                                song = Song(
+                                                    id = item.id,
+                                                    title = item.title,
+                                                    artistId = item.artists.firstOrNull()?.id,
+                                                    coverUrl = item.thumbnail,
+                                                    durationMs = (item.duration ?: 0) * 1000L
+                                                ),
+                                                artist = item.artists.firstOrNull()?.let { a ->
+                                                    com.example.remusic.data.model.Artist(id = a.id ?: "", name = a.name)
+                                                }
+                                            )
+                                        }
+                                        else -> null
+                                    }
+                                }
+                                if (songs.isNotEmpty()) {
+                                    if (section.title?.contains("Serupa", ignoreCase = true) == true || section.title?.contains("Similar", ignoreCase = true) == true) {
+                                        SimilarArtistSection(
+                                            title = section.title ?: "",
+                                            subtitle = "Lagu-lagu pilihan untukmu",
+                                            songs = songs,
+                                            onSongClick = { song -> playMusicViewModel.playSongWithSmartQueue(song, section.title ?: "") }
+                                        )
+                                    } else {
+                                        SongSection(
+                                            title = section.title ?: "",
+                                            displayItems = songs,
+                                            playMusicViewModel = playMusicViewModel,
+                                            onSeeAllClick = {},
+                                            onLongClick = { song -> playMusicViewModel.showQueueOptions(song) }
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                }
+                            }
+                            is ArtistItem -> {
+                                val artists = section.items.filterIsInstance<ArtistItem>().map { item ->
+                                    com.example.remusic.data.model.Artist(id = item.id, name = item.title, photoUrl = item.thumbnail ?: "")
+                                }
+                                if (artists.isNotEmpty()) {
+                                    FollowedArtistsSection(
+                                        title = section.title ?: "",
+                                        artists = artists,
+                                        onArtistClick = { artist ->
+                                            homeNavController.navigate(HomeRoute.createRoute(id = artist.id, type = "ARTIST"))
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                }
+                            }
+                            else -> { }
+                        }
                     }
 
-                    // 3. Artists You Follow
+                    // 6. Artists You Follow (Local Data)
                     if (state.followedArtists.isNotEmpty()) {
                         FollowedArtistsSection(
                             artists = state.followedArtists,
                             onArtistClick = { artist ->
-                                homeNavController.navigate(
-                                    HomeRoute.createRoute(
-                                        id = artist.id,
-                                        type = "ARTIST"
-                                    )
-                                )
+                                homeNavController.navigate(HomeRoute.createRoute(id = artist.id, type = "ARTIST"))
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))

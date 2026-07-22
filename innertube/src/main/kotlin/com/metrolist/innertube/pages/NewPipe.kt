@@ -140,16 +140,6 @@ object NewPipeUtils {
 }
 
 object NewPipeExtractor {
-    init {
-        // Pastikan NewPipe diinisialisasi dengan Downloader yang benar
-        // Ini diperlukan agar getSignatureTimestamp() dan getStreamUrl() bisa bekerja
-        try {
-            NewPipe.init(NewPipeDownloaderImpl(YouTube.proxy, YouTube.proxyAuth))
-        } catch (e: Exception) {
-            // Sudah diinisialisasi sebelumnya, abaikan
-        }
-    }
-
     fun newPipePlayer(videoId: String): List<Pair<Int, String>> {
         return try {
             val streamInfo =

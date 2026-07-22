@@ -14,6 +14,8 @@ import com.example.remusic.data.model.Playlist
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.utils.ConnectivityObserver
+import com.metrolist.innertube.YouTube
+import com.metrolist.innertube.pages.HomePage
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -21,10 +23,12 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.postgrest.query.filter.*
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed class HomeUiState {
@@ -37,7 +41,10 @@ sealed class HomeUiState {
         val mostLoved: List<SongWithArtist>,
         val topTrending: List<SongWithArtist>,
         val quickPickSongs: List<SongWithArtist>,
-        val isRefreshing: Boolean = false
+        val isRefreshing: Boolean = false,
+        val homePage: HomePage? = null,
+        val communityAlbums: List<com.example.remusic.ui.components.homecomponents.CommunityAlbumData> = emptyList(),
+        val activeMoodParams: String? = null
     ) : HomeUiState()
     data class Error(val message: String) : HomeUiState()
 }
@@ -48,8 +55,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState
 
-    // Manual Dependency Injection (Simple version)
     private val repository: MusicRepository
+    private var latestHistory: List<SongWithArtist> = emptyList()
 
     init {
         val database = MusicDatabase.getDatabase(application)
@@ -59,12 +66,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val cached = HomeCacheManager.load()
 
         if (cached != null) {
-            val shuffledCache = cached.copy(quickPickSongs = cached.quickPickSongs.shuffled())
+            val shuffledCache = cached
             _uiState.value = shuffledCache
             Log.d(TAG, "📦 [INIT] Cache tersedia, tampilkan dulu (shuffled).")
         }
         // Tetap fetch online (jika ada internet)
         fetchAllHomeData()
+
+        viewModelScope.launch {
+            repository.getRecentlyPlayedLocal().collect { history ->
+                latestHistory = history
+                _uiState.update { currentState ->
+                    if (currentState is HomeUiState.Success) {
+                        currentState.copy(recentlyPlayed = history)
+                    } else currentState
+                }
+            }
+        }
     }
 
     private var hasRefreshedInBackground = false
@@ -83,14 +101,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             Log.d(TAG, "🌐 Koneksi kembali, fetch ulang home data...")
             fetchAllHomeData()
         } else {
-            // Smart Retry: Hanya refresh background SEKALI per sesi aplikasi saat koneksi kembali
-            if (!hasRefreshedInBackground) {
-                Log.d(TAG, "🌐 Koneksi kembali, refresh data di background...")
-                hasRefreshedInBackground = true
-                refreshInBackground()
-            } else {
-                Log.d(TAG, "🌐 Koneksi kembali, tapi sudah pernah refresh background. Skip.")
-            }
+            Log.d(TAG, "🌐 Koneksi kembali, data sudah ada. Skip refresh untuk menjaga konsistensi UI.")
         }
     }
 
@@ -130,25 +141,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun fetchAllHomeData() {
+    fun fetchAllHomeData(params: String? = null) {
         viewModelScope.launch {
-            // Jika tidak ada cache, tampilkan Loading
+            // Jika tidak ada cache atau mengganti mood (params != null), tampilkan Loading
             val currentState = _uiState.value
-            if (currentState !is HomeUiState.Success) {
+            if (currentState !is HomeUiState.Success || params != null) {
                 _uiState.value = HomeUiState.Loading
             } else {
                 _uiState.value = currentState.copy(isRefreshing = true)
             }
             try {
-                Log.d(TAG, "🔄 [HOME] Fetching all home data...")
+                Log.d(TAG, "🔄 [HOME] Fetching all home data (params=$params)...")
                 val startTime = System.currentTimeMillis()
 
-                val newState = buildHomeData()
+                val newState = buildHomeData(params)
                 if (newState != null) {
                     val endTime = System.currentTimeMillis()
                     Log.d(TAG, "✅ [SUCCESS] Home data loaded in ${endTime - startTime}ms")
                     _uiState.value = newState
-                    HomeCacheManager.save(newState) // Simpan ke cache
+                    // Hanya save ke cache jika ini bukan hasil filter mood (params == null)
+                    if (params == null) {
+                        HomeCacheManager.save(newState)
+                    }
                     
                     // Trigger Sync User Data (Likes & Follows) - Initial Load case
                     val userId = UserManager.currentUser?.uid
@@ -176,25 +190,82 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Fetch semua data dan return sebagai Success state, atau null jika gagal total */
-    private suspend fun buildHomeData(): HomeUiState.Success? {
+    private suspend fun buildHomeData(params: String? = null): HomeUiState.Success? {
         return try {
-            val quickPickDeferred = viewModelScope.async { fetchQuickPickSongs() }
-            val recentlyPlayedDeferred = viewModelScope.async { fetchRecentlyPlayedSongs() }
-            val mostLovedDeferred = viewModelScope.async { fetchMostLovedSongs() }
-            val topTrendingDeferred = viewModelScope.async { fetchTopTrendingSongs() }
-            val officialPlaylistsDeferred = viewModelScope.async { fetchOfficialPlaylists() }
-            val followedArtistsDeferred = viewModelScope.async { fetchFollowedArtists() }
+            val quickPickDeferred = viewModelScope.async { try { fetchQuickPickSongs() } catch (e: Exception) { Log.e(TAG, "QuickPick error", e); emptyList() } }
+            val mostLovedDeferred = viewModelScope.async { try { fetchMostLovedSongs() } catch (e: Exception) { Log.e(TAG, "MostLoved error", e); emptyList() } }
+            val topTrendingDeferred = viewModelScope.async { try { fetchTopTrendingSongs() } catch (e: Exception) { Log.e(TAG, "TopTrending error", e); emptyList() } }
+            val officialPlaylistsDeferred = viewModelScope.async { try { fetchOfficialPlaylists() } catch (e: Exception) { Log.e(TAG, "Playlists error", e); emptyList() } }
+            val followedArtistsDeferred = viewModelScope.async { try { fetchFollowedArtists() } catch (e: Exception) { Log.e(TAG, "FollowedArtists error", e); emptyList() } }
+            val homePageDeferred = viewModelScope.async {
+                var finalPage: com.metrolist.innertube.pages.HomePage? = null
+                var attempt = 1
+                val maxAttempts = 3
+                
+                while (attempt <= maxAttempts && finalPage == null) {
+                    Log.d(TAG, "🔍 [HOME] Mengambil data Innertube... (Percobaan $attempt/$maxAttempts)")
+                    
+                    val firstPage = YouTube.home(params = params).onFailure { 
+                        Log.e(TAG, "❌ [HOME] Gagal memuat Innertube pada percobaan $attempt: ", it) 
+                    }.getOrNull()
+                    
+                    if (firstPage != null) {
+                        var mergedPage: com.metrolist.innertube.pages.HomePage = firstPage
+                        var continuation = firstPage.continuation
+                        var loads = 0
+                        
+                        // Ambil semua data semaksimal mungkin (up to 10 continuations)
+                        while (continuation != null && loads < 10) {
+                            val nextPage = YouTube.home(continuation = continuation).getOrNull()
+                            if (nextPage != null) {
+                                mergedPage = mergedPage.copy(
+                                    sections = mergedPage.sections + nextPage.sections,
+                                    continuation = nextPage.continuation
+                                )
+                                continuation = nextPage.continuation
+                                loads++
+                            } else {
+                                break
+                            }
+                        }
+                        
+                        if (mergedPage.sections.size >= 4 || params != null) {
+                            finalPage = mergedPage
+                            Log.d(TAG, "✅ [HOME] Berhasil memuat Innertube dengan ${mergedPage.sections.size} seksi!")
+                            
+                            val hasCommunity = mergedPage.sections.any { it.title?.contains("Komunitas", ignoreCase = true) == true || it.title?.contains("Community", ignoreCase = true) == true }
+                            if (hasCommunity) {
+                                Log.d(TAG, "✅ [HOME] Data 'Dari Komunitas' berhasil ditemukan!")
+                            } else {
+                                Log.w(TAG, "⚠️ [HOME] Data 'Dari Komunitas' tidak ditemukan di batch ini.")
+                            }
+                            
+                            mergedPage.sections.forEach {
+                                Log.d(TAG, "✅ [HOME] Berhasil memuat: ${it.title ?: "Seksi Tanpa Nama"}")
+                            }
+                        } else {
+                            Log.w(TAG, "⚠️ [HOME] Percobaan $attempt hanya mendapat ${mergedPage.sections.size} seksi. Mengulang...")
+                            kotlinx.coroutines.delay(1000)
+                        }
+                    } else {
+                        kotlinx.coroutines.delay(1500)
+                    }
+                    attempt++
+                }
+                finalPage
+            }
 
             val quickPickRaw = quickPickDeferred.await()
-            val recentlyPlayedRaw = recentlyPlayedDeferred.await()
             val mostLovedRaw = mostLovedDeferred.await()
             val topTrendingRaw = topTrendingDeferred.await()
             val officialPlaylists = officialPlaylistsDeferred.await()
             val followedArtists = followedArtistsDeferred.await()
+            val homePage = homePageDeferred.await()
 
-            val allRawSongs = (quickPickRaw + recentlyPlayedRaw + mostLovedRaw + topTrendingRaw)
+            val allRawSongs = (quickPickRaw + mostLovedRaw + topTrendingRaw)
+            val uuidRegex = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
             val artistIds = allRawSongs.mapNotNull { it.artistId }
-                .filter { it.isNotBlank() }
+                .filter { it.isNotBlank() && it.matches(uuidRegex) }
                 .distinct()
 
             val artistsMap = if (artistIds.isNotEmpty()) {
@@ -211,22 +282,62 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     SongWithArtist(song = song, artist = artist)
                 }
 
-            val quickPickSongs = mapToSongWithArtist(quickPickRaw).shuffled()
-            val recentlyPlayed = mapToSongWithArtist(recentlyPlayedRaw)
+            val quickPickSongs = mapToSongWithArtist(quickPickRaw)
             val mostLoved = mapToSongWithArtist(mostLovedRaw)
             val topTrending = mapToSongWithArtist(topTrendingRaw)
-            val allSongsWithArtists = (quickPickSongs + recentlyPlayed + mostLoved + topTrending)
+            val allSongsWithArtists = (quickPickSongs + mostLoved + topTrending)
                 .distinctBy { it.song.id }
-                .shuffled()
+
+            val communityAlbumsDeferred = homePage?.sections
+                ?.filter { it.title?.contains("Komunitas", ignoreCase = true) == true || it.title?.contains("Community", ignoreCase = true) == true }
+                ?.flatMap { it.items }
+                ?.mapNotNull { item ->
+                    val (id, title, thumb) = when (item) {
+                        is com.metrolist.innertube.models.PlaylistItem -> Triple(item.id, item.title, item.thumbnail ?: "")
+                        is com.metrolist.innertube.models.AlbumItem -> Triple(item.playlistId, item.title, item.thumbnail)
+                        is com.metrolist.innertube.models.PodcastItem -> Triple(item.id, item.title, item.thumbnail ?: "")
+                        else -> null
+                    } ?: return@mapNotNull null
+                    
+                    val type = if (item is com.metrolist.innertube.models.AlbumItem) "YOUTUBE_ALBUM" else "YOUTUBE_PLAYLIST"
+                    
+                    viewModelScope.async {
+                        val result = YouTube.playlist(id).getOrNull()
+                        val songs = result?.songs?.take(3)?.mapNotNull { songItem ->
+                            val song = Song(
+                                id = songItem.id,
+                                title = songItem.title,
+                                artistId = songItem.artists?.firstOrNull()?.id,
+                                coverUrl = songItem.thumbnail,
+                                durationMs = (songItem.duration ?: 0) * 1000L
+                            )
+                            val artist = songItem.artists?.firstOrNull()?.let { a -> Artist(id = a.id ?: "", name = a.name) }
+                            SongWithArtist(song, artist)
+                        } ?: emptyList()
+                        
+                        com.example.remusic.ui.components.homecomponents.CommunityAlbumData(
+                            title = title,
+                            coverUrl = thumb,
+                            playlistId = id,
+                            songs = songs,
+                            playlistType = type
+                        )
+                    }
+                } ?: emptyList()
+
+            val fetchedCommunityAlbums = communityAlbumsDeferred.awaitAll()
 
             HomeUiState.Success(
                 allSongsWithArtists = allSongsWithArtists,
                 officialPlaylists = officialPlaylists,
-                recentlyPlayed = recentlyPlayed,
+                recentlyPlayed = latestHistory,
                 followedArtists = followedArtists,
                 mostLoved = mostLoved,
                 topTrending = topTrending,
-                quickPickSongs = quickPickSongs
+                quickPickSongs = quickPickSongs,
+                homePage = homePage,
+                communityAlbums = fetchedCommunityAlbums,
+                activeMoodParams = params
             )
         } catch (e: Exception) {
             Log.e(TAG, "❌ [BUILD] buildHomeData error: ${e.message}")
@@ -356,7 +467,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
             .decodeList<Map<String, String>>()
 
-        val artistIds = followerRecords.mapNotNull { it["artist_id"] }
+        val uuidRegex = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+        val artistIds = followerRecords.mapNotNull { it["artist_id"] }.filter { it.matches(uuidRegex) }
         return if (artistIds.isNotEmpty()) {
             SupabaseManager.client
                 .from("artists")

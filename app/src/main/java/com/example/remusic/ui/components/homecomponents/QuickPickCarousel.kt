@@ -28,6 +28,19 @@ import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
 import kotlin.math.ceil
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.example.remusic.R
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -55,7 +68,7 @@ fun QuickPickCarousel(
             text = "Pilihan Cepat",
             fontFamily = AppFont.Poppins,
             fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
+            fontSize = 16.sp,
             color = Color.White,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
@@ -77,12 +90,11 @@ fun QuickPickCarousel(
                 
                 for (i in startIndex until endIndex) {
                     val songWithArtist = limitedSongs[i]
-                    QueueSongCard(
+                    CompactSongCard(
                         index = i,
                         songTitle = songWithArtist.song.title,
                         artistName = songWithArtist.displayArtistName,
                         posterUri = songWithArtist.song.coverUrl ?: "",
-                        isCurrentlyPlaying = false,
                         onClickListener = { onSongClick(i) },
                         onMoreClick = { onMoreClick(songWithArtist) }
                     )
@@ -113,5 +125,84 @@ fun QuickPickCarousel(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CompactSongCard(
+    index: Int,
+    songTitle: String,
+    artistName: String,
+    posterUri: String,
+    onClickListener: (index: Int) -> Unit,
+    onMoreClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClickListener(index) }
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = (index + 1).toString(),
+            color = Color.White.copy(0.8f),
+            fontFamily = AppFont.Coolvetica,
+            fontSize = 13.sp,
+            modifier = Modifier.width(16.dp)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        AsyncImage(
+            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                .data(posterUri)
+                .crossfade(true)
+                .build(),
+            contentDescription = "Poster Music",
+            modifier = Modifier
+                .size(40.dp)
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(4.dp)),
+            contentScale = ContentScale.Crop,
+            placeholder = painterResource(R.drawable.default_playlist),
+            error = painterResource(R.drawable.default_playlist),
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = songTitle,
+                color = Color.White,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium
+            )
+            
+            Spacer(modifier = Modifier.height(2.dp))
+            
+            Text(
+                text = artistName,
+                color = Color.White.copy(0.7f),
+                fontFamily = AppFont.Helvetica,
+                fontWeight = FontWeight.Normal,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Icon(
+            imageVector = Icons.Outlined.MoreVert,
+            contentDescription = "Action",
+            tint = Color.White.copy(0.8f),
+            modifier = Modifier
+                .size(20.dp)
+                .clickable { onMoreClick() }
+        )
     }
 }

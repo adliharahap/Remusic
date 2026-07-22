@@ -26,6 +26,8 @@ import io.github.jan.supabase.postgrest.query.filter.*
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -58,6 +60,10 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
         val top = localPlayHistoryDao.getTopPlayed()
         val randoms = localPlayHistoryDao.getRandomHistory()
         return (top + randoms).map { it.songId }
+    }
+
+    fun getRecentHistoryFlow(): kotlinx.coroutines.flow.Flow<List<com.example.remusic.data.local.entity.LocalPlayHistory>> {
+        return localPlayHistoryDao.getRecentHistory()
     }
 
     // Proxy for fetchArtistsByIds to avoid breaking other ViewModels
@@ -1295,5 +1301,21 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
             .replace(Regex("(?i)\\(.*?Hz.*?\\)"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
+    }
+
+    fun getRecentlyPlayedLocal(): Flow<List<SongWithArtist>> {
+        return localPlayHistoryDao.getRecentHistory()
+            .map { historyList ->
+                historyList.mapNotNull { history ->
+                    val cachedSong = musicDao.getSongById(history.songId)
+                    if (cachedSong != null) {
+                        val song = cachedSong.toSong()
+                        val artist = if (!cachedSong.artistId.isNullOrEmpty()) {
+                            Artist(id = cachedSong.artistId!!, name = cachedSong.artistName ?: "Unknown")
+                        } else null
+                        SongWithArtist(song, artist)
+                    } else null
+                }
+            }
     }
 }

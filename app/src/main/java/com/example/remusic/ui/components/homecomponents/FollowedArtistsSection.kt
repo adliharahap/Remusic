@@ -33,6 +33,7 @@ import com.example.remusic.ui.theme.AppFont
 
 @Composable
 fun FollowedArtistsSection(
+    title: String = "Artists You Follow",
     artists: List<Artist>,
     onArtistClick: (Artist) -> Unit = {}
 ) {
@@ -45,10 +46,10 @@ fun FollowedArtistsSection(
     ) {
         // Section title
         Text(
-            text = "Artists You Follow",
+            text = title,
             fontFamily = AppFont.Poppins,
             fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
+            fontSize = 18.sp,
             color = Color.White,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
@@ -87,7 +88,7 @@ private fun ArtistCircle(
             contentDescription = artist.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(100.dp)
+                .size(80.dp)
                 .shadow(
                     elevation = 8.dp,
                     shape = CircleShape,
@@ -103,7 +104,7 @@ private fun ArtistCircle(
             text = artist.name,
             fontFamily = AppFont.Poppins,
             fontWeight = FontWeight.Medium,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = Color.White,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
