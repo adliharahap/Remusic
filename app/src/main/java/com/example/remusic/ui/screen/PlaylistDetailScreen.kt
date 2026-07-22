@@ -30,6 +30,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -438,6 +440,7 @@ fun PlaylistDetailContent(
 ) {
     var isEditMode by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var hasEdited by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var isSongsExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     
     val mutableSongs = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateListOf<SongWithArtist>()
@@ -805,6 +808,116 @@ fun PlaylistDetailContent(
                     }
                 }
 
+                // --- Empty State ---
+                if (filteredAndSortedSongs.isEmpty() && !isInitialLoading) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp), // Beri ruang vertikal agar icon & text bisa center
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Kosong",
+                                tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Belum ada lagu di playlist ini",
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 16.sp,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                } else {
+                    // --- Daftar Lagu (Items 2+) ---
+                    val displaySongs = if (playlistType == PlaylistType.ARTIST && !isSongsExpanded && mutableSongs.size > 5) {
+                        mutableSongs.take(5)
+                    } else {
+                        mutableSongs
+                    }
+                    items(
+                        items = displaySongs,
+                        key = { item -> item.song.id }
+                    ) { songWithArtist ->
+                    val index = mutableSongs.indexOf(songWithArtist)
+                    val isPlaying = uiState?.currentSong?.song?.id == songWithArtist.song.id
+
+                    QueueSongCard(
+                        index = index,
+                        songTitle = songWithArtist.song.title,
+                        artistName = songWithArtist.displayArtistName,
+                        posterUri = songWithArtist.song.coverUrl ?: "",
+                        isCurrentlyPlaying = isPlaying, // Use ViewModel state
+                        isEditMode = isEditMode,
+                        dragModifier = if (isEditMode) Modifier.detectReorderAfterLongPress(reorderableState) else Modifier,
+                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp).animateItem(),
+                        onClickListener = { _ ->
+                            // Use sortedSongs (full list) instead of filteredAndSortedSongs
+                            val originalIndex = sortedSongs.indexOfFirst { it.song.id == songWithArtist.song.id }
+                            if (originalIndex != -1) {
+                                val effectivePlaylistName = if (playlistType == PlaylistType.ARTIST && !uiState?.artistDetails?.name.isNullOrBlank()) {
+                                    uiState?.artistDetails?.name ?: playlistName
+                                } else {
+                                    playlistName
+                                }
+                                playMusicViewModel?.playingMusicFromPlaylist(effectivePlaylistName)
+                                playMusicViewModel?.setPlaylist(
+                                    songs = sortedSongs,
+                                    startIndex = originalIndex
+                                )
+                            }
+                        },
+                        onMoreClick = {
+                             val currentUserId = com.example.remusic.data.UserManager.currentUser?.uid
+                             val isUserPlaylist = playlistType == PlaylistType.USER_CREATED
+                             val isOwner = uiState?.currentPlaylistDetails?.ownerUserId == currentUserId
+                             val isOfficial = uiState?.currentPlaylistDetails?.isOfficial == true
+                             
+                             val removePlaylistId = if (isUserPlaylist && isOwner && !isOfficial) {
+                                 playlistId
+                             } else null
+                             
+                             playMusicViewModel?.showQueueOptions(songWithArtist, removePlaylistId)
+                        }
+                    )
+                }
+            }
+
+                // --- Show More / Less Toggle ---
+                if (playlistType == PlaylistType.ARTIST && mutableSongs.size > 5) {
+                    item {
+                        androidx.compose.foundation.layout.Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isSongsExpanded = !isSongsExpanded }
+                                .padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isSongsExpanded) "Tampilkan Lebih Sedikit" else "Tampilkan Lebih Banyak",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontFamily = AppFont.Poppins,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = if (isSongsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
                 // --- Artist Innertube Sections (Albums, Top Songs, etc) ---
                 if (playlistType == PlaylistType.ARTIST && uiState?.artistPage?.sections?.isNotEmpty() == true) {
                     item {
@@ -879,81 +992,6 @@ fun PlaylistDetailContent(
                     }
                 }
 
-                // --- Empty State ---
-                if (filteredAndSortedSongs.isEmpty() && !isInitialLoading) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp), // Beri ruang vertikal agar icon & text bisa center
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = "Kosong",
-                                tint = Color.White.copy(alpha = 0.3f),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Belum ada lagu di playlist ini",
-                                fontFamily = AppFont.Poppins,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 16.sp,
-                                color = Color.White.copy(alpha = 0.5f)
-                            )
-                        }
-                    }
-                } else {
-                    // --- Daftar Lagu (Items 2+) ---
-                    items(
-                        items = mutableSongs,
-                        key = { item -> item.song.id }
-                    ) { songWithArtist ->
-                    val index = mutableSongs.indexOf(songWithArtist)
-                    val isPlaying = uiState?.currentSong?.song?.id == songWithArtist.song.id
-
-                    QueueSongCard(
-                        index = index,
-                        songTitle = songWithArtist.song.title,
-                        artistName = songWithArtist.displayArtistName,
-                        posterUri = songWithArtist.song.coverUrl ?: "",
-                        isCurrentlyPlaying = isPlaying, // Use ViewModel state
-                        isEditMode = isEditMode,
-                        dragModifier = if (isEditMode) Modifier.detectReorderAfterLongPress(reorderableState) else Modifier,
-                        modifier = Modifier.padding(horizontal = 0.dp, vertical = 4.dp).animateItem(),
-                        onClickListener = { _ ->
-                            // Use sortedSongs (full list) instead of filteredAndSortedSongs
-                            val originalIndex = sortedSongs.indexOfFirst { it.song.id == songWithArtist.song.id }
-                            if (originalIndex != -1) {
-                                val effectivePlaylistName = if (playlistType == PlaylistType.ARTIST && !uiState?.artistDetails?.name.isNullOrBlank()) {
-                                    uiState?.artistDetails?.name ?: playlistName
-                                } else {
-                                    playlistName
-                                }
-                                playMusicViewModel?.playingMusicFromPlaylist(effectivePlaylistName)
-                                playMusicViewModel?.setPlaylist(
-                                    songs = sortedSongs,
-                                    startIndex = originalIndex
-                                )
-                            }
-                        },
-                        onMoreClick = {
-                             val currentUserId = com.example.remusic.data.UserManager.currentUser?.uid
-                             val isUserPlaylist = playlistType == PlaylistType.USER_CREATED
-                             val isOwner = uiState?.currentPlaylistDetails?.ownerUserId == currentUserId
-                             val isOfficial = uiState?.currentPlaylistDetails?.isOfficial == true
-                             
-                             val removePlaylistId = if (isUserPlaylist && isOwner && !isOfficial) {
-                                 playlistId
-                             } else null
-                             
-                             playMusicViewModel?.showQueueOptions(songWithArtist, removePlaylistId)
-                        }
-                    )
-                }
-            }
 
                 // --- Pagination Trigger (No Loading Indicator) ---
                 item {
