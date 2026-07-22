@@ -795,6 +795,7 @@ import timber.log.Timber
                                 isArtistSongsLoading = false,
                                 isLoadingArtistDetails = false, // Stop the skeleton loading!
                                 artistSongsEndReached = true, // No pagination for now
+                                artistPage = artistPage, // Save raw artist page for advanced UI
                                 artistDetails = ArtistDetails(
                                     id = artistId,
                                     name = artistName,

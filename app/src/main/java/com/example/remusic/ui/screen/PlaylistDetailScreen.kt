@@ -58,6 +58,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.example.remusic.ui.components.homecomponents.FeaturedPlaylist
+import com.example.remusic.ui.components.homecomponents.FeaturedPlaylistSection
+import com.example.remusic.ui.components.homecomponents.SongSection
+import com.metrolist.innertube.models.AlbumItem
+import com.metrolist.innertube.models.ArtistItem
+import com.metrolist.innertube.models.EpisodeItem
+import com.metrolist.innertube.models.PlaylistItem
+import com.metrolist.innertube.models.PodcastItem
+import com.metrolist.innertube.models.SongItem
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -124,11 +133,13 @@ fun PlaylistDetailScreen(
     playlistType: PlaylistType = PlaylistType.AUTO, // Default type
     playlistId: String? = null, // New Param for ID-based fetching
     playMusicViewModel: PlayMusicViewModel? = null,
-    onAddSongClick: () -> Unit = {}
+    onAddSongClick: () -> Unit = {},
+    onNavigateToPlaylist: (String, String) -> Unit = { _, _ -> } // For navigating to other playlists/albums
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val density = LocalDensity.current
+    val navigateAction = onNavigateToPlaylist
 
     // --- State Management ---
     val uiState = playMusicViewModel?.uiState?.collectAsState()?.value
@@ -388,7 +399,8 @@ fun PlaylistDetailScreen(
             showSortMenu = showSortMenu,
             onShowSortMenuChange = { showSortMenu = it },
             isInitialLoading = isInitialLoading,
-            onAddSongClick = onAddSongClick
+            onAddSongClick = onAddSongClick,
+            onNavigateToPlaylist = navigateAction
         )
     }
 }
@@ -421,7 +433,8 @@ fun PlaylistDetailContent(
     showSortMenu: Boolean,
     onShowSortMenuChange: (Boolean) -> Unit,
     isInitialLoading: Boolean,
-    onAddSongClick: () -> Unit = {}
+    onAddSongClick: () -> Unit = {},
+    onNavigateToPlaylist: (String, String) -> Unit = { _, _ -> }
 ) {
     var isEditMode by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var hasEdited by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -786,6 +799,80 @@ fun PlaylistDetailContent(
                                         sortedSongs = sortedSongs,
                                         filteredAndSortedSongs = filteredAndSortedSongs
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- Artist Innertube Sections (Albums, Top Songs, etc) ---
+                if (playlistType == PlaylistType.ARTIST && uiState?.artistPage?.sections?.isNotEmpty() == true) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                            uiState.artistPage.sections.forEach { section ->
+                                val firstItem = section.items.firstOrNull()
+                                when (firstItem) {
+                                    is AlbumItem, is PlaylistItem, is PodcastItem -> {
+                                        val playlists = section.items.mapNotNull { item ->
+                                            when (item) {
+                                                is AlbumItem -> FeaturedPlaylist(item.title, item.thumbnail, item.browseId, "YOUTUBE_ALBUM")
+                                                is PlaylistItem -> FeaturedPlaylist(item.title, item.thumbnail ?: "", item.id, "YOUTUBE_PLAYLIST")
+                                                is PodcastItem -> FeaturedPlaylist(item.title, item.thumbnail ?: "", item.id, "YOUTUBE_PLAYLIST")
+                                                else -> null
+                                            }
+                                        }
+                                        if (playlists.isNotEmpty()) {
+                                            FeaturedPlaylistSection(
+                                                title = section.title ?: "",
+                                                playlists = playlists,
+                                                onPlaylistClick = { playlist ->
+                                                    onNavigateToPlaylist(playlist.playlistId, playlist.playlistType)
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        }
+                                    }
+                                    is SongItem, is EpisodeItem -> {
+                                        val sectionSongs = section.items.mapNotNull { item ->
+                                            when (item) {
+                                                is SongItem -> {
+                                                    SongWithArtist(
+                                                        song = com.example.remusic.data.model.Song(
+                                                            id = item.id,
+                                                            title = item.title,
+                                                            artistId = item.artists.firstOrNull()?.id,
+                                                            coverUrl = item.thumbnail,
+                                                            durationMs = (item.duration ?: 0) * 1000L,
+                                                            source = "youtube",
+                                                            featuredArtists = item.artists.drop(1).map { it.name }
+                                                        ),
+                                                        artist = item.artists.firstOrNull()?.let { a ->
+                                                            com.example.remusic.data.model.Artist(id = a.id ?: "", name = a.name)
+                                                        } ?: com.example.remusic.data.model.Artist(id = playlistId ?: "", name = playlistName)
+                                                    )
+                                                }
+                                                else -> null
+                                            }
+                                        }
+                                        // Jangan merender section "Lagu" (songs utama) karena akan di-render di list vertikal bawah
+                                        val isMainSongsSection = section.title?.contains("Lagu", ignoreCase = true) == true || 
+                                                                 section.title?.contains("Song", ignoreCase = true) == true ||
+                                                                 section.title?.contains("lagu", ignoreCase = true) == true
+                                        
+                                        if (sectionSongs.isNotEmpty() && !isMainSongsSection && playMusicViewModel != null) {
+                                            SongSection(
+                                                title = section.title ?: "",
+                                                displayItems = sectionSongs,
+                                                playMusicViewModel = playMusicViewModel,
+                                                onSeeAllClick = {},
+                                                onLongClick = { song -> playMusicViewModel.showQueueOptions(song) }
+                                            )
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                        }
+                                    }
+                                    else -> {
+                                        // Ignore other types for now
+                                    }
                                 }
                             }
                         }

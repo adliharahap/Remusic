@@ -111,24 +111,24 @@ fun OfficialPlaylistHeader(
 
             // Remusic Official Brand Row
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // You can replace this with a local vector asset of the Remusic logo if you have one
+                // Gambar Anime khusus Official Remusic
                 Box(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFE91E63)), // Example brand color
+                        .background(Color.DarkGray),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground), // Fallback
-                        contentDescription = "Remusic Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                    AsyncImage(
+                        model = "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg",
+                        contentDescription = "Remusic Anime Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Remusic",
+                    text = "Remusic Official",
                     fontFamily = AppFont.Poppins,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -207,44 +207,12 @@ fun OfficialPlaylistHeader(
                  Spacer(modifier = Modifier.height(12.dp)) 
             }
 
-            // 3. Action Buttons Row
+            // 3. Action Buttons Row (Right Aligned)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.End
             ) {
-                // Left Side Actions: Add to Library, Download, More
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Add/Save Playlist Button
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Simpan ke Koleksi",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clickable {
-                                // TODO: Handle save official playlist
-                            }
-                    )
-                    // Download Button
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Unduh",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(28.dp)
-                    )
-                    // More Options Button
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Lainnya",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-
                 // Right Side Actions: Shuffle & Play FAB
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

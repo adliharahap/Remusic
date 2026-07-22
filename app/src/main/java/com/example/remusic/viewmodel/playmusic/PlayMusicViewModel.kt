@@ -136,6 +136,7 @@ data class PlayerUiState(
         // Artist Details State (For Playlist Header)
         val artistDetails: ArtistDetails? = null,
         val isLoadingArtistDetails: Boolean = false,
+        val artistPage: com.metrolist.innertube.pages.ArtistPage? = null,
 
         // --- Tab Tracking for "Lihat Playlist" Navigation ---
         val previousTab: String = "home", // Default to Home tab route

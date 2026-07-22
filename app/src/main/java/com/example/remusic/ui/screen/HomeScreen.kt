@@ -315,7 +315,10 @@ fun HomeScreen(
                 playlistCoverUrl = playlistCoverUrl,
                 playlistType = playlistType,
                 playlistId = id, // Pass ID for pagination
-                playMusicViewModel = playMusicViewModel
+                playMusicViewModel = playMusicViewModel,
+                onNavigateToPlaylist = { browseId, type ->
+                    homeNavController.navigate(HomeRoute.createRoute(id = browseId, type = type))
+                }
             )
         }
         composable("notification") {
