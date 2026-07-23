@@ -43,6 +43,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -975,7 +977,7 @@ import timber.log.Timber
                     try {
                         val uuid = repository.upsertYouTubeSong(
                             song = songMetadata,
-                            artistName = songWithArtist.displayArtistName,
+                            artistName = songWithArtist.artist?.name,
                             artistPhoto = songWithArtist.artist?.photoUrl
                         )
                         if (uuid == null) {
@@ -1005,13 +1007,24 @@ import timber.log.Timber
                     withContext(Dispatchers.Main) { onResult(false, "Lagu sudah ada di playlist ini") }
                     return@launch
                 }
+                // Cari max position saat ini agar lagu baru selalu di atas
+                val maxPosResult = SupabaseManager.client.from("playlist_songs")
+                    .select(columns = io.github.jan.supabase.postgrest.query.Columns.list("position")) {
+                        filter { eq("playlist_id", playlistId) }
+                        order("position", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                        limit(1)
+                    }.decodeList<kotlinx.serialization.json.JsonObject>()
                 
-                // Tambahkan lagu, position diset ke 0 agar sama dengan default database, dan diurutkan menggunakan added_at DESC
+                var maxPos = 0L
+                if (maxPosResult.isNotEmpty()) {
+                    maxPos = maxPosResult.first()["position"]?.jsonPrimitive?.longOrNull ?: 0L
+                }
+
                 val insertData = PlaylistSongInsertReq(
                     playlistId = playlistId,
                     songId = effectiveSongId,
                     addedBy = userId,
-                    position = 0L
+                    position = maxPos + 1L
                 )
                 SupabaseManager.client.from("playlist_songs").insert(insertData)
                 withContext(Dispatchers.Main) { onResult(true, "Berhasil menambahkan lagu ke playlist") }

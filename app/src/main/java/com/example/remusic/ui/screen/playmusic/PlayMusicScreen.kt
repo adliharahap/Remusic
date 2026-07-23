@@ -339,9 +339,13 @@ fun PlayMusicScreen(
                     isArtistFollowed = uiState.isArtistFollowed,
                     onToggleFollowArtist = { playMusicViewModel.toggleFollowArtist() },
                     onLihatPlaylistClick = {
-                        val artistId = uiState.currentSong?.artist?.id
-                        if (!artistId.isNullOrBlank()) {
-                            onNavigateToArtist(artistId)
+                        val artist = uiState.currentSong?.artist
+                        if (artist != null) {
+                            if (!artist.youtubeId.isNullOrBlank()) {
+                                onNavigateToArtist(artist.youtubeId)
+                            } else {
+                                onNavigateToArtist(artist.id)
+                            }
                         }
                     },
                     onUploaderClick = {

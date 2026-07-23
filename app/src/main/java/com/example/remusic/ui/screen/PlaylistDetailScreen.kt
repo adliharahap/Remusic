@@ -836,7 +836,9 @@ fun PlaylistDetailContent(
                     }
                 } else {
                     // --- Daftar Lagu (Items 2+) ---
-                    val displaySongs = if (playlistType == PlaylistType.ARTIST && !isSongsExpanded && mutableSongs.size > 5) {
+                    val displaySongs = if (isSearching) {
+                        mutableSongs.take(10)
+                    } else if (playlistType == PlaylistType.ARTIST && !isSongsExpanded) {
                         mutableSongs.take(5)
                     } else {
                         mutableSongs
@@ -890,7 +892,7 @@ fun PlaylistDetailContent(
             }
 
                 // --- Show More / Less Toggle ---
-                if (playlistType == PlaylistType.ARTIST && mutableSongs.size > 5) {
+                if (playlistType == PlaylistType.ARTIST && mutableSongs.size > 5 && !isSearching) {
                     item {
                         androidx.compose.foundation.layout.Row(
                             modifier = Modifier
@@ -923,10 +925,27 @@ fun PlaylistDetailContent(
                     item {
                         Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
                             uiState.artistPage.sections.forEach { section ->
-                                val firstItem = section.items.firstOrNull()
+                                val filteredItems = if (isSearching && searchQuery.isNotBlank()) {
+                                    section.items.filter { item ->
+                                        val title = when (item) {
+                                            is com.metrolist.innertube.models.AlbumItem -> item.title
+                                            is com.metrolist.innertube.models.PlaylistItem -> item.title
+                                            is com.metrolist.innertube.models.PodcastItem -> item.title
+                                            is com.metrolist.innertube.models.SongItem -> item.title
+                                            is com.metrolist.innertube.models.EpisodeItem -> item.title
+                                            else -> ""
+                                        }
+                                        title.contains(searchQuery, ignoreCase = true)
+                                    }
+                                } else {
+                                    section.items
+                                }
+                                if (filteredItems.isEmpty()) return@forEach
+                                
+                                val firstItem = filteredItems.firstOrNull()
                                 when (firstItem) {
-                                    is AlbumItem, is PlaylistItem, is PodcastItem -> {
-                                        val playlists = section.items.mapNotNull { item ->
+                                    is com.metrolist.innertube.models.AlbumItem, is com.metrolist.innertube.models.PlaylistItem, is com.metrolist.innertube.models.PodcastItem -> {
+                                        val playlists = filteredItems.mapNotNull { item ->
                                             when (item) {
                                                 is AlbumItem -> FeaturedPlaylist(item.title, item.thumbnail, item.browseId, "YOUTUBE_ALBUM")
                                                 is PlaylistItem -> FeaturedPlaylist(item.title, item.thumbnail ?: "", item.id, "YOUTUBE_PLAYLIST")
@@ -945,8 +964,8 @@ fun PlaylistDetailContent(
                                             Spacer(modifier = Modifier.height(24.dp))
                                         }
                                     }
-                                    is SongItem, is EpisodeItem -> {
-                                        val sectionSongs = section.items.mapNotNull { item ->
+                                    is com.metrolist.innertube.models.SongItem, is com.metrolist.innertube.models.EpisodeItem -> {
+                                        val sectionSongs = filteredItems.mapNotNull { item ->
                                             when (item) {
                                                 is SongItem -> {
                                                     SongWithArtist(

@@ -52,7 +52,7 @@ fun PlayMusicViewModel.fetchYouTubePlaylist(playlistId: String) {
                 id = playlistId,
                 title = result.playlist.title,
                 coverUrl = result.playlist.thumbnail ?: "",
-                ownerUserId = result.playlist.author?.id ?: "youtube",
+                ownerUserId = result.playlist.author?.name ?: "YouTube",
                 isOfficial = true,
                 visibility = "public",
                 createdAt = null
@@ -112,7 +112,7 @@ fun PlayMusicViewModel.fetchYouTubeAlbum(albumId: String) {
                 id = albumId,
                 title = result.album.title,
                 coverUrl = result.album.thumbnail,
-                ownerUserId = result.album.artists?.firstOrNull()?.id ?: "youtube",
+                ownerUserId = result.album.artists?.firstOrNull()?.name ?: "YouTube Artist",
                 isOfficial = true,
                 visibility = "public",
                 createdAt = null

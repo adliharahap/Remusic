@@ -214,9 +214,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         // --- 1. COMBINE ARTISTS ---
         val localArtists = _foundArtists.value
         val youtubeArtists = _ytFoundArtists.value
-        
-        val allArtists = (localArtists + youtubeArtists).distinctBy { it.id }
-        
+        val allArtists = (localArtists + youtubeArtists)
+            .groupBy { "${it.name.lowercase().trim()}_${it.source}" }
+            .map { (_, group) ->
+                // If it's a youtube artist, prefer the one from real YouTube (ID doesn't contain '-')
+                if (group.first().source == "youtube" || group.first().source == "youtube_video") {
+                    group.find { !it.id.contains("-") } ?: group.first()
+                } else {
+                    group.first()
+                }
+            }
         val sortedArtists = allArtists.sortedByDescending { artist ->
             val name = artist.name.lowercase()
             when {

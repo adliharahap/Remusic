@@ -239,6 +239,11 @@ fun ProfileScreen(
                 playMusicViewModel = playMusicViewModel,
                 onAddSongClick = {
                     navController.navigate("add_song_to_playlist/$id")
+                },
+                onNavigateToPlaylist = { browseId, pType ->
+                    profileNavController.navigate(
+                        ProfileRoute.createRoute(id = browseId, type = pType)
+                    )
                 }
             )
         }

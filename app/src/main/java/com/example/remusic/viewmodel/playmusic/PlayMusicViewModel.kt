@@ -505,7 +505,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                     userId = userId,
                     isLiked = currentIsLiked,
                     songMetadata = currentSong,
-                    artistName = _uiState.value.currentSong?.displayArtistName,
+                    artistName = _uiState.value.currentSong?.artist?.name,
                     artistPhoto = _uiState.value.currentSong?.artist?.photoUrl
                 )
             } catch (e: Exception) {
@@ -649,7 +649,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                         userId,
                         false,
                         songWithArtist.song,
-                    songWithArtist.displayArtistName,
+                        songWithArtist.artist?.name,
                         songWithArtist.artist?.photoUrl ?: _uiState.value.currentSong?.artist?.photoUrl
                 )
                 if (_uiState.value.currentSong?.song?.id == songId) {

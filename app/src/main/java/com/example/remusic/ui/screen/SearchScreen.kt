@@ -182,6 +182,11 @@ fun SearchScreen(
                 playMusicViewModel = playMusicViewModel,
                 onAddSongClick = {
                     rootNavController.navigate("add_song_to_playlist/$id")
+                },
+                onNavigateToPlaylist = { browseId, pType ->
+                    searchNavController.navigate(
+                        com.example.remusic.navigation.SearchRoute.createRoute(id = browseId, type = pType)
+                    )
                 }
             )
         }

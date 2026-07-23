@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Shuffle
@@ -111,24 +112,42 @@ fun OfficialPlaylistHeader(
 
             // Remusic Official Brand Row
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Gambar Anime khusus Official Remusic
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(Color.DarkGray),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg",
-                        contentDescription = "Remusic Anime Avatar",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                // Gambar khusus Official Remusic atau Icon Placeholder untuk artis
+                val creatorName = playlist?.ownerUserId?.takeIf { it.isNotBlank() && !it.startsWith("UC") } ?: "Remusic Official"
+                if (creatorName == "Remusic Official") {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color.DarkGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg",
+                            contentDescription = "Remusic Anime Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color.DarkGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Artist Avatar",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Remusic Official",
+                    text = creatorName,
                     fontFamily = AppFont.Poppins,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -136,12 +155,14 @@ fun OfficialPlaylistHeader(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 // Verified Badge
-                Icon(
-                    imageVector = Icons.Default.Verified,
-                    contentDescription = "Verified Official",
-                    tint = Color(0xFF4CAF50), // Green verified or brand color
-                    modifier = Modifier.size(16.dp)
-                )
+                if (creatorName == "Remusic Official" || playlist?.isOfficial == true) {
+                    Icon(
+                        imageVector = Icons.Default.Verified,
+                        contentDescription = "Verified Official",
+                        tint = Color(0xFF4CAF50), // Green verified or brand color
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))

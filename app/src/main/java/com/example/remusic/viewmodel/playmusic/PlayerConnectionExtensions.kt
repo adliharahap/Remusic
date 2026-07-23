@@ -634,7 +634,7 @@ import timber.log.Timber
                                         repository.incrementPlayCount(
                                             songId = currentSongId,
                                             songMetadata = songMetadata,
-                                            artistName = currentSongWA?.displayArtistName,
+                                            artistName = currentSongWA?.artist?.name,
                                             artistPhoto = currentSongWA?.artist?.photoUrl
                                         )
                                         repository.addToPlayHistory(currentSongId)

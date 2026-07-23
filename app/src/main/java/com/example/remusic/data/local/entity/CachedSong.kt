@@ -48,7 +48,8 @@ data class CachedSong(
             telegramFileId = telegramFileId,
             telegramDirectUrl = telegramDirectUrl,
             source = source,
-            youtubeId = youtubeId
+            youtubeId = youtubeId,
+            featuredArtists = listOf(artistName) + featuredArtists
         )
     }
 }

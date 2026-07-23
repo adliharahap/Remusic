@@ -178,6 +178,11 @@ fun PlaylistScreen(
                 playMusicViewModel = playMusicViewModel,
                 onAddSongClick = {
                     rootNavController.navigate("add_song_to_playlist/$argsId")
+                },
+                onNavigateToPlaylist = { browseId, pType ->
+                    val encodedName = java.net.URLEncoder.encode(decodedName, "UTF-8")
+                    val encodedCover = java.net.URLEncoder.encode(decodedCoverUrl, "UTF-8")
+                    playlistNavController.navigate("playlist_detail/$browseId/$pType/$encodedName/$encodedCover")
                 }
             )
         }
