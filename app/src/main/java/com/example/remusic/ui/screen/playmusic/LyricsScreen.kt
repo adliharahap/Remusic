@@ -267,17 +267,7 @@ fun LyricsScreen(
             }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        PlayerBackground(
-            style = playerBackgroundStyle,
-            topColor = topPlayerColor,
-            bottomColor = bottomPlayerColor,
-            gradientBrush = gradientBrush,
-            coverUrl = songWithArtist?.song?.coverUrl,
-            meshColors = meshColors
-        )
-
-        // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
+    Box(modifier = Modifier.fillMaxSize()) {        // --- LOGIKA UTAMA TAMPILAN (CONTENT / EMPTY / LOADING) ---
         Crossfade(
             targetState = when {
                 isLoading -> "LOADING"

@@ -53,7 +53,10 @@ class QueueRepository(private val musicDao: MusicDao) {
                            language = song.language ?: existing.language,
                            moods = (song.moods ?: emptyList()).ifEmpty { existing.moods },
                            artistId = song.artistId ?: existing.artistId,
-                           featuredArtists = song.featuredArtists.ifEmpty { existing.featuredArtists },
+                           featuredArtists = song.featuredArtists.filter {
+                               val t = it.trim().lowercase()
+                               t != (songWA.artist?.name ?: "Unknown").trim().lowercase() && t != "unknown" && t != "unknown artist"
+                           }.ifEmpty { existing.featuredArtists },
                            source = song.source ?: existing.source,
                            youtubeId = song.youtubeId ?: existing.youtubeId
                        )
@@ -73,7 +76,10 @@ class QueueRepository(private val musicDao: MusicDao) {
                         language = song.language,
                         moods = song.moods ?: emptyList(),
                         artistId = song.artistId,
-                        featuredArtists = song.featuredArtists,
+                        featuredArtists = song.featuredArtists.filter {
+                            val t = it.trim().lowercase()
+                            t != (songWA.artist?.name ?: "Unknown").trim().lowercase() && t != "unknown" && t != "unknown artist"
+                        },
                         source = song.source,
                         youtubeId = song.youtubeId
                     ))
@@ -134,7 +140,15 @@ class QueueRepository(private val musicDao: MusicDao) {
                             language = song.language ?: existing?.language,
                             moods = (song.moods ?: emptyList()).ifEmpty { existing?.moods ?: emptyList() },
                             artistId = song.artistId ?: existing?.artistId,
-                            featuredArtists = song.featuredArtists.ifEmpty { existing?.featuredArtists ?: emptyList() },
+                            featuredArtists = song.featuredArtists.filter {
+                                val t = it.trim().lowercase()
+                                t != "unknown" && t != "unknown artist"
+                            }.ifEmpty {
+                                existing?.featuredArtists?.filter {
+                                    val t = it.trim().lowercase()
+                                    t != "unknown" && t != "unknown artist"
+                                } ?: emptyList()
+                            },
                             source = song.source ?: existing?.source,
                             youtubeId = song.youtubeId ?: existing?.youtubeId
                         )

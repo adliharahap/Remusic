@@ -209,17 +209,6 @@ fun NowPlaying(
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
     ) {
-        if (!isCanvasMode) {
-            PlayerBackground(
-                style = playerBackgroundStyle,
-                topColor = topPlayerColor,
-                bottomColor = bottomPlayerColor,
-                gradientBrush = gradientBrush,
-                coverUrl = songWithArtist?.song?.coverUrl,
-                meshColors = meshColors
-            )
-        }
-
         // Simpan tinggi layar ke variabel
         val screenHeight = maxHeight
 

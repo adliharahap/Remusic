@@ -246,6 +246,15 @@ fun PlayMusicScreen(
             .fillMaxSize()
             .background(brush = animatedGradientBrush)
     ) {
+        PlayerBackground(
+            style = uiState.playerBackgroundStyle,
+            topColor = animatedTopColor,
+            bottomColor = animatedBottomColor,
+            gradientBrush = animatedGradientBrush,
+            coverUrl = uiState.currentSong?.song?.coverUrl,
+            meshColors = uiState.dominantColors
+        )
+
         // Overlay Putih Halus untuk Lirik Hitam agar mata tidak sakit (mengurangi saturasi background)
         if (inactiveColor == InactiveLyricsColor.BLACK) {
             Box(

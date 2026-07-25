@@ -303,7 +303,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     
                     viewModelScope.async {
                         val result = YouTube.playlist(id).getOrNull()
-                        val songs = result?.songs?.take(3)?.mapNotNull { songItem ->
+                        val songs = result?.songs?.mapNotNull { songItem ->
                             val song = Song(
                                 id = songItem.id,
                                 title = songItem.title,

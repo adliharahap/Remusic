@@ -3,6 +3,7 @@ package com.example.remusic.ui.components.homecomponents
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +38,8 @@ import com.example.remusic.data.model.SongWithArtist
 fun RecentlyPlayedGridPagerSection(
     title: String,
     songs: List<SongWithArtist>,
-    onSongClick: (SongWithArtist) -> Unit
+    onSongClick: (SongWithArtist) -> Unit,
+    onSongLongClick: (SongWithArtist) -> Unit = {}
 ) {
     if (songs.isEmpty()) return
 
@@ -59,7 +61,8 @@ fun RecentlyPlayedGridPagerSection(
         HorizontalPager(
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 16.dp),
-            pageSpacing = 16.dp
+            pageSpacing = 16.dp,
+            verticalAlignment = Alignment.Top
         ) { page ->
             val startIndex = page * pageSize
             val endIndex = minOf(startIndex + pageSize, songs.size)
@@ -91,7 +94,10 @@ fun RecentlyPlayedGridPagerSection(
                                         .height(110.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color.DarkGray)
-                                        .clickable { onSongClick(song) }
+                                        .combinedClickable(
+                                            onClick = { onSongClick(song) },
+                                            onLongClick = { onSongLongClick(song) }
+                                        )
                                 ) {
                                     AsyncImage(
                                         model = song.song.coverUrl,
@@ -153,10 +159,10 @@ fun RecentlyPlayedGridPagerSection(
                     val color = if (pagerState.currentPage == iteration) Color.White else Color.White.copy(alpha = 0.5f)
                     Box(
                         modifier = Modifier
-                            .padding(horizontal = 4.dp)
+                            .padding(horizontal = 3.dp)
                             .clip(androidx.compose.foundation.shape.CircleShape)
                             .background(color)
-                            .size(8.dp)
+                            .size(5.dp)
                     )
                 }
             }

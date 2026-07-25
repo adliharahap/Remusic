@@ -1342,7 +1342,10 @@ import timber.log.Timber
     }
 
 
-    suspend fun PlayMusicViewModel.resolveSongUrl(song: SongWithArtist): MusicRepository.ResolvedSongUrl {
+    suspend fun PlayMusicViewModel.resolveSongUrl(
+        song: SongWithArtist,
+        forceM4a: Boolean = false
+    ): MusicRepository.ResolvedSongUrl {
         // Fitur Offline: Bypass request resolusi url jika lagu berasal dari local storage
         if (song.song.id.startsWith("offline_") || song.song.audioUrl?.startsWith("content://") == true) {
            Timber.tag("DEBUG_PLAYER").d( "✅ RESOLVED OFFLINE URL: ${song.song.audioUrl}")
@@ -1369,7 +1372,8 @@ import timber.log.Timber
                         telegramFileId = song.song.telegramFileId,
                         fallbackUrl = song.song.audioUrl,
                         artistId = song.artist?.id,
-                        source = song.song.source
+                        source = song.song.source,
+                        forceM4a = forceM4a
                 )
 
        Timber.tag("DEBUG_PLAYER").d( "✅ RESOLVED URL [${result.source}]: ${result.url}")
@@ -1632,10 +1636,19 @@ import timber.log.Timber
     fun PlayMusicViewModel.showQueueOptions(song: SongWithArtist, playlistIdToRemoveFrom: String? = null) {
         _uiState.update { it.copy(
             selectedSongForQueueOptions = song,
-            playlistIdToRemoveFromQueueOptions = playlistIdToRemoveFrom
+            playlistIdToRemoveFromQueueOptions = playlistIdToRemoveFrom,
+            isQueueOptionsSongLiked = false // Reset while loading
         ) }
-    }
 
+        viewModelScope.launch {
+            val user = com.example.remusic.data.SupabaseManager.client.auth.currentUserOrNull()
+            val userId = user?.id
+            if (userId != null) {
+                val isLiked = repository.social.isSongLiked(song.song.id, userId)
+                _uiState.update { it.copy(isQueueOptionsSongLiked = isLiked) }
+            }
+        }
+    }
 
     fun PlayMusicViewModel.dismissQueueOptions() {
         _uiState.update { it.copy(

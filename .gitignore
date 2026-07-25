@@ -21,3 +21,5 @@ google-services.json
 # Build outputs
 /app/release/
 *.apk
+.codex
+.agents

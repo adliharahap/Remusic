@@ -113,21 +113,6 @@ fun AutoPlaylistHeader(
                 fontSize = 13.sp,
                 color = Color.White.copy(0.7f)
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(0.5f))
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = formattedTotalDuration,
-                fontFamily = AppFont.Poppins,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-                color = Color.White.copy(0.7f)
-            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -138,63 +123,9 @@ fun AutoPlaylistHeader(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.End
         ) {
-            // A. SORT BUTTON (Left - Chip Style with Text)
-            Box {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(0.1f))
-                        .clickable { onSortClick() }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = currentSort.icon,
-                        contentDescription = "Sort",
-                        tint = Color.White.copy(0.9f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = currentSort.SdisplayName,
-                        color = Color.White.copy(0.9f),
-                        fontFamily = AppFont.Poppins,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = showSortMenu,
-                    onDismissRequest = onSortMenuDismiss,
-                    modifier = Modifier.background(Color(0xFF282828)),
-                    offset = androidx.compose.ui.unit.DpOffset(0.dp, 8.dp)
-                ) {
-                    SortOrder.entries.forEach { sortOption ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    sortOption.SdisplayName,
-                                    color = Color.White,
-                                    fontFamily = AppFont.Poppins
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = sortOption.icon,
-                                    contentDescription = sortOption.SdisplayName,
-                                    tint = Color.White.copy(0.8f)
-                                )
-                            },
-                            onClick = { onSortOptionSelected(sortOption) }
-                        )
-                    }
-                }
-            }
-
-            // B. PLAY & SHUFFLE (Right - Grouped & Larger)
+            // PLAY & SHUFFLE (Right - Grouped & Larger)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -240,13 +171,13 @@ fun AutoPlaylistHeader(
                     )
                 }
 
-                // Play Button (Large Circle - Primary/White)
+                // Play Button (Large Circle - Primary/Green)
                 Box(
                     modifier = Modifier
                         .size(52.dp)
                         .shadow(12.dp, CircleShape)
                         .clip(CircleShape)
-                        .background(Color.White)
+                        .background(Color(0xFF1DB954))
                         .clickable {
                             if (filteredAndSortedSongs.isNotEmpty()) {
                                 playMusicViewModel?.playingMusicFromPlaylist(playlistName)

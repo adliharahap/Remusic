@@ -725,7 +725,7 @@ fun PlaylistDetailContent(
                                         onEditModeToggle = { isEditMode = !isEditMode }
                                     )
                                 }
-                                PlaylistType.ARTIST, PlaylistType.UPLOADER -> {
+                                PlaylistType.ARTIST -> {
                                     ArtistPlaylistHeader(
                                         songs = effectiveSongs,
                                         playlistName = playlistName,
@@ -750,6 +750,89 @@ fun PlaylistDetailContent(
                                         artistId = playlistId, // Pass the artist ID
                                         playlistType = playlistType
                                     )
+                                }
+                                PlaylistType.UPLOADER -> {
+                                    Column {
+                                        com.example.remusic.ui.components.playlist.PublicUserProfileHeader(
+                                            songs = effectiveSongs,
+                                            playlistName = playlistName,
+                                            playlistCoverUrl = playlistCoverUrl,
+                                            formattedTotalDuration = formattedTotalDuration,
+                                            imageCollapseProgress = imageCollapseProgress,
+                                            currentSort = currentSort,
+                                            showSortMenu = showSortMenu,
+                                            onSortMenuDismiss = { onShowSortMenuChange(false) },
+                                            onSortOptionSelected = { sortOption ->
+                                                if (sortOption != currentSort) {
+                                                    isEditMode = false
+                                                }
+                                                onSortChange(sortOption)
+                                                onShowSortMenuChange(false)
+                                            },
+                                            onSortClick = { onShowSortMenuChange(true) },
+                                            playMusicViewModel = playMusicViewModel,
+                                            uiState = uiState,
+                                            sortedSongs = sortedSongs,
+                                            filteredAndSortedSongs = filteredAndSortedSongs
+                                        )
+                                        
+                                        // Render User Public Playlists (Horizontal Row) if available
+                                        if (uiState?.userPublicPlaylists?.isNotEmpty() == true) {
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = "Playlist Publik",
+                                                fontFamily = AppFont.Poppins,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                                            )
+                                            androidx.compose.foundation.lazy.LazyRow(
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 24.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                items(uiState.userPublicPlaylists) { playlist ->
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .width(130.dp)
+                                                            .clickable { 
+                                                                onNavigateToPlaylist(playlist.id, PlaylistType.OFFICIAL.name)
+                                                            }
+                                                    ) {
+                                                        coil.compose.AsyncImage(
+                                                            model = playlist.coverUrl,
+                                                            contentDescription = playlist.title,
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                            modifier = Modifier
+                                                                .size(130.dp)
+                                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                                        )
+                                                        
+                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                        
+                                                        Text(
+                                                            text = playlist.title,
+                                                            color = Color.White,
+                                                            fontSize = 14.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 2,
+                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(24.dp))
+                                            Text(
+                                                text = "Lagu yang diunggah",
+                                                fontFamily = AppFont.Poppins,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+                                            )
+                                        }
+                                    }
                                 }
                                 PlaylistType.USER_CREATED -> {
                                      UserPlaylistHeader(
@@ -996,7 +1079,9 @@ fun PlaylistDetailContent(
                                                 title = section.title ?: "",
                                                 displayItems = sectionSongs,
                                                 playMusicViewModel = playMusicViewModel,
-                                                onSeeAllClick = {},
+                                                onSeeAllClick = {
+                                                    onNavigateToPlaylist?.invoke(section.title ?: "Auto", "AUTO")
+                                                },
                                                 onLongClick = { song -> playMusicViewModel.showQueueOptions(song) }
                                             )
                                             Spacer(modifier = Modifier.height(24.dp))

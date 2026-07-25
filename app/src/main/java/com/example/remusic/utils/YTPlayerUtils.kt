@@ -71,12 +71,12 @@ object YTPlayerUtils {
      */
     suspend fun playerResponseForPlayback(
         videoId: String,
-        playlistId: String? = null,
+        playlistId: String?,
         audioQuality: AudioQuality,
-        connectivityManager: ConnectivityManager? = null,
+        connectivityManager: ConnectivityManager?,
+        forceM4a: Boolean = false
     ): Result<PlaybackData> = runCatching {
-        Timber.tag(TAG).d("=== PLAYER RESPONSE FOR PLAYBACK ===")
-        Timber.tag(TAG).d("videoId: $videoId")
+        Timber.tag(TAG).d("Starting playerResponseForPlayback for videoId: $videoId")
         Timber.tag(TAG).d("playlistId: $playlistId")
         Timber.tag(TAG).d("audioQuality: $audioQuality")
 
@@ -218,12 +218,12 @@ object YTPlayerUtils {
                     newPipeResponse ?: streamPlayerResponse
                 }
 
-                format =
-                    findFormat(
-                        responseToUse,
-                        audioQuality,
-                        connectivityManager,
-                    )
+                format = findFormat(
+                    responseToUse,
+                    audioQuality,
+                    connectivityManager,
+                    forceM4a
+                )
 
                 if (format == null) {
                     Timber.tag(logTag).d("No suitable format found for client: ${if (clientIndex == -1) MAIN_CLIENT.clientName else STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
@@ -393,13 +393,17 @@ object YTPlayerUtils {
         playerResponse: PlayerResponse,
         audioQuality: AudioQuality,
         connectivityManager: ConnectivityManager?,
+        forceM4a: Boolean = false
     ): PlayerResponse.StreamingData.Format? {
         val isMetered = connectivityManager?.isActiveNetworkMetered ?: false
         Timber.tag(logTag).d("Finding format with audioQuality: $audioQuality, network metered: $isMetered")
 
         val adaptiveFormats = playerResponse.streamingData?.adaptiveFormats ?: return null
 
-        val audioCapableFormats = adaptiveFormats.filter { it.isAudio }
+        var audioCapableFormats = adaptiveFormats.filter { it.isAudio }
+        if (forceM4a) {
+            audioCapableFormats = audioCapableFormats.filter { it.mimeType.contains("mp4", ignoreCase = true) }
+        }
         if (audioCapableFormats.isEmpty()) return null
 
         val maxBitrate = audioCapableFormats.maxOfOrNull { it.bitrate } ?: return null

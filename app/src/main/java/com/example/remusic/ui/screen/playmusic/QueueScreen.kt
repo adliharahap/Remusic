@@ -100,17 +100,7 @@ fun QueueScreen(
 
     //untuk memberikan padding top
     val configuration = LocalConfiguration.current
-    Box(modifier = Modifier.fillMaxSize()) {
-        PlayerBackground(
-            style = playerBackgroundStyle,
-            topColor = topPlayerColor,
-            bottomColor = bottomPlayerColor,
-            gradientBrush = gradientBrush,
-            coverUrl = songWithArtist?.song?.coverUrl,
-            meshColors = meshColors
-        )
-
-        LazyColumn(
+    Box(modifier = Modifier.fillMaxSize()) {        LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()

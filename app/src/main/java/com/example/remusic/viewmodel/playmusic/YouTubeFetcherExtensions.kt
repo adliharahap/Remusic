@@ -21,7 +21,9 @@ fun PlayMusicViewModel.fetchYouTubePlaylist(playlistId: String) {
                 isArtistSongsLoading = true,
                 currentPlaylistDetails = null,
                 playlistOwner = null,
-                artistSongs = emptyList() // We use artistSongs to hold the fetched list
+                artistSongs = emptyList(), // We use artistSongs to hold the fetched list
+                artistPage = null,
+                artistDetails = null
             )
         }
         try {
@@ -66,6 +68,11 @@ fun PlayMusicViewModel.fetchYouTubePlaylist(playlistId: String) {
                     artistSongs = mappedSongs // Put it here so the screen can render it
                 )
             }
+            
+            // Fetch Artist Details to show avatar in OfficialPlaylistHeader
+            result.playlist.author?.id?.let { authorId ->
+                fetchArtistDetailsForHeader(authorId)
+            }
         } catch (e: Exception) {
             Timber.tag("DEBUG_PLAYER").e(e, "Failed to fetch YouTube Playlist")
             _uiState.update { it.copy(isLoadingArtistDetails = false, isArtistSongsLoading = false) }
@@ -81,7 +88,9 @@ fun PlayMusicViewModel.fetchYouTubeAlbum(albumId: String) {
                 isArtistSongsLoading = true,
                 currentPlaylistDetails = null,
                 playlistOwner = null,
-                artistSongs = emptyList()
+                artistSongs = emptyList(),
+                artistPage = null,
+                artistDetails = null
             )
         }
         try {
@@ -125,6 +134,11 @@ fun PlayMusicViewModel.fetchYouTubeAlbum(albumId: String) {
                     currentPlaylistDetails = mappedPlaylist,
                     artistSongs = mappedSongs
                 )
+            }
+
+            // Fetch Artist Details to show avatar in OfficialPlaylistHeader
+            result.album.artists?.firstOrNull()?.id?.let { artistId ->
+                fetchArtistDetailsForHeader(artistId)
             }
         } catch (e: Exception) {
             Timber.tag("DEBUG_PLAYER").e(e, "Failed to fetch YouTube Album")

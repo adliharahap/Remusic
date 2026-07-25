@@ -112,36 +112,54 @@ fun OfficialPlaylistHeader(
 
             // Remusic Official Brand Row
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Gambar khusus Official Remusic atau Icon Placeholder untuk artis
-                val creatorName = playlist?.ownerUserId?.takeIf { it.isNotBlank() && !it.startsWith("UC") } ?: "Remusic Official"
-                if (creatorName == "Remusic Official") {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color.DarkGray),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // Tentukan status kepemilikan playlist (User/Uploader/Official)
+                val isMyPlaylist = playlist?.ownerUserId != null && playlist.ownerUserId == com.example.remusic.data.UserManager.currentUser?.uid
+                val isUploaderPlaylist = playlist?.ownerUserId != null && playlist.ownerUserId == uiState?.playlistOwner?.uid
+
+                // Dapatkan nama creator
+                val creatorName = when {
+                    isMyPlaylist -> com.example.remusic.data.UserManager.currentUser?.displayName ?: "Unknown User"
+                    isUploaderPlaylist -> uiState?.playlistOwner?.displayName ?: "Unknown User"
+                    playlist != null && uiState?.playlistOwner != null && uiState.playlistOwner.displayName?.isNotBlank() == true -> uiState.playlistOwner.displayName
+                    playlist != null && playlist.ownerUserId?.isNotBlank() == true && !playlist.ownerUserId.startsWith("UC") -> playlist.ownerUserId // Fallback ke ID
+                    uiState?.artistDetails?.name?.isNotBlank() == true -> uiState.artistDetails.name // Menggunakan nama dari ArtistDetails jika ada
+                    songs.isNotEmpty() && songs.firstOrNull()?.artist?.name?.isNotBlank() == true -> songs.first().artist!!.name
+                    else -> "Remusic Official"
+                }
+
+                // Dapatkan avatar creator
+                val creatorAvatarUrl = when {
+                    isMyPlaylist -> com.example.remusic.data.UserManager.currentUser?.photoUrl
+                    isUploaderPlaylist -> uiState?.playlistOwner?.photoUrl
+                    playlist != null && uiState?.playlistOwner != null && uiState.playlistOwner.photoUrl?.isNotBlank() == true -> uiState.playlistOwner.photoUrl
+                    uiState?.artistDetails?.photoUrl?.isNotBlank() == true -> uiState.artistDetails.photoUrl // Prioritaskan dari ArtistDetails
+                    songs.isNotEmpty() && songs.firstOrNull()?.artist?.photoUrl?.isNotBlank() == true -> songs.first().artist!!.photoUrl
+                    else -> null
+                }
+                
+                val defaultAnimeAvatar = "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg"
+
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color.DarkGray),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!creatorAvatarUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg",
-                            contentDescription = "Remusic Anime Avatar",
+                            model = creatorAvatarUrl,
+                            contentDescription = "Creator Avatar",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color.DarkGray),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Artist Avatar",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+                    } else {
+                        // Gunakan default anime untuk YouTube Music, Remusic Official, atau user/artist tanpa foto
+                        AsyncImage(
+                            model = defaultAnimeAvatar,
+                            contentDescription = "Default Anime Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }

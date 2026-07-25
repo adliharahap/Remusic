@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -55,6 +56,7 @@ import com.example.remusic.ui.theme.AppFont
 fun QueueOptionsBottomSheet(
     sheetState: SheetState,
     songWithArtist: SongWithArtist?,
+    isLiked: Boolean = false,
     onDismiss: () -> Unit,
     // Callbacks
     onShare: () -> Unit = {},
@@ -201,8 +203,9 @@ fun QueueOptionsBottomSheet(
             // 4. Add to Liked
             if (!isOfflineSong) {
                 QueueMenuOptionItem(
-                    title = "Tambahkan ke Lagu yang Disukai",
-                    icon = Icons.Outlined.FavoriteBorder,
+                    title = if (isLiked) "Hapus lagu dari favorite" else "Tambahkan ke lagu yang disukai",
+                    icon = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    iconTint = if (isLiked) Color.Red else Color.White,
                     onClick = onAddToLiked
                 )
 
@@ -231,6 +234,7 @@ fun QueueOptionsBottomSheet(
 fun QueueMenuOptionItem(
     title: String,
     icon: ImageVector,
+    iconTint: Color = Color.White,
     onClick: () -> Unit
 ) {
     Row(
@@ -243,7 +247,7 @@ fun QueueMenuOptionItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White,
+            tint = iconTint,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(20.dp))

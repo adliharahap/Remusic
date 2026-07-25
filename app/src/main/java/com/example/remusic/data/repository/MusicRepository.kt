@@ -173,7 +173,8 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
             telegramFileId: String?,
             fallbackUrl: String?,
             artistId: String?,
-            source: String? = null   // "youtube" | "telegram" | "mp3" | "offline" | null (auto)
+            source: String? = null,   // "youtube" | "telegram" | "mp3" | "offline" | null (auto)
+            forceM4a: Boolean = false
     ): ResolvedSongUrl {
         Log.d(TAG, "================================================================")
         Log.d(TAG, "🚀 [RESOLVE] \"$title\" | source=$source | telegramFileId=$telegramFileId")
@@ -243,7 +244,8 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
                 videoId = finalYtId,
                 playlistId = null,
                 audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
-                connectivityManager = null
+                connectivityManager = null,
+                forceM4a = forceM4a
             )
             val playbackData = playbackResult.getOrNull()
             ytStreamUrl = playbackData?.streamUrl ?: ""

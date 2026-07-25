@@ -2,6 +2,7 @@ package com.example.remusic.ui.components.homecomponents
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -140,7 +141,10 @@ private fun CompactSongCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClickListener(index) }
+            .combinedClickable(
+                onClick = { onClickListener(index) },
+                onLongClick = { onMoreClick() }
+            )
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

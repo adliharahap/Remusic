@@ -513,7 +513,8 @@ import timber.log.Timber
                     isArtistSongsLoading = true, // Set to true here to trigger skeleton
                     currentPlaylistDetails = null,
                     playlistOwner = null,
-                    artistSongs = emptyList() // clear previous songs
+                    artistSongs = emptyList(), // clear previous songs
+                    artistPage = null // Clear Innertube artist page leak
                 )
             }
             try {
@@ -701,11 +702,28 @@ import timber.log.Timber
 
     fun PlayMusicViewModel.fetchArtistSongs(artistId: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Check memory cache first
+            artistCache[artistId]?.let { cachedData ->
+                _uiState.update {
+                    it.copy(
+                        artistSongs = cachedData.artistSongs,
+                        artistPage = cachedData.artistPage,
+                        artistDetails = cachedData.artistDetails,
+                        isArtistSongsLoading = false,
+                        isLoadingArtistDetails = false,
+                        artistSongsEndReached = true,
+                        artistSongsPage = 0
+                    )
+                }
+                return@launch
+            }
+
             // Reset State for new artist
             _uiState.update {
                 it.copy(
                         artistSongs = emptyList(),
                         isArtistSongsLoading = true,
+                        isLoadingArtistDetails = true,
                         artistSongsEndReached = false,
                         artistSongsPage = 0
                 )
@@ -791,21 +809,31 @@ import timber.log.Timber
                         }
                     } catch (e: Exception) { 0L }
 
+                    val finalSongs = ytSongs.distinctBy { song -> song.song.id }
+                    val finalDetails = ArtistDetails(
+                        id = artistId,
+                        name = artistName,
+                        photoUrl = artistPhoto,
+                        description = artistPage?.description,
+                        totalSongs = songCount,
+                        followerCount = subCount
+                    )
+
+                    // Save to cache
+                    artistCache[artistId] = ArtistCacheData(
+                        artistSongs = finalSongs,
+                        artistPage = artistPage,
+                        artistDetails = finalDetails
+                    )
+
                     _uiState.update {
                         it.copy(
-                                artistSongs = ytSongs.distinctBy { song -> song.song.id },
+                                artistSongs = finalSongs,
                                 isArtistSongsLoading = false,
                                 isLoadingArtistDetails = false, // Stop the skeleton loading!
                                 artistSongsEndReached = true, // No pagination for now
                                 artistPage = artistPage, // Save raw artist page for advanced UI
-                                artistDetails = ArtistDetails(
-                                    id = artistId,
-                                    name = artistName,
-                                    photoUrl = artistPhoto,
-                                    description = artistPage?.description,
-                                    totalSongs = songCount,
-                                    followerCount = subCount
-                                )
+                                artistDetails = finalDetails
                         )
                     }
                 } catch (e: Exception) {
@@ -825,7 +853,8 @@ import timber.log.Timber
                         artistSongs = newSongs,
                         isArtistSongsLoading = false,
                         artistSongsEndReached = newSongs.size < limit,
-                        artistSongsPage = 1 // Next page index
+                        artistSongsPage = 1, // Next page index
+                        artistPage = null // Clear Innertube artist page leak
                 )
             }
         }
@@ -865,11 +894,26 @@ import timber.log.Timber
                     isArtistSongsLoading = true,
                     artistSongsEndReached = false,
                     artistSongsPage = 0,
-                    isLoadingArtistDetails = true
+                    isLoadingArtistDetails = true,
+                    artistPage = null // Clear Innertube artist page leak
                 )
             }
 
             try {
+                // Fetch public playlists
+                val publicPlaylists = try {
+                    SupabaseManager.client.from("playlists")
+                        .select {
+                            filter {
+                                eq("owner_user_id", uploaderId)
+                                eq("visibility", "public")
+                            }
+                            order("created_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                        }.decodeList<com.example.remusic.data.model.Playlist>()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
                 // Fetch uploader details to show in header (reusing ArtistDetails for UI compatibility)
                 val user = SupabaseManager.client.from("users").select {
                     filter { eq("id", uploaderId) }
@@ -884,7 +928,8 @@ import timber.log.Timber
                                 photoUrl = user.photoUrl,
                                 description = "Lagu yang diunggah oleh ${user.displayName}"
                             ),
-                            isLoadingArtistDetails = false
+                            isLoadingArtistDetails = false,
+                            userPublicPlaylists = publicPlaylists
                         )
                     }
                 }

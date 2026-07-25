@@ -49,7 +49,10 @@ data class CachedSong(
             telegramDirectUrl = telegramDirectUrl,
             source = source,
             youtubeId = youtubeId,
-            featuredArtists = listOf(artistName) + featuredArtists
+            featuredArtists = (listOf(artistName) + featuredArtists).filter {
+                val t = it.trim().lowercase()
+                t != "unknown" && t != "unknown artist" && t.isNotBlank()
+            }.distinct()
         )
     }
 }

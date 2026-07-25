@@ -398,6 +398,7 @@ fun MainScreen(
             QueueOptionsBottomSheet(
                 sheetState = queueSheetState,
                 songWithArtist = selectedSong,
+                isLiked = playerUiState.isQueueOptionsSongLiked,
                 onDismiss = { playMusicViewModel.dismissQueueOptions() },
                 onAddToQueue = {
                     val message = playMusicViewModel.addToQueue(selectedSong)

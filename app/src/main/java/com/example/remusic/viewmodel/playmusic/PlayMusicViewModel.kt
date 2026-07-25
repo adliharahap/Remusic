@@ -125,6 +125,7 @@ data class PlayerUiState(
         // Global Queue Options State
         val selectedSongForQueueOptions: SongWithArtist? = null,
         val playlistIdToRemoveFromQueueOptions: String? = null,
+        val isQueueOptionsSongLiked: Boolean = false,
 
         // Snackbar State for Queue Info
         val showQueueInfoSnackbar: Boolean = false,
@@ -137,6 +138,9 @@ data class PlayerUiState(
         val artistDetails: ArtistDetails? = null,
         val isLoadingArtistDetails: Boolean = false,
         val artistPage: com.metrolist.innertube.pages.ArtistPage? = null,
+        
+        // User's Public Playlists (For User Profile)
+        val userPublicPlaylists: List<com.example.remusic.data.model.Playlist> = emptyList(),
 
         // --- Tab Tracking for "Lihat Playlist" Navigation ---
         val previousTab: String = "home", // Default to Home tab route
@@ -217,6 +221,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     internal val _uploaderNavigationFlow =
         MutableSharedFlow<String?>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val uploaderNavigationFlow = _uploaderNavigationFlow.asSharedFlow()
+
+    // --- IN-MEMORY CACHE FOR ARTIST PLAYLIST ---
+    val artistCache = mutableMapOf<String, ArtistCacheData>()
 
     // Variabel untuk melacak lagu terakhir yang play count-nya sudah di-increment
     internal var lastIncrementedSongId: String? = null
@@ -558,7 +565,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
            Timber.tag("DEBUG_PLAYER").d( "📥 [DOWNLOAD] Memulai proses download untuk: ${songWithArtist.song.title}")
 
             // 1. Resolve URL (Biasanya Telegram URL expired, jadi kita refresh)
-            val resolved = resolveSongUrl(songWithArtist)
+            val resolved = resolveSongUrl(songWithArtist, forceM4a = true)
             val url = resolved.url
 
             if (url.isBlank()) {
@@ -643,6 +650,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 if (_uiState.value.currentSong?.song?.id == songId) {
                     _uiState.update { it.copy(isLiked = false) }
                 }
+                if (_uiState.value.selectedSongForQueueOptions?.song?.id == songId) {
+                    _uiState.update { it.copy(isQueueOptionsSongLiked = false) }
+                }
             } else {
                 repository.social.toggleLike(
                         songId,
@@ -654,6 +664,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 if (_uiState.value.currentSong?.song?.id == songId) {
                     _uiState.update { it.copy(isLiked = true) }
+                }
+                if (_uiState.value.selectedSongForQueueOptions?.song?.id == songId) {
+                    _uiState.update { it.copy(isQueueOptionsSongLiked = true) }
                 }
             }
         }
@@ -1083,3 +1096,9 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 }
+
+data class ArtistCacheData(
+    val artistSongs: List<com.example.remusic.data.model.SongWithArtist>,
+    val artistPage: com.metrolist.innertube.pages.ArtistPage?,
+    val artistDetails: com.example.remusic.data.model.ArtistDetails?
+)

@@ -39,7 +39,7 @@ data class CommunityAlbumData(
 fun CommunityAlbumSection(
     albums: List<CommunityAlbumData>,
     onAlbumClick: (String) -> Unit,
-    onSongClick: (SongWithArtist, String) -> Unit,
+    onSongClick: (List<SongWithArtist>, Int, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (albums.isEmpty()) return
@@ -129,7 +129,7 @@ fun CommunityAlbumSection(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSongClick(songWithArtist, album.title) }
+                                    .clickable { onSongClick(album.songs, index, album.title) }
                             ) {
                                 Text(
                                     text = "${index + 1}",

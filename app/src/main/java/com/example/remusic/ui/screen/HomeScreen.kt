@@ -286,9 +286,32 @@ fun HomeScreen(
                                     songs = state.mostLoved
                                 }
                                 else -> {
-                                    // Fallback / Unknown
-                                    playlistTitle = "Playlist"
-                                    songs = state.allSongsWithArtists.take(20)
+                                    // Fallback / Unknown - Try to find the section in homePage
+                                    playlistTitle = id ?: "Playlist"
+                                    val section = state.homePage?.sections?.find { it.title == id }
+                                    if (section != null) {
+                                        songs = section.items.mapNotNull { item ->
+                                            when (item) {
+                                                is com.metrolist.innertube.models.SongItem -> {
+                                                    com.example.remusic.data.model.SongWithArtist(
+                                                        song = com.example.remusic.data.model.Song(
+                                                            id = item.id,
+                                                            title = item.title,
+                                                            artistId = item.artists.firstOrNull()?.id,
+                                                            coverUrl = item.thumbnail,
+                                                            durationMs = (item.duration ?: 0) * 1000L
+                                                        ),
+                                                        artist = item.artists.firstOrNull()?.let { a ->
+                                                            com.example.remusic.data.model.Artist(id = a.id ?: "", name = a.name)
+                                                        }
+                                                    )
+                                                }
+                                                else -> null
+                                            }
+                                        }
+                                    } else {
+                                        songs = state.allSongsWithArtists.take(20)
+                                    }
                                 }
                             }
                             playlistCoverUrl = songs.firstOrNull()?.song?.coverUrl ?: ""
@@ -405,10 +428,16 @@ private fun HomeMainScreen(
                 .verticalScroll(scrollState)
                 .padding(bottom = 130.dp)
         ) {
-            when (val state = homeState) {
+            androidx.compose.animation.Crossfade(
+                targetState = homeState,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 500),
+                label = "HomeStateCrossfade"
+            ) { state ->
+                when (state) {
                 is HomeUiState.Loading -> {
-                    // Show header immediately (data from SplashScreen)
-                    Box(
+                    Column {
+                        // Show header immediately (data from SplashScreen)
+                        Box(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         // Gradient background with saved color
@@ -449,22 +478,31 @@ private fun HomeMainScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Section Skeletons
-                    SongSectionSkeleton(title = "Sering Kamu Putar")
+                    // Specific Skeletons
+                    com.example.remusic.ui.components.homecomponents.CommunityAlbumSectionSkeleton()
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    SongSectionSkeleton(title = "Paling Kamu Suka")
+                    com.example.remusic.ui.components.homecomponents.QuickMoodChipsSkeleton()
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    SongSectionSkeleton(title = "Sedang Trending")
+                    com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSectionSkeleton()
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    PlaylistSectionSkeleton()
+                    com.example.remusic.ui.components.homecomponents.FeaturedPlaylistSectionSkeleton()
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    com.example.remusic.ui.components.homecomponents.SongSectionSkeleton(title = "Sering Kamu Putar")
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    com.example.remusic.ui.components.homecomponents.SongSectionSkeleton(title = "Sedang Trending")
+                    Spacer(modifier = Modifier.height(24.dp))
+                    } // End Column for Loading
                 }
 
                 is HomeUiState.Success -> {
-                    // Gradient overlay that extends to carousel
-                    Box(
+                    Column {
+                        // Gradient overlay that extends to carousel
+                        Box(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         // Gradient background with dynamic color
@@ -503,9 +541,10 @@ private fun HomeMainScreen(
                                 dominantColor = lastSongColor
                             )
 
-                            if (state.isRefreshing) {
+                            if (state.homePage == null && state.isRefreshing) {
                                 QuickPickCarouselSkeleton()
-                            } else {
+                            } else if (state.quickPickSongs.isNotEmpty()) {
+
                                 // 1. Quick Picks (Pilihan Cepat)
                                 QuickPickCarousel(
                                     songs = state.quickPickSongs.take(20),
@@ -526,23 +565,28 @@ private fun HomeMainScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 2. Dari Komunitas
-                    if (state.communityAlbums.isNotEmpty()) {
+                    if (state.homePage == null && state.isRefreshing) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        com.example.remusic.ui.components.homecomponents.CommunityAlbumSectionSkeleton()
+                    } else if (state.communityAlbums.isNotEmpty()) {
                         CommunityAlbumSection(
                             albums = state.communityAlbums,
                             onAlbumClick = { id ->
                                 val type = state.communityAlbums.find { it.playlistId == id }?.playlistType ?: "YOUTUBE_PLAYLIST"
                                 homeNavController.navigate(HomeRoute.createRoute(id = id, type = type))
                             },
-                            onSongClick = { song, albumTitle ->
-                                playMusicViewModel.playSongWithSmartQueue(song, albumTitle)
+                            onSongClick = { songs, index, albumTitle ->
+                                playMusicViewModel.setPlaylist(songs, index, albumTitle)
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                     }
-
+                    
                     // 3. Quick Mood (Chips)
                     val chips = state.homePage?.chips
-                    if (!chips.isNullOrEmpty()) {
+                    if (state.homePage == null && state.isRefreshing) {
+                        com.example.remusic.ui.components.homecomponents.QuickMoodChipsSkeleton()
+                    } else if (!chips.isNullOrEmpty()) {
                         com.example.remusic.ui.components.homecomponents.QuickMoodChips(
                             chips = chips,
                             activeParams = state.activeMoodParams,
@@ -561,24 +605,35 @@ private fun HomeMainScreen(
                     }
 
                     // 4. Baru Saja Diputar
-                    if (state.recentlyPlayed.isNotEmpty()) {
+                    if (state.homePage == null && state.isRefreshing) {
+                        com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSectionSkeleton()
+                    } else if (state.recentlyPlayed.isNotEmpty()) {
                         com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSection(
                             title = "Baru Saja Diputar",
                             songs = state.recentlyPlayed.take(50),
                             onSongClick = { song ->
                                 playMusicViewModel.playSongWithSmartQueue(song, "Baru Saja Diputar")
+                            },
+                            onSongLongClick = { song ->
+                                playMusicViewModel.showQueueOptions(song)
                             }
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
 
 
-
-                    // 4. Baru Saja Diputar (Grid 3x3 Pager)
-                    state.homePage?.sections?.forEach { section ->
-                        val firstItem = section.items.firstOrNull()
+                    // 5. Featured Playlists & Songs from Home Page
+                    if (state.homePage == null && state.isRefreshing) {
+                        com.example.remusic.ui.components.homecomponents.FeaturedPlaylistSectionSkeleton()
+                        Spacer(modifier = Modifier.height(24.dp))
+                        com.example.remusic.ui.components.homecomponents.SongSectionSkeleton(title = "Sering Kamu Putar")
+                        Spacer(modifier = Modifier.height(24.dp))
+                        com.example.remusic.ui.components.homecomponents.SongSectionSkeleton(title = "Sedang Trending")
+                        Spacer(modifier = Modifier.height(24.dp))
+                    } else {
+                        state.homePage?.sections?.forEach { section ->
+                            val firstItem = section.items.firstOrNull()
                         when (firstItem) {
                             is AlbumItem, is PlaylistItem, is PodcastItem -> {
                                 val playlists = section.items.mapNotNull { item ->
@@ -636,7 +691,9 @@ private fun HomeMainScreen(
                                             title = section.title ?: "",
                                             displayItems = songs,
                                             playMusicViewModel = playMusicViewModel,
-                                            onSeeAllClick = {},
+                                            onSeeAllClick = {
+                                                homeNavController.navigate(HomeRoute.createRoute(id = section.title ?: "Auto", type = "AUTO"))
+                                            },
                                             onLongClick = { song -> playMusicViewModel.showQueueOptions(song) }
                                         )
                                     }
@@ -661,6 +718,7 @@ private fun HomeMainScreen(
                             else -> { }
                         }
                     }
+                    }
 
                     // 6. Artists You Follow (Local Data)
                     if (state.followedArtists.isNotEmpty()) {
@@ -672,6 +730,7 @@ private fun HomeMainScreen(
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                     }
+                    } // End Column for Success
                 }
 
                 is HomeUiState.Error -> {
@@ -696,8 +755,9 @@ private fun HomeMainScreen(
                         }
                     }
                 }
-            }
-        }
+            } // End of when
+            } // End of Crossfade
+        } // End of Column
     }
 }
 

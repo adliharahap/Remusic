@@ -52,7 +52,7 @@ object SongDownloader {
         val relativePath = "$BASE_DIRECTORY/Remusic/$folderName"
         
         // Aturan nama file di dalam folder (HANYA MENGGUNAKAN JUDUL)
-        val mp3FileName = "$safeTitle.mp3"
+        val mp3FileName = "$safeTitle.m4a"
         val mp4FileName = "$safeTitle.mp4"
         val lrcFileName = "$safeTitle.lrc"
 
@@ -67,7 +67,16 @@ object SongDownloader {
             Log.d(TAG, "Memulai unduhan ke folder: $folderName")
             
             // 1. Download MP3 (Bobot: 60%)
-            val mp3Success = downloadFile(context, url, mp3FileName, "audio/mpeg", relativePath, 0f, 60f, onProgress)
+            val mp3Success = downloadAndTagMp3(
+                context = context,
+                downloadUrl = url,
+                coverUrl = song.coverUrl,
+                title = song.title,
+                artist = artistName,
+                fileName = mp3FileName,
+                relativePath = relativePath,
+                onProgress = onProgress
+            )
             if (!mp3Success) {
                 onComplete(false, "Gagal mengunduh file musik utama")
                 return@withContext
@@ -113,6 +122,106 @@ object SongDownloader {
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading: ${e.message}", e)
             onComplete(false, "Koneksi bermasalah atau penyimpanan penuh")
+        }
+    }
+
+    private suspend fun downloadAndTagMp3(
+        context: Context,
+        downloadUrl: String,
+        coverUrl: String?,
+        title: String,
+        artist: String,
+        fileName: String,
+        relativePath: String,
+        onProgress: (Int) -> Unit
+    ): Boolean = withContext(Dispatchers.IO) {
+        var insertedUri: Uri? = null
+        var tempRawFile: File? = null
+        return@withContext try {
+            var coverBytes: ByteArray? = null
+            var mimeType = "image/jpeg"
+            if (!coverUrl.isNullOrBlank()) {
+                try {
+                    val coverRes = client.newCall(Request.Builder().url(coverUrl).build()).execute()
+                    if (coverRes.isSuccessful) {
+                        coverBytes = coverRes.body?.bytes()
+                        mimeType = coverRes.header("Content-Type") ?: "image/jpeg"
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Gagal download cover: ${e.message}")
+                }
+            }
+            tempRawFile = File.createTempFile("raw_", ".m4a", context.cacheDir)
+            val request = Request.Builder().url(downloadUrl).header("Range", "bytes=0-").build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext false
+            val body = response.body ?: return@withContext false
+            val totalBytes = body.contentLength()
+            tempRawFile.outputStream().use { out ->
+                body.byteStream().use { inp ->
+                    val buffer = ByteArray(1024 * 16)
+                    var bytesRead: Int
+                    var totalRead: Long = 0
+                    while (inp.read(buffer).also { bytesRead = it } != -1) {
+                        out.write(buffer, 0, bytesRead)
+                        totalRead += bytesRead
+                        if (totalBytes > 0) {
+                            onProgress((totalRead.toFloat() / totalBytes.toFloat() * 50f).toInt())
+                        } else {
+                            // Jika totalBytes tidak diketahui (chunked stream), beri progress palsu (maksimal 50%)
+                            onProgress((totalRead.toFloat() / 5_000_000f * 50f).coerceAtMost(49f).toInt())
+                        }
+                    }
+                    out.flush()
+                }
+            }
+            
+            ID3TagUtils.tagAudioFile(tempRawFile, title, artist, coverBytes, mimeType)
+            val outputStream: OutputStream? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(BASE_URI, contentValues)
+                insertedUri = uri
+                uri?.let { context.contentResolver.openOutputStream(it) }
+            } else {
+                val destDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), relativePath.removePrefix("${Environment.DIRECTORY_DOWNLOADS}/"))
+                if (!destDir.exists()) destDir.mkdirs()
+                FileOutputStream(File(destDir, fileName))
+            }
+            if (outputStream == null) return@withContext false
+            val finalFileSize = tempRawFile.length()
+            tempRawFile.inputStream().use { inp ->
+                outputStream.use { out ->
+                    val buffer = ByteArray(1024 * 16)
+                    var bytesRead: Int
+                    var totalCopied: Long = 0
+                    while (inp.read(buffer).also { bytesRead = it } != -1) {
+                        out.write(buffer, 0, bytesRead)
+                        totalCopied += bytesRead
+                        if (finalFileSize > 0) {
+                            val currentFileProgress = (totalCopied.toFloat() / finalFileSize.toFloat())
+                            onProgress(50 + (currentFileProgress * 50f).toInt())
+                        }
+                    }
+                    out.flush()
+                }
+            }
+            onProgress(60)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && insertedUri != null) {
+                val contentValues = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                context.contentResolver.update(insertedUri, contentValues, null, null)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception: ${e.message}")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && insertedUri != null) context.contentResolver.delete(insertedUri, null, null)
+            false
+        } finally {
+            try { tempRawFile?.delete() } catch(e: Exception){}
         }
     }
 
