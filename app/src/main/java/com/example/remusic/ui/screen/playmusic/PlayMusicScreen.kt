@@ -381,7 +381,10 @@ fun PlayMusicScreen(
                     isGameModeEnabled = uiState.isGameModeActive,
                     gameModeVolume = uiState.gameModeVolume,
                     onAudioDeviceClick = { showAudioSwitchSheet = true },
-                    meshColors = uiState.dominantColors
+                    meshColors = uiState.dominantColors,
+                    isCrossfadeEnabled = uiState.isCrossfadeEnabled,
+                    isCrossfading = uiState.isCrossfading,
+                    crossfadeDurationSeconds = uiState.crossfadeDurationSeconds
                 )
                 2 -> LyricsScreen(
                     lyricsViewModel = lyricsViewModel,

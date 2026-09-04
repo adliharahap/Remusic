@@ -181,7 +181,8 @@ data class PlayerUiState(
 
         // Crossfade
         val isCrossfadeEnabled: Boolean = false,
-        val crossfadeDurationSeconds: Int = 5
+        val crossfadeDurationSeconds: Int = 5,
+        val isCrossfading: Boolean = false
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -249,6 +250,61 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
 
     val audioRouteManager = com.example.remusic.viewmodel.playmusic.managers.AudioRouteManager(getApplication(), viewModelScope, _uiState, { mediaController }, { fadeInAndPlay() })
     val sleepTimerManager by lazy { com.example.remusic.viewmodel.playmusic.managers.SleepTimerManager({ mediaController }, _uiState) }
+    val crossfadeManager by lazy {
+        com.example.remusic.viewmodel.playmusic.managers.CrossfadeManager(
+            context = getApplication(),
+            scope = viewModelScope,
+            uiState = _uiState,
+            getMediaController = { mediaController },
+            getTargetVolume = { getTargetVolume() },
+            onTransitionToNextSong = { nextIndex, _, startPositionMs ->
+                playSongAt(nextIndex, isFromCrossfade = true, startPositionMs = startPositionMs)
+            },
+            onExtractColor = { coverUrl ->
+                viewModelScope.launch {
+                    val colors = extractGradientColorsFromImageUrl(
+                        context = getApplication(),
+                        imageUrl = coverUrl,
+                        gradientStyle = _uiState.value.gradientStyle
+                    )
+                    _uiState.update { it.copy(dominantColors = colors) }
+                    userPreferencesRepository.saveLastSongColor(
+                        colors.getOrElse(0) { Color(0xFF755D8D) }
+                    )
+                }
+            },
+            onFetchDetails = { effectiveId ->
+                fetchFullSongDetails(effectiveId, forceUpdate = true)
+            },
+            onCheckIfLiked = { songId ->
+                checkIfLiked(songId)
+            },
+            onPrefetchNeighbor = { index ->
+                prefetchSongAtIndex(index)
+            },
+            onResolveSongUrl = { song ->
+                resolveSongUrl(song)
+            },
+            onUpdatePlaylistSongUrl = { index, _, url ->
+                val currentList = _uiState.value.playlist
+                if (index in currentList.indices) {
+                    val updatedList = currentList.toMutableList()
+                    val currentItem = updatedList[index]
+                    val updatedSong = currentItem.copy(
+                        song = currentItem.song.copy(audioUrl = url)
+                    )
+                    updatedList[index] = updatedSong
+                    _uiState.update { it.copy(playlist = updatedList) }
+                    mediaController?.let { ctrl ->
+                        if (index < ctrl.mediaItemCount) {
+                            val newItem = createMediaItem(updatedSong, url)
+                            ctrl.replaceMediaItem(index, newItem)
+                        }
+                    }
+                }
+            }
+        )
+    }
 
     fun setAudioOutputDevice(device: com.example.remusic.data.model.AudioOutputDevice) = audioRouteManager.setAudioOutputDevice(device)
     fun setSleepTimer(minutes: Int) = sleepTimerManager.setSleepTimer(minutes)
@@ -627,6 +683,7 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         audioRouteManager.cleanup()
         sleepTimerManager.cancelSleepTimer()
+        crossfadeManager.release()
         super.onCleared()
         mediaController?.release()
     }

@@ -718,6 +718,10 @@ import timber.log.Timber
 
 
     fun PlayMusicViewModel.togglePlayPause() {
+        if (crossfadeManager.isCrossfading) {
+            crossfadeManager.cancelCrossfade()
+        }
+
         // Mencegah aksi jika fade sedang berjalan
         if (isFading) return
 
@@ -982,11 +986,13 @@ import timber.log.Timber
 
 
     fun PlayMusicViewModel.seekTo(position: Long) {
+        crossfadeManager.onSeek(position, _uiState.value.totalDuration)
         mediaController?.seekTo(position)
     }
 
 
     fun PlayMusicViewModel.nextSong() {
+        crossfadeManager.cancelCrossfade()
         val controller = mediaController ?: return
         val nextIndex = controller.nextMediaItemIndex
         if (nextIndex != C.INDEX_UNSET) {
@@ -997,6 +1003,7 @@ import timber.log.Timber
 
 
     fun PlayMusicViewModel.previousSong() {
+        crossfadeManager.cancelCrossfade()
         val controller = mediaController ?: return
 
         // Fitur: Jika lagu sudah main lebih dari 3 detik, restart lagu ini (bukan mundur ke lagu
@@ -1014,7 +1021,11 @@ import timber.log.Timber
     }
 
 
-    fun PlayMusicViewModel.playSongAt(index: Int) {
+    fun PlayMusicViewModel.playSongAt(
+        index: Int,
+        isFromCrossfade: Boolean = false,
+        startPositionMs: Long = C.TIME_UNSET
+    ) {
         val controller = mediaController
 
         if (controller == null) {
@@ -1031,20 +1042,22 @@ import timber.log.Timber
         }
 
         val targetSong = playlist[index]
-       Timber.tag("DEBUG_PLAYER").d( "==================================================")
-       Timber.tag("DEBUG_PLAYER").d(
-                
-                "👇 CLICK MANUAL (FIXED): User ingin memutar index $index: '${targetSong.song.title}'"
+        Timber.tag("DEBUG_PLAYER").d( "==================================================")
+        Timber.tag("DEBUG_PLAYER").d(
+                "👇 CLICK MANUAL (FIXED): User ingin memutar index $index: '${targetSong.song.title}' (isFromCrossfade=$isFromCrossfade, startPos=$startPositionMs)"
         )
 
         // 1. BATALKAN JOB SEBELUMNYA (Supaya kalau user spam klik, yang terakhir yang menang)
         jumpJob?.cancel()
         setPlaylistJob?.cancel()
-
-        // 🛑 PAUSE SEGERA! (Agar lagu lama berhenti saat buffering lagu baru)
-        controller.pause()
+        if (!isFromCrossfade) {
+            crossfadeManager.cancelCrossfade()
+            // 🛑 PAUSE SEGERA! (Agar lagu lama berhenti saat buffering lagu baru)
+            controller.pause()
+        }
 
         // 2. OPTIMISTIC UI UPDATE (Update Tampilan Dulu Biar Sat-Set!)
+        val initialPos = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0L) startPositionMs else 0L
         _uiState.update {
             it.copy(
                     currentSong = targetSong,
@@ -1054,8 +1067,7 @@ import timber.log.Timber
                     isLoadingData = true, // Start loading data (Checking/Resolving)
                     isLiked = false, // Reset like status for new song
                     uploader = null, // Reset uploader for new song
-                    // 🔄 RESET SLIDER KE 0 (Biar kelihatan mulai dari awal)
-                    currentPosition = 0L
+                    currentPosition = initialPos
             )
         }
 
@@ -1080,10 +1092,18 @@ import timber.log.Timber
                             } // Data ready
                             withContext(Dispatchers.Main) {
                                 if (index < controller.mediaItemCount) {
-                                    if (controller.currentMediaItemIndex != index) {
-                                        controller.seekTo(index, C.TIME_UNSET)
-                                        controller.play()
+                                    val currentItem = controller.getMediaItemAt(index)
+                                    val currentMediaUri = currentItem.localConfiguration?.uri?.toString()
+                                    if (currentMediaUri.isNullOrBlank() || currentMediaUri != currentUrl) {
+                                        Timber.tag("DEBUG_PLAYER").d("🔄 Update MediaItem di controller index $index dengan URL valid: $currentUrl")
+                                        val newItem = createMediaItem(targetSong, currentUrl)
+                                        controller.replaceMediaItem(index, newItem)
                                     }
+                                    val posToSeek = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0L) startPositionMs else C.TIME_UNSET
+                                    if (controller.currentMediaItemIndex != index || posToSeek != C.TIME_UNSET) {
+                                        controller.seekTo(index, posToSeek)
+                                    }
+                                    controller.play()
                                 }
                             }
                         } else {
@@ -1099,67 +1119,67 @@ import timber.log.Timber
                             }
                         }
 
-                        // 2. RESOLVE URL (Pastikan dapat yang fresh)
-                       Timber.tag("DEBUG_PLAYER").d( "🌐 FETCH: Resolving URL...")
-                        // 2. RESOLVE URL (Pastikan dapat yang fresh)
-                       Timber.tag("DEBUG_PLAYER").d( "🌐 FETCH: Resolving URL...")
-                        val result = resolveSongUrl(targetSong)
-                        val newUrl = result.url
+                        // 2. RESOLVE URL (Hanya jika URL kosong atau belum valid)
+                        val shouldResolve = !isUrlValid || (!isFromCrossfade && currentUrl.isNullOrBlank())
+                        if (shouldResolve) {
+                            Timber.tag("DEBUG_PLAYER").d( "🌐 FETCH: Resolving URL...")
+                            val result = resolveSongUrl(targetSong)
+                            val newUrl = result.url
 
-                        // 3. UPDATE PLAYER (Hanya update item yang sedang aktif)
-                        withContext(Dispatchers.Main) {
+                            // 3. UPDATE PLAYER (Hanya update item yang sedang aktif)
+                            withContext(Dispatchers.Main) {
 
-                            // VALIDASI URL: Cek Error Network atau URL kosong
-                            if (result.errorType == MusicRepository.ErrorType.NETWORK) {
-                               Timber.tag("DEBUG_PLAYER").e(
-                                        
-                                        "❌ NETWORK ERROR during song update. Pausing."
-                                )
-                                _uiState.update {
-                                    it.copy(
-                                            hasError = true,
-                                            errorType = "Gagal memuat: Masalah Koneksi Internet",
-                                            isPlaying = false,
-                                            isLoadingData = false // Stop spinner
+                                // VALIDASI URL: Cek Error Network atau URL kosong
+                                if (result.errorType == MusicRepository.ErrorType.NETWORK) {
+                                    Timber.tag("DEBUG_PLAYER").e(
+                                            "❌ NETWORK ERROR during song update. Pausing."
                                     )
-                                }
-                                controller.pause()
-                                return@withContext
-                            }
-
-                            if (newUrl.isBlank()) {
-                               Timber.tag("DEBUG_PLAYER").e(
-                                        
-                                        "❌ ERROR: URL kosong/gagal resolve. Skip playback."
-                                )
-                                // Kembalikan UI ke state aman atau tampilkan error
-                                _uiState.update { it.copy(isLoadingLyrics = false, isLoadingData = false) }
-                                // Opsional: Toast error
-                                return@withContext
-                            }
-
-                            if (index < controller.mediaItemCount) {
-                                // Buat MediaItem baru dengan URL valid
-                                val newItem = createMediaItem(targetSong, newUrl)
-
-                                // KUNCI: Gunakan setMediaItem di index spesifik untuk update source
-                                controller.replaceMediaItem(index, newItem)
-
-                                // Jika tadi kita menunda play (karena URL kosong), sekarang play!
-                                if (!isUrlValid ||
-                                                controller.playbackState == Player.STATE_IDLE ||
-                                                controller.playbackState == Player.STATE_ENDED
-                                ) {
-                                    // Cek lagi apakah index masih sama (user gak ganti lagu lagi
-                                    // pas loading)
-                                    // Tapi karena kita replaceMediaItem di index spesifik, aman
-                                    // untuk seek ke situ.
-                                    if (controller.currentMediaItemIndex != index) {
-                                        controller.seekTo(index, C.TIME_UNSET)
+                                    _uiState.update {
+                                        it.copy(
+                                                hasError = true,
+                                                errorType = "Gagal memuat: Masalah Koneksi Internet",
+                                                isPlaying = false,
+                                                isLoadingData = false // Stop spinner
+                                        )
                                     }
-                                    controller.play()
+                                    controller.pause()
+                                    return@withContext
+                                }
+
+                                if (newUrl.isBlank()) {
+                                    Timber.tag("DEBUG_PLAYER").e(
+                                            "❌ ERROR: URL kosong/gagal resolve. Skip playback."
+                                    )
+                                    // Kembalikan UI ke state aman atau tampilkan error
+                                    _uiState.update { it.copy(isLoadingLyrics = false, isLoadingData = false) }
+                                    // Opsional: Toast error
+                                    return@withContext
+                                }
+
+                                if (index < controller.mediaItemCount) {
+                                    // Buat MediaItem baru dengan URL valid
+                                    val newItem = createMediaItem(targetSong, newUrl)
+
+                                    // KUNCI: Gunakan setMediaItem di index spesifik untuk update source
+                                    controller.replaceMediaItem(index, newItem)
+
+                                    // Jika tadi kita menunda play (karena URL kosong), sekarang play!
+                                    if (!isUrlValid ||
+                                                    controller.playbackState == Player.STATE_IDLE ||
+                                                    controller.playbackState == Player.STATE_ENDED
+                                    ) {
+                                        val posToSeek = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0L) startPositionMs else C.TIME_UNSET
+                                        if (controller.currentMediaItemIndex != index || posToSeek != C.TIME_UNSET) {
+                                            controller.seekTo(index, posToSeek)
+                                        }
+                                        controller.play()
+                                    }
+                                }
+                                _uiState.update {
+                                    it.copy(isLoadingLyrics = false, isLoadingData = false)
                                 }
                             }
+                        } else {
                             _uiState.update {
                                 it.copy(isLoadingLyrics = false, isLoadingData = false)
                             }

@@ -270,6 +270,15 @@ import timber.log.Timber
 
                         Timber.tag("DEBUG_PLAYER").d( "🔀 TRANSISI: Ganti lagu karena $reasonStr")
 
+                        if (crossfadeManager.isCrossfading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                            Timber.tag("DEBUG_PLAYER").d("🔀 [CROSSFADE] Lagu 1 selesai di controller saat crossfade berjalan. Pause controller agar tidak restart dari 0.")
+                            mediaController?.let {
+                                it.pause()
+                                it.volume = 0f
+                            }
+                            return
+                        }
+
                         val player = mediaController ?: return
 
                         val newIndex = player.currentMediaItemIndex
@@ -298,6 +307,8 @@ import timber.log.Timber
                             // loop.
 
                             if (matchedSong != null) {
+                                crossfadeManager.onSongChanged(matchedSong.song.id)
+
                                 // 1. UPDATE UI STATE IMMEDIATELY (Agar judul lagu berubah instan)
                                 _uiState.update {
                                     it.copy(
@@ -552,12 +563,16 @@ import timber.log.Timber
 
                     while (currentCoroutineContext().isActive) {
                         val controller = mediaController
-                        if (controller != null && controller.isPlaying) {
+                        if (controller != null && (controller.isPlaying || crossfadeManager.isCrossfading)) {
                             // 1. Ambil data Player di Main Thread (Safe)
                             val pos = controller.currentPosition
                             val dur = controller.duration
                             val currentUri =
                                     controller.currentMediaItem?.localConfiguration?.uri?.toString()
+
+                            // ── TRIGGER CROSSFADE & PRELOAD CHECK ──
+                            crossfadeManager.checkAndTriggerCrossfade(pos, dur)
+                            crossfadeManager.checkAndTriggerPreload(pos, dur)
 
                             // 2. Cek Cache di IO Thread (Hanya setiap 2 detik = 4x loop)
                             // Optimasi untuk "HP Kentang" agar tidak boros resource context switch
@@ -576,7 +591,7 @@ import timber.log.Timber
                                             } else if (currentUri != null) {
                                                 val isCached =
                                                         try {
-                                                            cache.isCached(currentUri, pos, 1024)
+                                                             cache.isCached(currentUri, pos, 1024)
                                                         } catch (_: Exception) {
                                                             false
                                                         }
@@ -627,7 +642,7 @@ import timber.log.Timber
                                    Timber.tag("DEBUG_PLAYER").d(
                                             
                                             "[VALID PLAY] User listening for ${actualListeningTimeMs/1000}s. Incrementing..."
-                                    )
+                                   )
                                     viewModelScope.launch(Dispatchers.IO) {
                                         val currentSongWA = _uiState.value.currentSong
                                         val songMetadata = currentSongWA?.song
@@ -645,9 +660,10 @@ import timber.log.Timber
                             }
 
                             // 3. Update UI
+                            val activePos = crossfadeManager.getNextSongPosition() ?: pos
                             _uiState.update { state ->
                                 state.copy(
-                                        currentPosition = pos,
+                                        currentPosition = activePos,
                                         totalDuration = if (dur > 0) dur else state.totalDuration,
                                         debugStatus = statusText
                                 )

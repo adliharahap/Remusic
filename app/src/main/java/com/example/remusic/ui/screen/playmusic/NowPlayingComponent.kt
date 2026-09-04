@@ -3,6 +3,7 @@
 package com.example.remusic.ui.screen.playmusic
 
 import android.widget.Toast
+import com.example.remusic.ui.components.CrossfadeBadge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.fadeIn
@@ -142,7 +143,10 @@ fun NowPlaying(
     isGameModeEnabled: Boolean = false,
     gameModeVolume: Float = 0.2f,
     onAudioDeviceClick: () -> Unit = {},
-    meshColors: List<Color> = emptyList()
+    meshColors: List<Color> = emptyList(),
+    isCrossfadeEnabled: Boolean = false,
+    isCrossfading: Boolean = false,
+    crossfadeDurationSeconds: Int = 5
 ) {
     val context = LocalContext.current
     val isOfflineSong = songWithArtist?.song?.id?.startsWith("offline_") == true
@@ -480,6 +484,19 @@ fun NowPlaying(
                                     fontFamily = AppFont.Helvetica,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
+                                )
+                            }
+                            // Indikator Crossfade dengan Animasi Skeleton (di tengah-tengah pas di atas icon Play/Pause)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp, bottom = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CrossfadeBadge(
+                                    isCrossfadeEnabled = isCrossfadeEnabled,
+                                    isCrossfading = isCrossfading,
+                                    crossfadeDurationSeconds = crossfadeDurationSeconds
                                 )
                             }
                             // Tombol Kontrol (Play/Pause/Shuffle)
