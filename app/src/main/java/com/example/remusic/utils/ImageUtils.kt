@@ -51,3 +51,17 @@ object ImageUtils {
         }
     }
 }
+
+/**
+ * Mengubah URL thumbnail YouTube ke versi HD.
+ */
+fun String.toHdUrl(): String {
+    var hdUrl = this.replace(Regex("w\\d+-h\\d+"), "w544-h544")
+        .replace("hqdefault.jpg", "maxresdefault.jpg")
+
+    if (hdUrl.contains("=w") || hdUrl.contains("=s")) {
+        hdUrl = hdUrl.replace(Regex("=w\\d+-h\\d+.*"), "=w544-h544")
+            .replace(Regex("=s\\d+.*"), "=s544")
+    }
+    return hdUrl
+}

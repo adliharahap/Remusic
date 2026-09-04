@@ -111,6 +111,7 @@ import com.example.remusic.utils.GoogleFontDownloader
 import com.example.remusic.utils.formatDuration
 import com.example.remusic.data.preferences.PlayerBackgroundStyle
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
+import com.example.remusic.utils.toHdUrl
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -149,6 +150,8 @@ fun LyricsScreen(
     val activeIndex by lyricsViewModel.activeLyricIndex.collectAsState()
     val isTranslateLyrics by lyricsViewModel.isTranslateLyrics.collectAsState()
     val isAutoTranslated by lyricsViewModel.isAutoTranslated.collectAsState()
+    val translationProgressText by lyricsViewModel.translationProgress.collectAsState()
+    val isTranslating by lyricsViewModel.isTranslating.collectAsState()
     val currentPosition by lyricsViewModel.currentPosition.collectAsState()
     val hasAutoScrolledToTop by lyricsViewModel.hasAutoScrolledToTop.collectAsState()
 
@@ -586,6 +589,39 @@ fun LyricsScreen(
             }
         }
 
+        // 🔄 FLOATING BANNER "PROGRES TRANSLATE / DOWNLOAD MODEL"
+        AnimatedVisibility(
+            visible = isTranslating,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 155.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color(0xFF1E1E1E).copy(alpha = 0.88f))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(13.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(9.dp))
+                    Text(
+                        text = translationProgressText,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontFamily = AppFont.RobotoMedium
+                    )
+                }
+            }
+        }
+
         // ❌ FLOATING BANNER "Lirik synced tidak ditemukan"
         AnimatedVisibility(
             visible = showUnavailableBanner && isAutoScrollEnabled,
@@ -848,6 +884,7 @@ fun LyricLineItem(
 
     val fontFamily = remember(lyricsConfig.fontFamily, lyricsConfig.mainFontWeight) {
         when {
+            lyricsConfig.fontFamily == LyricsFontFamily.JOSEFIN_SANS -> AppFont.JosefinSans
             lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
             lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
             lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
@@ -868,15 +905,16 @@ fun LyricLineItem(
                     }
                     androidx.compose.ui.text.font.FontFamily(resolvedTypeface)
                 } else {
-                    AppFont.Poppins
+                    AppFont.JosefinSans
                 }
             }
-            else -> AppFont.Poppins
+            else -> AppFont.JosefinSans
         }
     }
 
     val translationFontFamily = remember(lyricsConfig.fontFamily, lyricsConfig.translationFontWeight) {
         when {
+            lyricsConfig.fontFamily == LyricsFontFamily.JOSEFIN_SANS -> AppFont.JosefinSans
             lyricsConfig.fontFamily == LyricsFontFamily.POPPINS   -> AppFont.Poppins
             lyricsConfig.fontFamily == LyricsFontFamily.ROBOTO    -> AppFont.RobotoRegular
             lyricsConfig.fontFamily == LyricsFontFamily.HELVETICA -> AppFont.Helvetica
@@ -897,10 +935,10 @@ fun LyricLineItem(
                     }
                     androidx.compose.ui.text.font.FontFamily(resolvedTypeface)
                 } else {
-                    AppFont.Poppins
+                    AppFont.JosefinSans
                 }
             }
-            else -> AppFont.Poppins
+            else -> AppFont.JosefinSans
         }
     }
 
@@ -1152,7 +1190,7 @@ fun LyricsBottomPanel(
             .padding(horizontal = 16.dp, vertical = 16.dp),
         ){
             AsyncImage(
-                model = songWithArtist?.song?.coverUrl,
+                model = songWithArtist?.song?.coverUrl?.toHdUrl(),
                 contentDescription = "Cover Album",
                 modifier = Modifier
                     .width(50.dp)

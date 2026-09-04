@@ -274,7 +274,14 @@ private fun FontItemRow(
             GoogleFontDownloader.loadCachedTypeface(context, font.googleFontName)
         } else null
     }
-    val fontFamily = if (customTypeface != null) FontFamily(customTypeface) else FontFamily.Default
+    val fontFamily = when {
+        font == LyricsFontFamily.JOSEFIN_SANS -> com.example.remusic.ui.theme.AppFont.JosefinSans
+        font == LyricsFontFamily.POPPINS -> com.example.remusic.ui.theme.AppFont.Poppins
+        font == LyricsFontFamily.ROBOTO -> com.example.remusic.ui.theme.AppFont.RobotoRegular
+        font == LyricsFontFamily.HELVETICA -> com.example.remusic.ui.theme.AppFont.Helvetica
+        customTypeface != null -> FontFamily(customTypeface)
+        else -> FontFamily.Default
+    }
 
     Row(
         modifier = Modifier

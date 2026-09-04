@@ -240,14 +240,17 @@ val social = com.example.remusic.data.repository.social.UserSocialRepository(mus
         var ytExpiresInSeconds = 0
 
         try {
-            val playbackResult = com.example.remusic.utils.YTPlayerUtils.playerResponseForPlayback(
+            val playbackResult = com.example.remusic.utils.InnerTubeXPlayer.playerResponseForPlayback(
                 videoId = finalYtId,
                 playlistId = null,
-                audioQuality = com.example.remusic.utils.AudioQuality.AUTO,
-                connectivityManager = null,
-                forceM4a = forceM4a
+                audioQuality = com.example.remusic.utils.AudioQuality.AUTO
             )
             val playbackData = playbackResult.getOrNull()
+            
+            if (playbackResult.isFailure) {
+                Log.e(TAG, "❌ [YOUTUBE ERROR] InnerTubeXPlayer gagal: ${playbackResult.exceptionOrNull()?.message}", playbackResult.exceptionOrNull())
+            }
+
             ytStreamUrl = playbackData?.streamUrl ?: ""
             ytExpiresInSeconds = playbackData?.streamExpiresInSeconds ?: 0
             if (ytStreamUrl.isNotBlank()) {

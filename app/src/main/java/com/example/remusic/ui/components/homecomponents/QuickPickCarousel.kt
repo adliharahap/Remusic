@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
-import com.example.remusic.ui.components.QueueSongCard
 import com.example.remusic.ui.theme.AppFont
 import kotlin.math.ceil
 import androidx.compose.foundation.clickable
@@ -129,6 +128,7 @@ fun QuickPickCarousel(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CompactSongCard(
     index: Int,

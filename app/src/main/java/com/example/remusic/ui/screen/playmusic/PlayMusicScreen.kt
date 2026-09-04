@@ -62,6 +62,7 @@ import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.LockScreenOrientationPortrait
 import com.example.remusic.viewmodel.playmusic.LyricsViewModel
 import com.example.remusic.viewmodel.playmusic.PlayMusicViewModel
+import com.example.remusic.utils.toHdUrl
 import com.example.remusic.ui.components.AddToPlaylistBottomSheet
 import kotlinx.coroutines.launch
 
@@ -251,7 +252,7 @@ fun PlayMusicScreen(
             topColor = animatedTopColor,
             bottomColor = animatedBottomColor,
             gradientBrush = animatedGradientBrush,
-            coverUrl = uiState.currentSong?.song?.coverUrl,
+            coverUrl = uiState.currentSong?.song?.coverUrl?.toHdUrl(),
             meshColors = uiState.dominantColors
         )
 
@@ -634,6 +635,10 @@ fun PlayMusicScreen(
             onGradientBottomColorIndexChange = { playMusicViewModel.setGradientBottomColorIndex(it) },
             isDataSaverModeEnabled = uiState.isDataSaverModeEnabled,
             onDataSaverModeChange = { playMusicViewModel.toggleDataSaverMode(it) },
+            isCrossfadeEnabled = uiState.isCrossfadeEnabled,
+            onCrossfadeEnabledChange = { playMusicViewModel.setCrossfadeEnabled(it) },
+            crossfadeDuration = uiState.crossfadeDurationSeconds,
+            onCrossfadeDurationChange = { playMusicViewModel.setCrossfadeDuration(it) },
             playbackSpeed = uiState.playbackSpeed,
             onPlaybackSpeedChange = { playMusicViewModel.setPlaybackSpeed(it) },
             playerBackgroundStyle = uiState.playerBackgroundStyle,

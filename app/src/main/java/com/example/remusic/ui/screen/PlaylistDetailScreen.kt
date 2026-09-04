@@ -103,6 +103,7 @@ import io.github.jan.supabase.auth.auth
 import org.burnoutcrew.reorderable.reorderable
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
+import com.example.remusic.utils.toHdUrl
 // --- REVISI: Enum dengan Ikon ---
 enum class SortOrder(val SdisplayName: String, val icon: ImageVector) {
     DEFAULT("Urutan Playlist", Icons.AutoMirrored.Filled.List), // Default option
@@ -193,14 +194,14 @@ fun PlaylistDetailScreen(
             }
             PlaylistType.USER_CREATED, PlaylistType.OFFICIAL, PlaylistType.YOUTUBE_PLAYLIST, PlaylistType.YOUTUBE_ALBUM -> {
                  // For User and Official playlists, prioritize playlist custom cover
-                 val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() } ?: playlistCoverUrl
+                 val customCoverUrl = uiState?.currentPlaylistDetails?.coverUrl?.takeIf { it.isNotBlank() }?.toHdUrl() ?: playlistCoverUrl.toHdUrl()
                  when {
                      customCoverUrl.isNotBlank() -> {
                          headersColors = extractGradientColorsFromImageUrl(context, customCoverUrl)
                          Log.d("PlaylistDetailScreen", "Playlist Custom Cover Colors: $headersColors")
                      }
                      sortedSongs.isNotEmpty() -> {
-                         val songCoverUrl = sortedSongs[0].song.coverUrl
+                         val songCoverUrl = sortedSongs[0].song.coverUrl?.toHdUrl()
                          if (!songCoverUrl.isNullOrBlank()) {
                              headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
                              Log.d("PlaylistDetailScreen", "Playlist First Song Cover Colors: $headersColors")
@@ -210,7 +211,7 @@ fun PlaylistDetailScreen(
             }
             PlaylistType.AUTO -> {
                  if (sortedSongs.isNotEmpty()) {
-                     val songCoverUrl = sortedSongs[0].song.coverUrl
+                     val songCoverUrl = sortedSongs[0].song.coverUrl?.toHdUrl()
                      if (!songCoverUrl.isNullOrBlank()) {
                          headersColors = extractGradientColorsFromImageUrl(context, songCoverUrl)
                          Log.d("PlaylistDetailScreen", "Auto Playlist First Song Colors: $headersColors")
@@ -223,7 +224,7 @@ fun PlaylistDetailScreen(
             else -> {
                 // For other playlists, use first song's cover
                 if (sortedSongs.isNotEmpty()) {
-                    val coverUrl = sortedSongs[0].song.coverUrl
+                    val coverUrl = sortedSongs[0].song.coverUrl?.toHdUrl()
                     if (!coverUrl.isNullOrBlank()) {
                         headersColors = extractGradientColorsFromImageUrl(context, coverUrl)
                         Log.d("PlaylistDetailScreen", "Headers Colors: $headersColors")
@@ -371,7 +372,7 @@ fun PlaylistDetailScreen(
         } else playlistName
         
         val finalPlaylistCoverUrl = if (playlistType == PlaylistType.YOUTUBE_PLAYLIST || playlistType == PlaylistType.YOUTUBE_ALBUM) {
-            uiState?.currentPlaylistDetails?.coverUrl ?: playlistCoverUrl
+            uiState?.currentPlaylistDetails?.coverUrl?.toHdUrl() ?: playlistCoverUrl.toHdUrl()
         } else playlistCoverUrl
 
         PlaylistDetailContent(
@@ -801,7 +802,7 @@ fun PlaylistDetailContent(
                                                             }
                                                     ) {
                                                         coil.compose.AsyncImage(
-                                                            model = playlist.coverUrl,
+                                                            model = playlist.coverUrl?.toHdUrl(),
                                                             contentDescription = playlist.title,
                                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                                             modifier = Modifier
@@ -937,7 +938,7 @@ fun PlaylistDetailContent(
                         index = index,
                         songTitle = songWithArtist.song.title,
                         artistName = songWithArtist.displayArtistName,
-                        posterUri = songWithArtist.song.coverUrl ?: "",
+                        posterUri = songWithArtist.song.coverUrl?.toHdUrl() ?: "",
                         isCurrentlyPlaying = isPlaying, // Use ViewModel state
                         isEditMode = isEditMode,
                         dragModifier = if (isEditMode) Modifier.detectReorderAfterLongPress(reorderableState) else Modifier,
@@ -1056,7 +1057,7 @@ fun PlaylistDetailContent(
                                                             id = item.id,
                                                             title = item.title,
                                                             artistId = item.artists.firstOrNull()?.id,
-                                                            coverUrl = item.thumbnail,
+                                                            coverUrl = item.thumbnail?.toHdUrl(),
                                                             durationMs = (item.duration ?: 0) * 1000L,
                                                             source = "youtube",
                                                             featuredArtists = item.artists.drop(1).map { it.name }

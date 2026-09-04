@@ -15,10 +15,11 @@ uiGraphics = "1.10.0"
 ktor = "3.5.1"
 jsoup = "1.22.2"
 timber = "5.0.1"
-extractor = "3cd3341"
+extractor = "8773f0d"
 brotli = "0.1.2"
 apacheLang3 = "3.20.0"
 json = "20260522"
+innertubex = "v0.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -53,6 +54,7 @@ extractor = { module = "com.github.MetrolistGroup:MetrolistExtractor", version.r
 brotli = { module = "org.brotli:dec", version.ref = "brotli" }
 apache-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "apacheLang3" }
 json = { module = "org.json:json", version.ref = "json" }
+innertubex = { module = "com.github.MetrolistGroup.innertubex:innertubex", version.ref = "innertubex" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

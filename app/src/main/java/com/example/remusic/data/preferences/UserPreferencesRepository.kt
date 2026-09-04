@@ -107,6 +107,24 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { settings -> settings[DATA_SAVER_MODE_KEY] = isEnabled }
     }
 
+    // --- CROSSFADE PREFERENCE ---
+    private val CROSSFADE_ENABLED_KEY = booleanPreferencesKey("crossfade_enabled")
+    private val CROSSFADE_DURATION_KEY = intPreferencesKey("crossfade_duration_seconds")
+
+    val crossfadeEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { preferences -> preferences[CROSSFADE_ENABLED_KEY] ?: false }
+
+    val crossfadeDurationFlow: Flow<Int> =
+        context.dataStore.data.map { preferences -> preferences[CROSSFADE_DURATION_KEY] ?: 5 }
+
+    suspend fun saveCrossfadeEnabled(enabled: Boolean) {
+        context.dataStore.edit { settings -> settings[CROSSFADE_ENABLED_KEY] = enabled }
+    }
+
+    suspend fun saveCrossfadeDuration(seconds: Int) {
+        context.dataStore.edit { settings -> settings[CROSSFADE_DURATION_KEY] = seconds }
+    }
+
     // --- LYRICS CONFIG PERSISTENCE ---
     private val LYRICS_FONT_FAMILY_KEY = stringPreferencesKey("lyrics_font_family")
     private val LYRICS_FONT_SIZE_KEY = intPreferencesKey("lyrics_font_size")
@@ -125,16 +143,16 @@ class UserPreferencesRepository(private val context: Context) {
             context.dataStore.data.map { preferences ->
                 val fontFamilyName =
                         preferences[LYRICS_FONT_FAMILY_KEY]
-                                ?: com.example.remusic.ui.screen.playmusic.LyricsFontFamily.POPPINS
+                                ?: com.example.remusic.ui.screen.playmusic.LyricsFontFamily.JOSEFIN_SANS
                                         .name
-                val fontSize = preferences[LYRICS_FONT_SIZE_KEY] ?: 21
+                val fontSize = preferences[LYRICS_FONT_SIZE_KEY] ?: 23
                 val alignName =
                         preferences[LYRICS_ALIGN_KEY]
                                 ?: com.example.remusic.ui.screen.playmusic.LyricsAlign.LEFT.name
                 val autoScale = preferences[LYRICS_AUTO_SCALE_KEY] ?: false
                 val scaleFactor = preferences[LYRICS_SCALE_FACTOR_KEY] ?: 1
                 val markPassed = preferences[LYRICS_MARK_PASSED_KEY] ?: true
-                val translateFontSize = preferences[LYRICS_TRANSLATE_FONT_SIZE_KEY] ?: 15.5f
+                val translateFontSize = preferences[LYRICS_TRANSLATE_FONT_SIZE_KEY] ?: 16f
                 val translateFontWeightName = preferences[LYRICS_TRANSLATE_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.REGULAR.name
                 val mainFontWeightName = preferences[LYRICS_MAIN_FONT_WEIGHT_KEY] ?: com.example.remusic.ui.screen.playmusic.LyricsFontWeight.BOLD.name
                 val clickLyricsToSeek = preferences[LYRICS_CLICK_TO_SEEK_KEY] ?: true
@@ -147,7 +165,7 @@ class UserPreferencesRepository(private val context: Context) {
                                     fontFamilyName
                             )
                         } catch (e: IllegalArgumentException) {
-                            com.example.remusic.ui.screen.playmusic.LyricsFontFamily.POPPINS
+                            com.example.remusic.ui.screen.playmusic.LyricsFontFamily.JOSEFIN_SANS
                         }
 
                 val align =

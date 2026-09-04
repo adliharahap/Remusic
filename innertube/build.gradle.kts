@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.metrolist.innertube"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
@@ -36,6 +36,7 @@ dependencies {
         exclude(group = "com.google.protobuf")
     }
     implementation(libs.timber)
+    api(libs.innertubex)
     testImplementation(libs.junit)
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")

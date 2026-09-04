@@ -94,6 +94,7 @@ import com.example.remusic.data.model.displayArtistName
 import com.example.remusic.ui.components.MusicSlider
 import com.example.remusic.ui.theme.AppFont
 import com.example.remusic.utils.formatDuration
+import com.example.remusic.utils.toHdUrl
 import com.example.remusic.viewmodel.playmusic.AnimationDirection
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
@@ -265,7 +266,7 @@ fun NowPlaying(
                     ) {
                         CanvasVideoPlayer(
                             videoUrl = canvasUrl,
-                            coverUrl = songWithArtist.song.coverUrl.toString(),
+                            coverUrl = songWithArtist.song.coverUrl?.toHdUrl() ?: "",
                             songId = songWithArtist.song.id,
                             isExiting = isExiting,
                             modifier = Modifier.fillMaxSize()
@@ -313,7 +314,7 @@ fun NowPlaying(
                             ) {
                                 AsyncImage(
                                     model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                        .data(songWithArtist.song.coverUrl)
+                                        .data(songWithArtist.song.coverUrl?.toHdUrl())
                                         .crossfade(true)
                                         .build(),
                                     contentDescription = "Cover Album",
@@ -735,7 +736,7 @@ fun NowPlaying(
                             val isRunning by remember { derivedStateOf { transition.isRunning } }
                              AsyncImage(
                                 model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                    .data(songWithArtist?.song?.coverUrl)
+                                    .data(songWithArtist?.song?.coverUrl?.toHdUrl())
                                     .crossfade(true)
                                     .build(),
                                 contentDescription = "Cover Album $targetvalue",

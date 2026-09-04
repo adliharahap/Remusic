@@ -108,12 +108,54 @@ object NotificationUtils {
             .setOnlyAlertOnce(true)
 
         if (isFinished) {
-            builder.setContentText("download lagu $title has completed")
+            builder.setContentText("Unduhan selesai: $title")
                 .setProgress(0, 0, false)
                 .setAutoCancel(true)
         } else {
-            builder.setContentText("Mengunduh... $progress%")
+            builder.setContentText("Mengunduh lagu... $progress%")
                 .setProgress(100, progress, progress == 0)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+            } catch (e: SecurityException) {
+                Log.e("NotificationUtils", "Missing notification permission", e)
+            }
+        }
+    }
+
+    fun showModelDownloadNotification(
+        context: Context,
+        languageDisplayName: String,
+        isFinished: Boolean = false,
+        isFailed: Boolean = false,
+        progressText: String? = null,
+        notificationId: Int = 1002
+    ) {
+        val title = "Terjemahan Offline"
+        val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(R.drawable.app_logo)
+            .setContentTitle(title)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(!isFinished && !isFailed)
+            .setOnlyAlertOnce(true)
+
+        if (isFinished) {
+            builder.setContentText("Paket $languageDisplayName siap digunakan secara offline")
+                .setProgress(0, 0, false)
+                .setAutoCancel(true)
+        } else if (isFailed) {
+            builder.setContentText("Gagal menyiapkan paket $languageDisplayName. Periksa koneksi internet.")
+                .setProgress(0, 0, false)
+                .setAutoCancel(true)
+        } else {
+            val content = progressText ?: "Menyiapkan paket $languageDisplayName untuk terjemahan..."
+            builder.setContentText(content)
+                .setProgress(0, 0, true) // Indeterminate progress
         }
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

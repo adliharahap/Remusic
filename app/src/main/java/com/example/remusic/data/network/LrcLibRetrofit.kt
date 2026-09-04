@@ -9,6 +9,12 @@ object LrcLibRetrofit {
     private const val BASE_URL = "https://lrclib.net/"
 
     private val client = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "Remusic v1.0 (https://github.com/adliharahap/Remusic)")
+                .build()
+            chain.proceed(request)
+        }
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()

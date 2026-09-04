@@ -100,3 +100,6 @@
 # Kita suruh R8 abaikan saja karena tidak dipakai di Release.
 -dontwarn java.lang.management.**
 -dontwarn java.lang.instrument.**
+# JAudioTagger AWT/ImageIO Missing Classes
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**

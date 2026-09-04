@@ -34,6 +34,7 @@ class RemusicApplication : Application() {
         // 1. spc parameter di stream URL di-sign dengan visitorData yang benar
         // 2. X-Goog-Visitor-Id header bisa disertakan saat streaming
         initYouTubeSession()
+        com.example.remusic.utils.InnerTubeXPlayer.initialize(this)
 
         // Monitor session Supabase secara global.
         // Jika refresh_token expired atau dicabut, Supabase akan emit SessionStatus.NotAuthenticated.

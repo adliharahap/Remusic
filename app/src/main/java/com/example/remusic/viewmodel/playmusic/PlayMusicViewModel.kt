@@ -177,7 +177,11 @@ data class PlayerUiState(
         // Per-screen theme toggles
         val isThemeAppliedToQueue: Boolean = true,
         val isThemeAppliedToNowPlaying: Boolean = true,
-        val isThemeAppliedToLyrics: Boolean = true
+        val isThemeAppliedToLyrics: Boolean = true,
+
+        // Crossfade
+        val isCrossfadeEnabled: Boolean = false,
+        val crossfadeDurationSeconds: Int = 5
 )
 
 class PlayMusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -280,6 +284,18 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             userPreferencesRepository.isDataSaverModeEnabled.collect { isEnabled ->
                 _uiState.update { it.copy(isDataSaverModeEnabled = isEnabled) }
+            }
+        }
+
+        // Collect crossfade preferences
+        viewModelScope.launch {
+            userPreferencesRepository.crossfadeEnabledFlow.collect { isEnabled ->
+                _uiState.update { it.copy(isCrossfadeEnabled = isEnabled) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.crossfadeDurationFlow.collect { seconds ->
+                _uiState.update { it.copy(crossfadeDurationSeconds = seconds) }
             }
         }
 
@@ -842,6 +858,19 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     fun toggleDataSaverMode(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.saveDataSaverMode(enabled)
+        }
+    }
+
+    // --- CROSSFADE MODE ---
+    fun setCrossfadeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.saveCrossfadeEnabled(enabled)
+        }
+    }
+
+    fun setCrossfadeDuration(seconds: Int) {
+        viewModelScope.launch {
+            userPreferencesRepository.saveCrossfadeDuration(seconds)
         }
     }
 

@@ -32,6 +32,7 @@ import coil.compose.AsyncImage
 import com.example.remusic.data.model.Artist
 import com.example.remusic.data.model.User
 import com.example.remusic.ui.theme.AppFont
+import com.example.remusic.utils.toHdUrl
 import kotlinx.coroutines.delay
 
 @Composable
@@ -124,11 +125,11 @@ fun UploaderBoxAndArtist(
 
         // Fallback data
         val artistName = currentArtist?.name ?: artistNameFallback ?: "Unknown Artist"
-        val artistPhoto = currentArtist?.photoUrl ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg"
+        val artistPhoto = currentArtist?.photoUrl?.toHdUrl() ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/denia.jpeg"
         val artistDesc = currentArtist?.description ?: "No description available for this artist."
 
         val uploaderName = currentUploader?.displayName ?: "Unknown Uploader"
-        val uploaderPhoto = currentUploader?.photoUrl ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/avatar_1775118109127.jpg"
+        val uploaderPhoto = currentUploader?.photoUrl?.toHdUrl() ?: "https://bnqhatesnqukmsbjaulm.supabase.co/storage/v1/object/public/Remusic%20Storage/unknownUploadAndArtist/avatar_1775118109127.jpg"
         val uploaderRole = currentUploader?.role?.replaceFirstChar { it.uppercase() } ?: "Uploader"
 
         // LUXURY DECORATION: Role-based logic

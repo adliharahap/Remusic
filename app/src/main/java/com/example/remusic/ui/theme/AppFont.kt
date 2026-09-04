@@ -6,6 +6,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 
 object AppFont {
+    // Josefin Sans (Default Lyrics Font)
+    val JosefinSans = FontFamily(
+        Font(R.font.josefin_sans_regular, FontWeight.Normal),
+        Font(R.font.josefin_sans_medium, FontWeight.Medium),
+        Font(R.font.josefin_sans_semibold, FontWeight.SemiBold),
+        Font(R.font.josefin_sans_bold, FontWeight.Bold)
+    )
+    val JosefinSansRegular = FontFamily(Font(R.font.josefin_sans_regular))
+    val JosefinSansMedium = FontFamily(Font(R.font.josefin_sans_medium))
+    val JosefinSansSemiBold = FontFamily(Font(R.font.josefin_sans_semibold))
+    val JosefinSansBold = FontFamily(Font(R.font.josefin_sans_bold))
+
     // Poppins
     val Poppins = FontFamily(
         Font(R.font.poppins_regular, FontWeight.Normal),

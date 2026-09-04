@@ -23,3 +23,5 @@ google-services.json
 *.apk
 .codex
 .agents
+.idea
+.kotlin

@@ -33,7 +33,7 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.example.remusic"
-    compileSdk = 36
+    compileSdk = 37
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
@@ -166,6 +166,14 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.3.0"))
     // Tambahkan modul-modul Supabase yang dibutuhkan
     implementation("io.github.jan-tennert.supabase:auth-kt")
+    // Force downgrade BouncyCastle to fix Unsupported class file major version 69 (Java 25) error
+    configurations.all {
+        resolutionStrategy {
+            force("org.bouncycastle:bcprov-jdk18on:1.78.1")
+            force("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+        }
+    }
+
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.github.jan-tennert.supabase:storage-kt")
 
@@ -213,5 +221,12 @@ dependencies {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
+}
+
+// Workaround for Compose Compiler ProduceMappingFileTask failing on Java 25 bytecode
+tasks.configureEach {
+    if (name.contains("produceReleaseComposeMapping") || name.contains("produceDebugComposeMapping")) {
+        enabled = false
     }
 }

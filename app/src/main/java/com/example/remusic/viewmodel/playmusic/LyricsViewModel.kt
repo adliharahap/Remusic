@@ -107,11 +107,11 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     fun translateCurrentLyrics(songId: String, rawLrc: String, onTranslated: (String) -> Unit) {
         if (_isTranslating.value) return
         _isTranslating.value = true
-        _translationProgress.value = "Menyiapkan terjemahan..."
+        _translationProgress.value = "Menyiapkan terjemahan lirik..."
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val translatedLrc = com.example.remusic.utils.LyricsTranslator.translateLrc(rawLrc) { progress ->
+                val translatedLrc = com.example.remusic.utils.LyricsTranslator.translateLrc(getApplication(), rawLrc) { progress ->
                     _translationProgress.value = progress
                 }
 
@@ -132,7 +132,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 } else {
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(getApplication(), "Gagal menerjemahkan lirik.", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(getApplication(), "Tidak dapat menerjemahkan lirik saat ini.", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             } finally {
@@ -152,11 +152,11 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         if (_isTranslating.value) return
         _isTranslating.value = true
-        _translationProgress.value = "Menghubungkan ke Gemini ($modelName)..."
+        _translationProgress.value = "Menghubungkan ke Gemini AI..."
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                _translationProgress.value = "Menerjemahkan dengan AI..."
+                _translationProgress.value = "Menerjemahkan lirik dengan AI..."
                 val prompt = """
                     You are an expert song translator and lyricist specializing in translating English songs to Indonesian. 
                     Your goal is to provide a translation that is **natural, emotive, and flows like a subtitle**, capturing the deep meaning without being overly formal or excessively poetic/cringey.
@@ -230,7 +230,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                 val translatedText = rawTranslatedText?.replace("```markdown", "")?.replace("```", "")?.trim()
 
                 if (translatedText != null && translatedText.contains("[")) {
-                    _translationProgress.value = "Menyimpan terjemahan..."
+                    _translationProgress.value = "Menyimpan hasil terjemahan..."
                     
                     // 1. Update local DB
                     musicDao.updateLyrics(songId, translatedText)

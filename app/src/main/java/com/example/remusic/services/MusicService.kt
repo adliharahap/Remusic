@@ -11,16 +11,19 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.LibraryResult
+import androidx.media3.common.MediaMetadata
+import androidx.media3.session.MediaSession.ControllerInfo
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.example.remusic.utils.RemusicCache
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import com.example.remusic.utils.NotificationUtils
+import com.example.remusic.utils.toHdUrl
 import okhttp3.OkHttpClient
-
-
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,34 +36,149 @@ import com.example.remusic.data.repository.MusicRepository
 import androidx.media3.common.Player
 
 @UnstableApi
-class MusicService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+class MusicService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private lateinit var sleepTimerManager: SleepTimerManager
 
     // Callback session tetap sama...
-    private val mediaSessionCallback = object : MediaSession.Callback {
+    private val mediaSessionCallback = object : MediaLibrarySession.Callback {
+        
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val isRecent = params?.isRecent ?: false
+            val rootId = if (isRecent) "recent_root" else "root"
+            
+            val rootMediaItem = MediaItem.Builder()
+                .setMediaId(rootId)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setIsBrowsable(true)
+                        .setIsPlayable(false)
+                        .build()
+                )
+                .build()
+            
+            return Futures.immediateFuture(LibraryResult.ofItem(rootMediaItem, LibraryParams.Builder().setRecent(isRecent).build()))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>> {
+            if (parentId == "recent_root") {
+                val future = com.google.common.util.concurrent.SettableFuture.create<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>>()
+                serviceScope.launch {
+                    try {
+                        val database = MusicDatabase.getDatabase(this@MusicService)
+                        val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
+                        val (queue, _) = repository.queue.restorePlaybackQueue()
+                        
+                        val userPrefs = com.example.remusic.data.preferences.UserPreferencesRepository(this@MusicService)
+                        val lastIndex = userPrefs.lastPositionFlow.first()
+                        val savedSongId = userPrefs.lastSongIdFlow.first()
+                        
+                        // Find the actual item based on lastSongId or fallback to the first item
+                        val indexToPlay = queue.indexOfFirst { it.song.id == savedSongId }.coerceAtLeast(0)
+                        
+                        if (queue.isNotEmpty()) {
+                            val lastSong = queue[indexToPlay]
+                            
+                            val mediaItem = MediaItem.Builder()
+                                .setMediaId(lastSong.song.id)
+                                .setUri(lastSong.song.audioUrl ?: "")
+                                .setMediaMetadata(
+                                    MediaMetadata.Builder()
+                                        .setTitle(lastSong.song.title)
+                                        .setArtist(lastSong.artist?.name ?: "Unknown")
+                                        .setArtworkUri(android.net.Uri.parse(lastSong.song.coverUrl?.toHdUrl() ?: ""))
+                                        .setIsPlayable(true)
+                                        .setIsBrowsable(false)
+                                        .build()
+                                )
+                                .build()
+                            
+                            future.set(LibraryResult.ofItemList(listOf(mediaItem), params))
+                        } else {
+                            future.set(LibraryResult.ofItemList(emptyList(), params))
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MusicService", "Failed to load recent item", e)
+                        future.set(LibraryResult.ofItemList(emptyList(), params))
+                    }
+                }
+                return future
+            }
+            
+            return Futures.immediateFuture(LibraryResult.ofItemList(emptyList(), params))
+        }
+
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
-            controller: MediaSession.ControllerInfo
+            controller: ControllerInfo
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            val player = mediaSession.player
-            val mediaItems = mutableListOf<MediaItem>()
-            for (i in 0 until player.mediaItemCount) {
-                mediaItems.add(player.getMediaItemAt(i))
+            val future = com.google.common.util.concurrent.SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            serviceScope.launch {
+                try {
+                    val database = MusicDatabase.getDatabase(this@MusicService)
+                    val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
+                    val (queue, _) = repository.queue.restorePlaybackQueue()
+                    
+                    if (queue.isEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            val emptyList = mutableListOf<MediaItem>()
+                            future.set(MediaSession.MediaItemsWithStartPosition(emptyList, 0, 0L))
+                        }
+                        return@launch
+                    }
+                    
+                    val userPrefs = com.example.remusic.data.preferences.UserPreferencesRepository(this@MusicService)
+                    val savedSongId = userPrefs.lastSongIdFlow.first()
+                    val lastPositionMs = userPrefs.lastPositionFlow.first()
+                    
+                    val mediaItems = queue.map { item ->
+                        MediaItem.Builder()
+                            .setMediaId(item.song.id)
+                            .setUri(item.song.audioUrl ?: "") // It's fine if empty, the player handles it
+                            .setMediaMetadata(
+                                MediaMetadata.Builder()
+                                    .setTitle(item.song.title)
+                                    .setArtist(item.artist?.name ?: "Unknown")
+                                    .setArtworkUri(android.net.Uri.parse(item.song.coverUrl?.toHdUrl() ?: ""))
+                                    .build()
+                            )
+                            .build()
+                    }
+                    
+                    val startIndex = mediaItems.indexOfFirst { it.mediaId == savedSongId }.coerceAtLeast(0)
+                    
+                    withContext(Dispatchers.Main) {
+                        val player = mediaSession.player
+                        player.playWhenReady = false // Prevent auto-play immediately on bound
+                        
+                        future.set(MediaSession.MediaItemsWithStartPosition(
+                            mediaItems,
+                            startIndex,
+                            lastPositionMs
+                        ))
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicService", "Failed to resume playback", e)
+                    withContext(Dispatchers.Main) {
+                        future.set(MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0L))
+                    }
+                }
             }
-            // ⚠️ KRITIS: Set playWhenReady=false segera agar Android TIDAK auto-play
-            // setelah onPlaybackResumption selesai. Ini mencegah musik muncul tiba-tiba
-            // saat user membuka app atau menekan tombol headset.
-            player.playWhenReady = false
-            val startPosition = MediaSession.MediaItemsWithStartPosition(
-                mediaItems,
-                player.currentMediaItemIndex,
-                player.currentPosition
-            )
-            return Futures.immediateFuture(startPosition)
+            return future
         }
 
         override fun onConnect(
@@ -129,6 +247,8 @@ class MusicService : MediaSessionService() {
             return super.onCustomCommand(session, controller, customCommand, args)
         }
     }
+
+
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -340,9 +460,8 @@ class MusicService : MediaSessionService() {
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaLibrarySession.Builder(this, player, mediaSessionCallback)
             .setSessionActivity(pendingIntent)
-            .setCallback(mediaSessionCallback)
             .build()
     }
 
@@ -354,14 +473,11 @@ class MusicService : MediaSessionService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-
-        // Cek settingan background music dari DataStore
         val userPrefs = com.example.remusic.data.preferences.UserPreferencesRepository(this)
         var isBackgroundEnabled = false
         runBlocking {
@@ -369,15 +485,15 @@ class MusicService : MediaSessionService() {
         }
 
         if (!isBackgroundEnabled) {
-            mediaSession?.player?.stop()
-            mediaSession?.player?.release()
+            mediaSession?.player?.pause()
             sleepTimerManager.cancelTimer()
-
-            // Jangan release cache di sini jika kamu pakai Singleton,
-            // biarkan dia hidup selama Application hidup.
-            // Kecuali kamu yakin app benar-benar mati.
-
-            stopSelf()
+            // 1. Lepas dari Foreground seketika agar notifikasi aktif (drawer) langsung hilang.
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
         }
     }
 
