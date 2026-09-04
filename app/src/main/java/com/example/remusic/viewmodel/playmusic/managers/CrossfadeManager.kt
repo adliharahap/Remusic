@@ -436,11 +436,26 @@ class CrossfadeManager(
 
                 // 5. FASE 3: Seamless Hand-off ke Controller Utama
                 // Lagu 1 sudah habis (volume 0f), Lagu 2 sudah full volume
-                val finalSong2Pos = (fadePlayer?.currentPosition ?: (halfDurationMs + fadeDurationMs)).coerceAtLeast(0L)
+                val finalSong2Pos = fadePlayer?.currentPosition ?: 0L
                 Timber.tag(TAG).d("🔄 Fase 3: Handoff ke controller utama pada posisi ${finalSong2Pos}ms...")
-
+                
                 controller.volume = targetVolume
+
+                // Minta UI dan ViewModel untuk pindah ke lagu berikutnya di controller
                 onTransitionToNextSong(nextIndex, resolvedNextSong, finalSong2Pos)
+
+                // TUNGGU controller selesai buffering dan mulai memutar (untuk mencegah jedug/gap audio)
+                withContext(Dispatchers.Main) {
+                    kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                        while (isActive) {
+                            if (controller.currentMediaItemIndex == nextIndex && controller.isPlaying) {
+                                Timber.tag(TAG).d("✅ Controller sudah siap dan memutar Lagu 2! Handoff mulus.")
+                                break
+                            }
+                            kotlinx.coroutines.delay(20L)
+                        }
+                    }
+                }
 
                 // Jeda toleransi 150ms agar controller mulai output audio sebelum fadePlayer dimatikan
                 delay(150L)

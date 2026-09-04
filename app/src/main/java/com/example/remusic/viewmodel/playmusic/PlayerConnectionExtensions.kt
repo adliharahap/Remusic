@@ -190,10 +190,11 @@ import timber.log.Timber
 
                     override fun onEvents(player: Player, events: Player.Events) {
                         super.onEvents(player, events)
+                        val isCrossfadingToNext = crossfadeManager.isShowingNextSongInCrossfade
                         _uiState.update {
                             it.copy(
-                                    totalDuration = player.duration.coerceAtLeast(0L),
-                                    currentPosition = player.currentPosition.coerceAtLeast(0L)
+                                    totalDuration = if (isCrossfadingToNext) it.totalDuration else player.duration.coerceAtLeast(0L),
+                                    currentPosition = if (isCrossfadingToNext) crossfadeManager.getNextSongPosition() ?: 0L else player.currentPosition.coerceAtLeast(0L)
                             )
                         }
 
@@ -660,11 +661,12 @@ import timber.log.Timber
                             }
 
                             // 3. Update UI
+                            val isCrossfadingToNext = crossfadeManager.isShowingNextSongInCrossfade
                             val activePos = crossfadeManager.getNextSongPosition() ?: pos
                             _uiState.update { state ->
                                 state.copy(
                                         currentPosition = activePos,
-                                        totalDuration = if (dur > 0) dur else state.totalDuration,
+                                        totalDuration = if (isCrossfadingToNext) state.totalDuration else (if (dur > 0) dur else state.totalDuration),
                                         debugStatus = statusText
                                 )
                             }
