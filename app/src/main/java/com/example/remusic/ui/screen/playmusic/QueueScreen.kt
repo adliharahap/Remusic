@@ -216,7 +216,7 @@ fun QueueScreen(
                 artistName = songWithArtist?.displayArtistName ?: "Unknown Artist",
                 posterUri = songWithArtist.song.coverUrl ?: "",
                 isCurrentlyPlaying = currentlyPlayingId != null && songWithArtist.song.id == currentlyPlayingId,
-                isEditMode = isEditMode,
+                isEditMode = isEditMode || reorderableState.draggingItemKey != null,
                 dragModifier = Modifier.detectReorderAfterLongPress(reorderableState),
                 modifier = Modifier
                     .animateItem(), // Menggunakan animateItem() bawaan Compose 1.7

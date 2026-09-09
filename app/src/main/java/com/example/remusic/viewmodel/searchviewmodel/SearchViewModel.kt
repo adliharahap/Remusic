@@ -442,6 +442,20 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun clearAllHistory() {
+        val userId = com.example.remusic.data.SupabaseManager.client.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            musicDao.clearAllSearchHistory(userId)
+        }
+    }
+
+    fun removeHistoryItem(songId: String) {
+        val userId = com.example.remusic.data.SupabaseManager.client.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            musicDao.removeSearchHistoryItem(userId, songId)
+        }
+    }
+
     fun onSongPlayed(songWithArtist: SongWithArtist) {
         viewModelScope.launch {
             val song = songWithArtist.song

@@ -42,6 +42,7 @@ sealed class HomeUiState {
         val topTrending: List<SongWithArtist>,
         val quickPickSongs: List<SongWithArtist>,
         val isRefreshing: Boolean = false,
+        val isFetchingYouTube: Boolean = false,
         val homePage: HomePage? = null,
         val communityAlbums: List<com.example.remusic.ui.components.homecomponents.CommunityAlbumData> = emptyList(),
         val activeMoodParams: String? = null
@@ -62,16 +63,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val database = MusicDatabase.getDatabase(application)
         repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
 
-        // Langsung load dari cache dulu agar UI tidak kosong
+        // Cek cache dan masa berlaku (misal 6 jam)
+        val expirationMs = 6 * 60 * 60 * 1000L
         val cached = HomeCacheManager.load()
+        val isCacheValid = HomeCacheManager.isCacheValid(expirationMs)
 
         if (cached != null) {
-            val shuffledCache = cached
-            _uiState.value = shuffledCache
-            Log.d(TAG, "📦 [INIT] Cache tersedia, tampilkan dulu (shuffled).")
+            _uiState.value = cached
+            Log.d(TAG, "📦 [INIT] Cache tersedia, tampilkan dulu.")
+            
+            if (!isCacheValid) {
+                Log.d(TAG, "🔄 [INIT] Cache kedaluwarsa. Fetching ulang semua data...")
+                fetchAllHomeData()
+            } else {
+                Log.d(TAG, "✅ [INIT] Cache masih valid. Memuat bagian YouTube yang tidak dicache...")
+                fetchUncachedYouTubeData()
+            }
+        } else {
+            fetchAllHomeData()
         }
-        // Tetap fetch online (jika ada internet)
-        fetchAllHomeData()
 
         viewModelScope.launch {
             repository.getRecentlyPlayedLocal().collect { history ->
@@ -171,19 +181,123 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                          launch { repository.synchronizeUserData(userId) }
                     }
                 } else {
-                    // Jika gagal tapi punya cache, hilangkan status refreshing
-                    if (_uiState.value is HomeUiState.Success) {
-                        _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
+                    if (currentState !is HomeUiState.Success) {
+                        _uiState.value = HomeUiState.Error("Gagal memuat data")
+                    } else {
+                        _uiState.value = currentState.copy(isRefreshing = false)
                     }
                 }
-
             } catch (e: Exception) {
-                Log.e(TAG, "❌ [ERROR] Failed to load home data: ${e.message}")
-                // Jika gagal dan ada cache, tetap tampilkan cache (jangan tampilkan Error)
-                if (_uiState.value !is HomeUiState.Success) {
-                    _uiState.value = HomeUiState.Error(e.message ?: "Terjadi kesalahan saat memuat data.")
+                Log.e(TAG, "❌ [ERROR] fetchAllHomeData: ${e.message}")
+                if (currentState !is HomeUiState.Success) {
+                    _uiState.value = HomeUiState.Error(e.message ?: "Unknown error")
                 } else {
-                    _uiState.value = (_uiState.value as HomeUiState.Success).copy(isRefreshing = false)
+                    _uiState.value = currentState.copy(isRefreshing = false)
+                }
+            }
+        }
+    }
+
+    private fun fetchUncachedYouTubeData() {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "🔄 [HOME] Fetching Uncached YouTube Data (HomePage & Community Albums)...")
+                
+                _uiState.update { currentState ->
+                    if (currentState is HomeUiState.Success) {
+                        currentState.copy(isFetchingYouTube = true)
+                    } else currentState
+                }
+
+                val homePage = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { 
+                    var finalPage: com.metrolist.innertube.pages.HomePage? = null
+                    var attempt = 1
+                    val maxAttempts = 3
+                    
+                    while (attempt <= maxAttempts && finalPage == null) {
+                        val firstPage = YouTube.home(params = null).getOrNull()
+                        if (firstPage != null) {
+                            var mergedPage: com.metrolist.innertube.pages.HomePage = firstPage
+                            var continuation = firstPage.continuation
+                            var loads = 0
+                            while (continuation != null && loads < 5) {
+                                val nextPage = YouTube.home(continuation = continuation).getOrNull()
+                                if (nextPage != null) {
+                                    mergedPage = mergedPage.copy(
+                                        sections = mergedPage.sections + nextPage.sections,
+                                        continuation = nextPage.continuation
+                                    )
+                                    continuation = nextPage.continuation
+                                    loads++
+                                } else break
+                            }
+                            finalPage = mergedPage
+                        }
+                        attempt++
+                    }
+                    finalPage
+                }
+
+                val communityAlbumsDeferred = homePage?.sections
+                    ?.filter { it.title?.contains("Komunitas", ignoreCase = true) == true || it.title?.contains("Community", ignoreCase = true) == true }
+                    ?.flatMap { it.items }
+                    ?.mapNotNull { item ->
+                        val (id, title, thumb) = when (item) {
+                            is com.metrolist.innertube.models.PlaylistItem -> Triple(item.id, item.title, item.thumbnail ?: "")
+                            is com.metrolist.innertube.models.AlbumItem -> Triple(item.playlistId, item.title, item.thumbnail)
+                            is com.metrolist.innertube.models.PodcastItem -> Triple(item.id, item.title, item.thumbnail ?: "")
+                            else -> null
+                        } ?: return@mapNotNull null
+                        
+                        val type = if (item is com.metrolist.innertube.models.AlbumItem) "YOUTUBE_ALBUM" else "YOUTUBE_PLAYLIST"
+                        
+                        async {
+                            val result = YouTube.playlist(id).getOrNull()
+                            val songs = result?.songs?.mapNotNull { songItem ->
+                                val song = Song(
+                                    id = songItem.id,
+                                    title = songItem.title,
+                                    artistId = songItem.artists?.firstOrNull()?.id,
+                                    coverUrl = songItem.thumbnail,
+                                    durationMs = (songItem.duration ?: 0) * 1000L
+                                )
+                                val artist = songItem.artists?.firstOrNull()?.let { a -> Artist(id = a.id ?: "", name = a.name) }
+                                SongWithArtist(song, artist)
+                            } ?: emptyList()
+                            
+                            com.example.remusic.ui.components.homecomponents.CommunityAlbumData(
+                                title = title,
+                                coverUrl = thumb,
+                                playlistId = id,
+                                songs = songs,
+                                playlistType = type
+                            )
+                        }
+                    } ?: emptyList()
+
+                val fetchedCommunityAlbums = kotlinx.coroutines.awaitAll(*communityAlbumsDeferred.toTypedArray()).toList()
+                
+                _uiState.update { currentState ->
+                    if (currentState is HomeUiState.Success) {
+                        currentState.copy(
+                            homePage = homePage, 
+                            communityAlbums = fetchedCommunityAlbums,
+                            isFetchingYouTube = false
+                        )
+                    } else currentState
+                }
+                
+                // Sync user data
+                val userId = UserManager.currentUser?.uid
+                if (userId != null) {
+                    repository.synchronizeUserData(userId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [HOME] Error fetchUncachedYouTubeData: ${e.message}")
+                _uiState.update { currentState ->
+                    if (currentState is HomeUiState.Success) {
+                        currentState.copy(isFetchingYouTube = false)
+                    } else currentState
                 }
             }
         }

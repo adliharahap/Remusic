@@ -90,6 +90,9 @@ import com.metrolist.innertube.models.SongItem
 import com.example.remusic.data.model.Song
 import com.example.remusic.data.model.Artist as DbArtist
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     // rootNavController removed, using callback instead for clarity
@@ -383,6 +386,7 @@ fun HomeScreen(
 }
 
 // --- Composable Baru: Isi dari Layar Utama Home ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeMainScreen(
     homeViewModel: HomeViewModel,
@@ -418,7 +422,9 @@ private fun HomeMainScreen(
         )
     )
 
-    Box(
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = (homeState as? HomeUiState.Success)?.isRefreshing == true,
+        onRefresh = { homeViewModel.fetchAllHomeData() },
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -541,9 +547,7 @@ private fun HomeMainScreen(
                                 dominantColor = lastSongColor
                             )
 
-                            if (state.homePage == null && state.isRefreshing) {
-                                QuickPickCarouselSkeleton()
-                            } else if (state.quickPickSongs.isNotEmpty()) {
+                            if (state.quickPickSongs.isNotEmpty()) {
 
                                 // 1. Quick Picks (Pilihan Cepat)
                                 QuickPickCarousel(
@@ -558,6 +562,8 @@ private fun HomeMainScreen(
                                         playMusicViewModel.showQueueOptions(song)
                                     }
                                 )
+                            } else if (state.homePage == null && (state.isRefreshing || state.isFetchingYouTube)) {
+                                QuickPickCarouselSkeleton()
                             }
                         }
                     }
@@ -565,10 +571,7 @@ private fun HomeMainScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 2. Dari Komunitas
-                    if (state.homePage == null && state.isRefreshing) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        com.example.remusic.ui.components.homecomponents.CommunityAlbumSectionSkeleton()
-                    } else if (state.communityAlbums.isNotEmpty()) {
+                    if (state.communityAlbums.isNotEmpty()) {
                         CommunityAlbumSection(
                             albums = state.communityAlbums,
                             onAlbumClick = { id ->
@@ -580,13 +583,14 @@ private fun HomeMainScreen(
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
+                    } else if (state.homePage == null && (state.isRefreshing || state.isFetchingYouTube)) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        com.example.remusic.ui.components.homecomponents.CommunityAlbumSectionSkeleton()
                     }
                     
                     // 3. Quick Mood (Chips)
                     val chips = state.homePage?.chips
-                    if (state.homePage == null && state.isRefreshing) {
-                        com.example.remusic.ui.components.homecomponents.QuickMoodChipsSkeleton()
-                    } else if (!chips.isNullOrEmpty()) {
+                    if (!chips.isNullOrEmpty()) {
                         com.example.remusic.ui.components.homecomponents.QuickMoodChips(
                             chips = chips,
                             activeParams = state.activeMoodParams,
@@ -602,12 +606,12 @@ private fun HomeMainScreen(
                             }
                         )
                         Spacer(modifier = Modifier.height(24.dp))
+                    } else if (state.homePage == null && (state.isRefreshing || state.isFetchingYouTube)) {
+                        com.example.remusic.ui.components.homecomponents.QuickMoodChipsSkeleton()
                     }
 
                     // 4. Baru Saja Diputar
-                    if (state.homePage == null && state.isRefreshing) {
-                        com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSectionSkeleton()
-                    } else if (state.recentlyPlayed.isNotEmpty()) {
+                    if (state.recentlyPlayed.isNotEmpty()) {
                         com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSection(
                             title = "Baru Saja Diputar",
                             songs = state.recentlyPlayed.take(50),
@@ -619,12 +623,14 @@ private fun HomeMainScreen(
                             }
                         )
                         Spacer(modifier = Modifier.height(10.dp))
+                    } else if (state.homePage == null && (state.isRefreshing || state.isFetchingYouTube)) {
+                        com.example.remusic.ui.components.homecomponents.RecentlyPlayedGridPagerSectionSkeleton()
                     }
 
 
 
                     // 5. Featured Playlists & Songs from Home Page
-                    if (state.homePage == null && state.isRefreshing) {
+                    if (state.homePage == null && (state.isRefreshing || state.isFetchingYouTube)) {
                         com.example.remusic.ui.components.homecomponents.FeaturedPlaylistSectionSkeleton()
                         Spacer(modifier = Modifier.height(24.dp))
                         com.example.remusic.ui.components.homecomponents.SongSectionSkeleton(title = "Sering Kamu Putar")

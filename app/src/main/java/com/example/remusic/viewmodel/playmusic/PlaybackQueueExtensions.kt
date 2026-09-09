@@ -688,6 +688,16 @@ import timber.log.Timber
         viewModelScope.launch(Dispatchers.IO) {
             Timber.tag("DEBUG_PLAYER").d("🔄 [RESOLVE RETRY] Re-resolving URL untuk: ${currentSong.song.title}")
             try {
+                // 🧹 Hapus Cache & markWebRemixFailed sama seperti di Watchdog agar terhindar dari Range Request YouTube
+                com.example.remusic.utils.InnerTubeXPlayer.markWebRemixFailed(currentSong.song.effectiveId)
+                try {
+                    val cache = com.example.remusic.utils.RemusicCache.getInstance(getApplication())
+                    cache.removeResource(currentSong.song.effectiveId)
+                    Timber.tag("DEBUG_PLAYER").d("🧹 Cache dibersihkan untuk: ${currentSong.song.effectiveId} (Resolve Retry)")
+                } catch (e: Exception) {
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ Gagal clear cache (Resolve Retry): ${e.message}")
+                }
+
                 val result = resolveSongUrl(currentSong)
                 if (result.url.isNotBlank()) {
                     val newItem = createMediaItem(currentSong, result.url)
@@ -718,11 +728,7 @@ import timber.log.Timber
 
 
     fun PlayMusicViewModel.togglePlayPause() {
-        if (crossfadeManager.isCrossfading) {
-            crossfadeManager.cancelCrossfade()
-        }
-
-        // Mencegah aksi jika fade sedang berjalan
+        // Simpan posisi terakhir ke history (hanya kalau currentSong valid)berjalan
         if (isFading) return
 
         // Simpan status saat ini sebelum diubah
@@ -982,17 +988,20 @@ import timber.log.Timber
                 }
 
         mediaController?.repeatMode = nextRepeatMode
+        viewModelScope.launch {
+            userPreferencesRepository.setRepeatMode(nextRepeatMode)
+            Timber.tag("DEBUG_PLAYER").d("User explicitly changed repeat mode: $nextRepeatMode")
+        }
     }
 
 
     fun PlayMusicViewModel.seekTo(position: Long) {
-        crossfadeManager.onSeek(position, _uiState.value.totalDuration)
+        // Reset lyrics offset whenever we seekTo(position)
         mediaController?.seekTo(position)
     }
 
 
     fun PlayMusicViewModel.nextSong() {
-        crossfadeManager.cancelCrossfade()
         val controller = mediaController ?: return
         val nextIndex = controller.nextMediaItemIndex
         if (nextIndex != C.INDEX_UNSET) {
@@ -1003,7 +1012,6 @@ import timber.log.Timber
 
 
     fun PlayMusicViewModel.previousSong() {
-        crossfadeManager.cancelCrossfade()
         val controller = mediaController ?: return
 
         // Fitur: Jika lagu sudah main lebih dari 3 detik, restart lagu ini (bukan mundur ke lagu
@@ -1050,8 +1058,7 @@ import timber.log.Timber
         // 1. BATALKAN JOB SEBELUMNYA (Supaya kalau user spam klik, yang terakhir yang menang)
         jumpJob?.cancel()
         setPlaylistJob?.cancel()
-        if (!isFromCrossfade) {
-            crossfadeManager.cancelCrossfade()
+         viewModelScope.launch {
             // 🛑 PAUSE SEGERA! (Agar lagu lama berhenti saat buffering lagu baru)
             controller.pause()
         }
@@ -1705,6 +1712,7 @@ import timber.log.Timber
     // --- PLAYBACK PERSISTENCE LOGIC ---
     // Dipanggil saat inisialisasi ViewModel
     suspend fun PlayMusicViewModel.restorePlaybackState() {
+        isRestoringSession = true
        Timber.tag("DEBUG_PLAYER").d( "♻️ [RESTORE] Memulai restorasi state...")
 
         // 1. Ambil Data Terakhir dari Prefs
@@ -1815,6 +1823,10 @@ import timber.log.Timber
             }
 
            Timber.tag("DEBUG_PLAYER").d( "✅ [RESTORE] Berhasil! Siap di posisi: ${lastPosition}ms")
+           viewModelScope.launch {
+               kotlinx.coroutines.delay(2000)
+               isRestoringSession = false
+           }
         } else {
            Timber.tag("DEBUG_PLAYER").d( "⚠️ [RESTORE] Tidak ada history queue.")
         }
@@ -1823,6 +1835,8 @@ import timber.log.Timber
 
     // Dipanggil saat pause, stop, atau ganti lagu
     fun PlayMusicViewModel.savePlaybackState() {
+        if (isRestoringSession) return
+
         val currentSong = _uiState.value.currentSong?.song
         val currentPosition = _uiState.value.currentPosition
 

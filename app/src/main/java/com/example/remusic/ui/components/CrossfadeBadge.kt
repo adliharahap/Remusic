@@ -1,17 +1,26 @@
 package com.example.remusic.ui.components
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +32,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,79 +44,99 @@ import com.example.remusic.ui.theme.AppFont
 fun CrossfadeBadge(
     isCrossfadeEnabled: Boolean,
     isCrossfading: Boolean,
+    shouldShowBadge: Boolean,
     crossfadeDurationSeconds: Int,
     modifier: Modifier = Modifier
 ) {
+    var localVisible by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(shouldShowBadge) {
+        if (shouldShowBadge) {
+            localVisible = true
+        } else {
+            if (localVisible) {
+                kotlinx.coroutines.delay(5000)
+                localVisible = false
+            }
+        }
+    }
+
     AnimatedVisibility(
-        visible = isCrossfadeEnabled,
-        enter = fadeIn(tween(300)) + scaleIn(tween(300)),
-        exit = fadeOut(tween(250)) + scaleOut(tween(250)),
-        modifier = modifier
+        visible = isCrossfadeEnabled && localVisible,
+        enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(500)) + fadeIn(tween(500)),
+        exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(500)) + fadeOut(tween(500)),
+        modifier = modifier.offset(y = 5.dp)
     ) {
         val shape = RoundedCornerShape(12.dp)
-        val spotifyGreen = Color(0xFF1DB954)
 
-        if (isCrossfading) {
-            // Skeleton shimmer animation saat transisi crossfade sedang aktif
+        val badgeColor by animateColorAsState(
+            targetValue = if (isCrossfading) Color(0xFF1DB954).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.08f),
+            animationSpec = tween(500), label = "badgeColor"
+        )
+        val borderColor by animateColorAsState(
+            targetValue = if (isCrossfading) Color(0xFF1DB954).copy(alpha = 0.8f) else Color.White.copy(alpha = 0.18f),
+            animationSpec = tween(500), label = "borderColor"
+        )
+        val iconColor by animateColorAsState(
+            targetValue = if (isCrossfading) Color(0xFF1DB954) else Color.White.copy(alpha = 0.7f),
+            animationSpec = tween(500), label = "iconColor"
+        )
+        val textColor by animateColorAsState(
+            targetValue = if (isCrossfading) Color.White else Color.White.copy(alpha = 0.75f),
+            animationSpec = tween(500), label = "textColor"
+        )
+
+        // Shimmer / kilat-kilat skeleton effect
+        val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+        val shimmerTranslate by infiniteTransition.animateFloat(
+            initialValue = -200f,
+            targetValue = 400f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1800, easing = LinearEasing, delayMillis = 400),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "shimmerTranslate"
+        )
+
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .border(BorderStroke(1.dp, borderColor), shape)
+                .background(badgeColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.AutoAwesome,
+                    contentDescription = "Crossfade",
+                    tint = iconColor,
+                    modifier = Modifier.size(10.dp)
+                )
+                Text(
+                    text = "Crossfade ${crossfadeDurationSeconds}s",
+                    color = textColor,
+                    fontSize = 9.sp,
+                    fontFamily = AppFont.Helvetica,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.2.sp
+                )
+            }
+
+            // Shimmer overlay
+            val shimmerBrush = Brush.linearGradient(
+                colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.45f), Color.Transparent),
+                start = Offset(shimmerTranslate, 0f),
+                end = Offset(shimmerTranslate + 80f, 60f)
+            )
             Box(
                 modifier = Modifier
-                    .clip(shape)
-                    .border(BorderStroke(1.dp, spotifyGreen.copy(alpha = 0.8f)), shape)
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .shimmerEffect(shape = shape)
-                    .padding(horizontal = 10.dp, vertical = 3.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AutoAwesome,
-                        contentDescription = "Crossfade Active",
-                        tint = spotifyGreen,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "Crossfading • ${crossfadeDurationSeconds}s",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontFamily = AppFont.Helvetica,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.3.sp
-                    )
-                }
-            }
-        } else {
-            // Badge statis halus saat fitur crossfade aktif namun belum masuk jendela crossfade
-            Box(
-                modifier = Modifier
-                    .clip(shape)
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)), shape)
-                    .background(Color.White.copy(alpha = 0.08f))
-                    .padding(horizontal = 9.dp, vertical = 2.5.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AutoAwesome,
-                        contentDescription = "Crossfade Ready",
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Text(
-                        text = "Crossfade ${crossfadeDurationSeconds}s",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 10.sp,
-                        fontFamily = AppFont.Helvetica,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 0.2.sp
-                    )
-                }
-            }
+                    .matchParentSize()
+                    .background(shimmerBrush)
+            )
         }
     }
 }

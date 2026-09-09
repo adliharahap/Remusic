@@ -33,6 +33,12 @@ enum class PlayerBackgroundStyle(val displayName: String) {
     BLURRED_COVER("Blurred Cover")
 }
 
+enum class CrossfadeCurve(val displayName: String) {
+    LINEAR("Linear"),
+    EQUAL_POWER("Equal Power"),
+    SMOOTH("Smooth")
+}
+
 
 // Buat instance DataStore sebagai extension property pada Context
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -110,12 +116,23 @@ class UserPreferencesRepository(private val context: Context) {
     // --- CROSSFADE PREFERENCE ---
     private val CROSSFADE_ENABLED_KEY = booleanPreferencesKey("crossfade_enabled")
     private val CROSSFADE_DURATION_KEY = intPreferencesKey("crossfade_duration_seconds")
+    private val CROSSFADE_CURVE_KEY = stringPreferencesKey("crossfade_curve_mode")
 
     val crossfadeEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { preferences -> preferences[CROSSFADE_ENABLED_KEY] ?: false }
 
     val crossfadeDurationFlow: Flow<Int> =
-        context.dataStore.data.map { preferences -> preferences[CROSSFADE_DURATION_KEY] ?: 5 }
+        context.dataStore.data.map { preferences -> preferences[CROSSFADE_DURATION_KEY] ?: 10 }
+
+    val crossfadeCurveFlow: Flow<CrossfadeCurve> =
+        context.dataStore.data.map { preferences ->
+            val curveName = preferences[CROSSFADE_CURVE_KEY] ?: CrossfadeCurve.EQUAL_POWER.name
+            try {
+                CrossfadeCurve.valueOf(curveName)
+            } catch (e: Exception) {
+                CrossfadeCurve.EQUAL_POWER
+            }
+        }
 
     suspend fun saveCrossfadeEnabled(enabled: Boolean) {
         context.dataStore.edit { settings -> settings[CROSSFADE_ENABLED_KEY] = enabled }
@@ -123,6 +140,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun saveCrossfadeDuration(seconds: Int) {
         context.dataStore.edit { settings -> settings[CROSSFADE_DURATION_KEY] = seconds }
+    }
+
+    suspend fun saveCrossfadeCurve(curve: CrossfadeCurve) {
+        context.dataStore.edit { settings -> settings[CROSSFADE_CURVE_KEY] = curve.name }
     }
 
     // --- LYRICS CONFIG PERSISTENCE ---

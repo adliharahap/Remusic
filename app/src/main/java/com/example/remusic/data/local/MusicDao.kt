@@ -115,6 +115,12 @@ interface MusicDao {
         LIMIT 20
     """)
     fun getSearchHistory(userId: String): Flow<List<CachedSong>>
+
+    @Query("DELETE FROM search_history WHERE userId = :userId")
+    suspend fun clearAllSearchHistory(userId: String)
+
+    @Query("DELETE FROM search_history WHERE userId = :userId AND songId = :songId")
+    suspend fun removeSearchHistoryItem(userId: String, songId: String)
     // --- PLAYBACK QUEUE ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaybackQueue(queue: List<PlaybackQueueEntity>)

@@ -384,6 +384,7 @@ fun PlayMusicScreen(
                     meshColors = uiState.dominantColors,
                     isCrossfadeEnabled = uiState.isCrossfadeEnabled,
                     isCrossfading = uiState.isCrossfading,
+                    shouldShowCrossfadeBadge = uiState.shouldShowCrossfadeBadge,
                     crossfadeDurationSeconds = uiState.crossfadeDurationSeconds
                 )
                 2 -> LyricsScreen(
@@ -642,6 +643,8 @@ fun PlayMusicScreen(
             onCrossfadeEnabledChange = { playMusicViewModel.setCrossfadeEnabled(it) },
             crossfadeDuration = uiState.crossfadeDurationSeconds,
             onCrossfadeDurationChange = { playMusicViewModel.setCrossfadeDuration(it) },
+            crossfadeCurve = uiState.crossfadeCurve,
+            onCrossfadeCurveChange = { playMusicViewModel.setCrossfadeCurve(it) },
             playbackSpeed = uiState.playbackSpeed,
             onPlaybackSpeedChange = { playMusicViewModel.setPlaybackSpeed(it) },
             playerBackgroundStyle = uiState.playerBackgroundStyle,

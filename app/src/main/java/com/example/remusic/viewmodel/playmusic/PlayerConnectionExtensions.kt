@@ -110,36 +110,36 @@ import timber.log.Timber
 
         controllerFuture.addListener(
                 {
-                    mediaController = controllerFuture.get()
-                    playerSettingsManager.mediaController = mediaController
-                    setupPlayerListener()
-                    updatePlayerState()
-                    
-                    // Sync routing once connected
-                    syncRoutingToSystem()
-                                viewModelScope.launch {
-                        val savedShuffleMode = userPreferencesRepository.shuffleEnabledFlow.first()
-                        mediaController?.shuffleModeEnabled = false // MUST ALWAYS BE FALSE FOR MANUAL SHUFFLE
-                        // Update UI state juga agar konsisten saat awal
-                        _uiState.update { it.copy(isShuffleModeEnabled = savedShuffleMode) }
-                       Timber.tag("DEBUG_PLAYER").d( "Applied saved shuffle mode (to UI state): $savedShuffleMode")
-                    }
+                    val controller = controllerFuture.get()
+                    mediaController = controller
+                    playerSettingsManager.mediaController = controller
+
+                    // Start a coroutine to fetch from DB first, then setup listeners
                     viewModelScope.launch {
+                        // 1. Ambil data dari DB
+                        val savedShuffleMode = userPreferencesRepository.shuffleEnabledFlow.first()
                         val savedRepeatMode = userPreferencesRepository.repeatModeFlow.first()
-                        mediaController?.repeatMode = savedRepeatMode
-                        _uiState.update { it.copy(repeatMode = savedRepeatMode) }
-                        Timber.tag("DEBUG_PLAYER").d( "Applied saved repeat mode: $savedRepeatMode")
-                    }
-
-                    // --- RESTORE PLAYBACK QUEUE & STATE ---
-                    viewModelScope.launch { restorePlaybackState() }
-
-                    val lastIndex =
-                            _uiState.value.playlist.indexOfFirst {
-                                it.song.id == _uiState.value.currentSong?.song?.id
-                            }
-                    if (lastIndex >= 0) {
-                        setPlaylist(_uiState.value.playlist, lastIndex)
+                        
+                        // 2. Terapkan ke mediaController DULUAN sebelum listener dipasang
+                        controller.shuffleModeEnabled = false // MUST ALWAYS BE FALSE FOR MANUAL SHUFFLE
+                        controller.repeatMode = savedRepeatMode
+                        
+                        // 3. Update UI state
+                        _uiState.update { 
+                            it.copy(
+                                isShuffleModeEnabled = savedShuffleMode, 
+                                repeatMode = savedRepeatMode
+                            ) 
+                        }
+                        Timber.tag("DEBUG_PLAYER").d("Applied saved repeat mode: $savedRepeatMode")
+                        
+                        // 4. SEKARANG baru pasang listener, agar dia tidak membaca default 0 dan menyimpannya ke DB!
+                        setupPlayerListener()
+                        updatePlayerState()
+                        syncRoutingToSystem()
+                        
+                        // 5. Restore antrean (Queue)
+                        restorePlaybackState()
                     }
                 },
                 ContextCompat.getMainExecutor(getApplication())
@@ -168,7 +168,9 @@ import timber.log.Timber
                         }
 
                         when (playbackState) {
-                            Player.STATE_BUFFERING -> startBufferingWatchdog()
+                            Player.STATE_BUFFERING -> {
+                                startBufferingWatchdog()
+                            }
                             Player.STATE_READY, Player.STATE_ENDED, Player.STATE_IDLE -> {
                                 stopBufferingWatchdog()
                             }
@@ -177,9 +179,7 @@ import timber.log.Timber
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
 
-                        if (!isFading) {
-                            _uiState.update { it.copy(isPlaying = isPlaying) }
-                        }
+                        _uiState.update { it.copy(isPlaying = isPlaying) }
 
                         if (isPlaying) {
                             startUpdatingPosition()
@@ -189,12 +189,10 @@ import timber.log.Timber
                     }
 
                     override fun onEvents(player: Player, events: Player.Events) {
-                        super.onEvents(player, events)
-                        val isCrossfadingToNext = crossfadeManager.isShowingNextSongInCrossfade
                         _uiState.update {
                             it.copy(
-                                    totalDuration = if (isCrossfadingToNext) it.totalDuration else player.duration.coerceAtLeast(0L),
-                                    currentPosition = if (isCrossfadingToNext) crossfadeManager.getNextSongPosition() ?: 0L else player.currentPosition.coerceAtLeast(0L)
+                                    totalDuration = player.duration.coerceAtLeast(0L),
+                                    currentPosition = player.currentPosition.coerceAtLeast(0L)
                             )
                         }
 
@@ -210,6 +208,14 @@ import timber.log.Timber
                         // Save state on Seek
                         if (events.contains(Player.EVENT_POSITION_DISCONTINUITY)) {
                             savePlaybackState()
+                        }
+                        
+                        // 🔥 FIX: Sinkronisasi paksa jika Player di belakang MediaSession ditukar (Crossfade Handoff)
+                        if (events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_TRACKS_CHANGED)) {
+                            if (player.currentMediaItemIndex != _uiState.value.currentSongIndex && player.currentMediaItemIndex >= 0) {
+                                Timber.tag("DEBUG_PLAYER").d("🔄 Sinkronisasi paksa UI karena MediaSession berganti Player (Handoff)")
+                                onMediaItemTransition(player.currentMediaItem, Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
+                            }
                         }
                     }
 
@@ -271,15 +277,6 @@ import timber.log.Timber
 
                         Timber.tag("DEBUG_PLAYER").d( "🔀 TRANSISI: Ganti lagu karena $reasonStr")
 
-                        if (crossfadeManager.isCrossfading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                            Timber.tag("DEBUG_PLAYER").d("🔀 [CROSSFADE] Lagu 1 selesai di controller saat crossfade berjalan. Pause controller agar tidak restart dari 0.")
-                            mediaController?.let {
-                                it.pause()
-                                it.volume = 0f
-                            }
-                            return
-                        }
-
                         val player = mediaController ?: return
 
                         val newIndex = player.currentMediaItemIndex
@@ -308,30 +305,31 @@ import timber.log.Timber
                             // loop.
 
                             if (matchedSong != null) {
-                                crossfadeManager.onSongChanged(matchedSong.song.id)
+                                // Cek apakah lagu benar-benar berubah, bukan sekedar replace URL yang sama
+                                if (_uiState.value.currentSong?.song?.id != matchedSong.song.id) {
+                                    // 1. UPDATE UI STATE IMMEDIATELY (Agar judul lagu berubah instan)
+                                    _uiState.update {
+                                        it.copy(
+                                                currentSong = matchedSong,
+                                                currentSongIndex = newIndex,
+                                                animationDirection = direction,
+                                                uploader = null, // Reset uploader for new song
+                                                hasError = false, // Reset error state on new song
+                                                errorType = null,
+                                                lyricsOffset = 0L, // Reset offset on transition
+                                                temporaryTranslatedLyrics = null, // Clear MLKit translated lyrics
+                                                alternativeLyricsResults = emptyList() // Clear cached search results for new song
+                                        )
+                                    }
 
-                                // 1. UPDATE UI STATE IMMEDIATELY (Agar judul lagu berubah instan)
-                                _uiState.update {
-                                    it.copy(
-                                            currentSong = matchedSong,
-                                            currentSongIndex = newIndex,
-                                            animationDirection = direction,
-                                            uploader = null, // Reset uploader for new song
-                                            hasError = false, // Reset error state on new song
-                                            errorType = null,
-                                            lyricsOffset = 0L, // Reset offset on transition
-                                            temporaryTranslatedLyrics = null, // Clear MLKit translated lyrics
-                                            alternativeLyricsResults = emptyList() // Clear cached search results for new song
-                                    )
+                                    // 2. SAVE TO LOCAL PLAY HISTORY
+                                    viewModelScope.launch {
+                                        repository.addToPlayHistory(matchedSong.song.id)
+                                    }
+
+                                    // Reset Smart Retry Flag on transition
+                                    hasRetriedCurrentSong = false
                                 }
-
-                                // 2. SAVE TO LOCAL PLAY HISTORY
-                                viewModelScope.launch {
-                                    repository.addToPlayHistory(matchedSong.song.id)
-                                }
-
-                                // Reset Smart Retry Flag on transition
-                                hasRetriedCurrentSong = false
 
                                Timber.tag("DEBUG_PLAYER").d(
                                         
@@ -409,11 +407,6 @@ import timber.log.Timber
 
                     override fun onRepeatModeChanged(repeatMode: Int) {
                         _uiState.update { it.copy(repeatMode = repeatMode) }
-
-                        viewModelScope.launch {
-                            userPreferencesRepository.setRepeatMode(repeatMode)
-                           Timber.tag("DEBUG_PLAYER").d( "Saved new repeat mode: $repeatMode")
-                        }
                     }
                 }
         )
@@ -487,56 +480,68 @@ import timber.log.Timber
             while (isActive) {
                 val songIdAtStart = _uiState.value.currentSong?.song?.id
 
-                // Tunggu 3 detik sebelum cek
-                delay(3000L)
+                // Tunggu 15 detik sebelum cek (beri waktu agar ExoPlayer berusaha resolve network error)
+                delay(15000L)
 
                 val controller = mediaController ?: break
 
-                // Sudah tidak buffering → selesai, lagu berhasil diputar
+                // Sudah tidak buffering -> selesai
                 if (controller.playbackState != Player.STATE_BUFFERING) {
                     Timber.tag(watchdogTag).d("✅ Sudah tidak buffering. Watchdog selesai.")
                     break
                 }
-                // Lagu sudah ganti (user klik next/prev) → selesai
+                // Lagu sudah ganti (user klik next/prev) -> selesai
                 if (_uiState.value.currentSong?.song?.id != songIdAtStart) {
                     Timber.tag(watchdogTag).d("✅ Lagu sudah ganti. Watchdog selesai.")
                     break
                 }
 
                 retryCount++
-                Timber.tag(watchdogTag).w("🔴 STUCK BUFFERING retry #$retryCount. Re-resolving URL fresh...")
+                Timber.tag("DEBUG_PLAYER").w("🔴 STUCK BUFFERING for 15s (Throttled/Hung). Re-resolving URL fresh...")
 
-                // SELALU re-resolve URL fresh — karena URL bisa expired (404)
+                // SELALU re-resolve URL fresh
                 val currentSong = _uiState.value.currentSong ?: break
                 val currentIndex = _uiState.value.currentSongIndex
 
                 val result = withContext(Dispatchers.IO) {
-                    try { resolveSongUrl(currentSong) } catch (e: Exception) {
+                    try { 
+                        // 🔥 CRITICAL FIX: Kasih tau InnerTube bahwa client WEB_REMIX gagal (di-throttle)
+                        // Ini akan memaksa InnerTube fallback ke client IOS/ANDROID yang tidak kena limit &n=
+                        com.example.remusic.utils.InnerTubeXPlayer.markWebRemixFailed(currentSong.song.effectiveId)
+                        
+                        // 🧹 Hapus Cache untuk lagu ini agar tidak nyangkut di byte korup/potongan file yang menyebabkan Range Request ditolak
+                        try {
+                            val cache = com.example.remusic.utils.RemusicCache.getInstance(getApplication())
+                            cache.removeResource(currentSong.song.effectiveId)
+                            Timber.tag("DEBUG_PLAYER").d("🧹 Cache dibersihkan untuk: ${currentSong.song.effectiveId} demi menghindari Range Request YouTube")
+                        } catch (e: Exception) {
+                            Timber.tag("DEBUG_PLAYER").w("⚠️ Gagal clear cache: ${e.message}")
+                        }
+
+                        resolveSongUrl(currentSong) 
+                    } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
-                        Timber.tag(watchdogTag).w("⚠️ Exception resolve: ${e.message}. Loop lagi...")
+                        Timber.tag("DEBUG_PLAYER").w("⚠️ Exception resolve: ${e.message}. Loop lagi...")
                         null
                     }
-                } ?: continue // Gagal resolve → loop lagi 3 detik kemudian
+                } ?: continue
 
                 if (result.url.isNotBlank()) {
-                    Timber.tag(watchdogTag).d("✅ URL fresh retry #$retryCount: ${result.url.takeLast(40)}")
+                    Timber.tag("DEBUG_PLAYER").d("✅ URL fresh (Watchdog): ${result.url.takeLast(40)}")
                     val newItem = createMediaItem(currentSong, result.url)
                     withContext(Dispatchers.Main) {
                         if (isActive && controller.currentMediaItemIndex == currentIndex) {
                             val resumePos = controller.currentPosition.coerceAtLeast(0L)
-                            controller.stop()
+                            // HAPUS controller.stop() karena bikin player state rusak / blank sebentar
                             controller.replaceMediaItem(currentIndex, newItem)
                             if (resumePos > 500L) controller.seekTo(currentIndex, resumePos)
                             controller.prepare()
                             controller.play()
-                            Timber.tag(watchdogTag).d("▶ Resume di ${resumePos}ms dengan URL baru.")
+                            Timber.tag("DEBUG_PLAYER").d("▶ Auto-Recovery Watchdog: Resume di ${resumePos}ms dengan URL baru.")
                         }
                     }
-                    // Tidak break di sini — biarkan loop cek lagi di iterasi berikutnya
-                    // apakah player benar-benar sudah tidak buffering
                 } else {
-                    Timber.tag(watchdogTag).w("⚠️ URL kosong. Loop lagi dalam 3 detik...")
-                    // Loop terus
+                    Timber.tag("DEBUG_PLAYER").w("⚠️ URL kosong. Tunggu iterasi watchdog berikutnya...")
                 }
             }
         }
@@ -564,16 +569,12 @@ import timber.log.Timber
 
                     while (currentCoroutineContext().isActive) {
                         val controller = mediaController
-                        if (controller != null && (controller.isPlaying || crossfadeManager.isCrossfading)) {
+                        if (controller != null && controller.isPlaying) {
                             // 1. Ambil data Player di Main Thread (Safe)
                             val pos = controller.currentPosition
                             val dur = controller.duration
                             val currentUri =
                                     controller.currentMediaItem?.localConfiguration?.uri?.toString()
-
-                            // ── TRIGGER CROSSFADE & PRELOAD CHECK ──
-                            crossfadeManager.checkAndTriggerCrossfade(pos, dur)
-                            crossfadeManager.checkAndTriggerPreload(pos, dur)
 
                             // 2. Cek Cache di IO Thread (Hanya setiap 2 detik = 4x loop)
                             // Optimasi untuk "HP Kentang" agar tidak boros resource context switch
@@ -661,13 +662,16 @@ import timber.log.Timber
                             }
 
                             // 3. Update UI
-                            val isCrossfadingToNext = crossfadeManager.isShowingNextSongInCrossfade
-                            val activePos = crossfadeManager.getNextSongPosition() ?: pos
                             _uiState.update { state ->
+                                val crossfadeDurMs = state.crossfadeDurationSeconds * 1000L
+                                val crossfading = state.isCrossfadeEnabled && dur > 0 && (dur - pos) <= crossfadeDurMs
+                                val shouldShowBadge = state.isCrossfadeEnabled && ((dur > 0 && dur - pos <= crossfadeDurMs + 5000L) || (pos <= 5000L))
                                 state.copy(
-                                        currentPosition = activePos,
-                                        totalDuration = if (isCrossfadingToNext) state.totalDuration else (if (dur > 0) dur else state.totalDuration),
-                                        debugStatus = statusText
+                                        currentPosition = pos,
+                                        totalDuration = if (dur > 0) dur else state.totalDuration,
+                                        debugStatus = statusText,
+                                        isCrossfading = crossfading,
+                                        shouldShowCrossfadeBadge = shouldShowBadge
                                 )
                             }
 

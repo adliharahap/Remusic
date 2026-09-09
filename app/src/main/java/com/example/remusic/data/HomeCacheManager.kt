@@ -39,7 +39,9 @@ object HomeCacheManager {
         val followedArtists: List<Artist> = emptyList(),
         val mostLoved: List<SongWithArtist> = emptyList(),
         val topTrending: List<SongWithArtist> = emptyList(),
-        val quickPickSongs: List<SongWithArtist> = emptyList()
+        val quickPickSongs: List<SongWithArtist> = emptyList(),
+        val communityAlbums: List<com.example.remusic.ui.components.homecomponents.CommunityAlbumData> = emptyList(),
+        val lastUpdated: Long = 0L
     )
 
     // ── Save ────────────────────────────────────────────────────────
@@ -52,7 +54,9 @@ object HomeCacheManager {
                 followedArtists = state.followedArtists,
                 mostLoved = state.mostLoved,
                 topTrending = state.topTrending,
-                quickPickSongs = state.quickPickSongs
+                quickPickSongs = state.quickPickSongs,
+                communityAlbums = state.communityAlbums,
+                lastUpdated = System.currentTimeMillis()
             )
             val raw = json.encodeToString(data)
             prefs?.edit()?.putString(KEY_HOME_DATA, raw)?.apply()
@@ -75,7 +79,9 @@ object HomeCacheManager {
                 followedArtists = data.followedArtists,
                 mostLoved = data.mostLoved,
                 topTrending = data.topTrending,
-                quickPickSongs = data.quickPickSongs
+                quickPickSongs = data.quickPickSongs,
+                communityAlbums = data.communityAlbums,
+                homePage = null // Tidak bisa dicache secara native dengan kotlinx.serialization
             )
         } catch (e: Exception) {
             Log.w(TAG, "⚠️ Gagal parse home cache: ${e.message}")
@@ -86,5 +92,20 @@ object HomeCacheManager {
 
     fun clear() {
         prefs?.edit()?.remove(KEY_HOME_DATA)?.apply()
+    }
+
+    /**
+     * Memeriksa apakah cache masih berlaku berdasarkan waktu expiredMs.
+     */
+    fun isCacheValid(expiredMs: Long): Boolean {
+        val raw = prefs?.getString(KEY_HOME_DATA, null) ?: return false
+        return try {
+            val data = json.decodeFromString<CachedHomeData>(raw)
+            val now = System.currentTimeMillis()
+            // Valid jika belum melebihi waktu expired
+            now - data.lastUpdated < expiredMs
+        } catch (e: Exception) {
+            false
+        }
     }
 }

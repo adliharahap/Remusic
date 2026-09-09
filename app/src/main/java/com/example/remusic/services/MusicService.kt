@@ -29,6 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import android.util.Log
 import com.example.remusic.data.local.MusicDatabase
@@ -38,7 +40,12 @@ import androidx.media3.common.Player
 @UnstableApi
 class MusicService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
-    private lateinit var player: ExoPlayer
+    private lateinit var playerA: ExoPlayer
+    private lateinit var playerB: ExoPlayer
+    private lateinit var crossfadeManager: ServiceCrossfadeManager
+    
+    // HTTP Data Source Factory (Made class-level so resolveMediaItemUrl can update headers)
+    private lateinit var httpDataSourceFactory: androidx.media3.datasource.okhttp.OkHttpDataSource.Factory
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private lateinit var sleepTimerManager: SleepTimerManager
@@ -220,16 +227,16 @@ class MusicService : MediaLibraryService() {
                     try {
                         if (deviceId == -1) {
                             android.util.Log.d("MusicService", "🎧 Clearing preferred audio device (system default)")
-                            player.setPreferredAudioDevice(null)
+                            crossfadeManager.activePlayer.setPreferredAudioDevice(null)
                         } else {
                             val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
                             val targetDevice = devices.firstOrNull { it.id == deviceId }
                             if (targetDevice != null) {
                                 android.util.Log.d("MusicService", "🎧 Setting preferred audio device to: ${targetDevice.productName} (ID: $deviceId)")
-                                player.setPreferredAudioDevice(targetDevice)
+                                crossfadeManager.activePlayer.setPreferredAudioDevice(targetDevice)
                             } else {
                                 android.util.Log.w("MusicService", "⚠️ Target device ID $deviceId not found in available outputs!")
-                                player.setPreferredAudioDevice(null)
+                                crossfadeManager.activePlayer.setPreferredAudioDevice(null)
                             }
                         }
                     } catch (e: Exception) {
@@ -240,7 +247,7 @@ class MusicService : MediaLibraryService() {
             } else if (customCommand.customAction == "SYNC_ROUTING") {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                     android.util.Log.d("MusicService", "🎧 SYNC_ROUTING: Resetting to system default")
-                    player.setPreferredAudioDevice(null)
+                    crossfadeManager.activePlayer.setPreferredAudioDevice(null)
                 }
                 return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
             }
@@ -249,6 +256,36 @@ class MusicService : MediaLibraryService() {
     }
 
 
+
+    private fun prefetchNextSong() {
+        serviceScope.launch {
+            try {
+                var nextIndex = -1
+                var nextItem: MediaItem? = null
+                withContext(Dispatchers.Main) {
+                    val currentPlayer = crossfadeManager.activePlayer
+                    nextIndex = currentPlayer.currentMediaItemIndex + 1
+                    if (nextIndex < currentPlayer.mediaItemCount) {
+                        nextItem = currentPlayer.getMediaItemAt(nextIndex)
+                    }
+                }
+                
+                if (nextItem != null) {
+                    val nextResolved = resolveMediaItemUrl(nextItem!!)
+                    if (nextResolved != null) {
+                        withContext(Dispatchers.Main) {
+                            playerA.replaceMediaItem(nextIndex, nextResolved)
+                            playerB.replaceMediaItem(nextIndex, nextResolved)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("MusicService", "❌ Error prefetching next URL", e)
+                }
+            }
+        }
+    }
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -270,7 +307,7 @@ class MusicService : MediaLibraryService() {
             .build()
 
         // 3. OkHttpDataSource.Factory — User-Agent & X-Goog-Visitor-Id di-set dinamis per lagu
-        val httpDataSourceFactory = OkHttpDataSource.Factory(streamingOkHttpClient)
+        httpDataSourceFactory = OkHttpDataSource.Factory(streamingOkHttpClient)
             .setDefaultRequestProperties(mapOf(
                 "Origin" to "https://www.youtube.com",
                 "Referer" to "https://www.youtube.com/"
@@ -289,164 +326,94 @@ class MusicService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
+            
+        fun createExoPlayer(): ExoPlayer {
+            return ExoPlayer.Builder(this)
+                .setAudioAttributes(audioAttributes, true)
+                .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(cacheDataSourceFactory, androidx.media3.extractor.DefaultExtractorsFactory())
+                        .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy() as LoadErrorHandlingPolicy)
+                )
+                .build()
+        }
 
         // 4. Pasang ke ExoPlayer
-        player = ExoPlayer.Builder(this)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(cacheDataSourceFactory, androidx.media3.extractor.DefaultExtractorsFactory())
-                    .setLoadErrorHandlingPolicy(CustomLoadErrorHandlingPolicy() as LoadErrorHandlingPolicy)
-            )
-            .build()
+        playerA = createExoPlayer()
+        playerB = createExoPlayer()
+        
+        crossfadeManager = ServiceCrossfadeManager(playerA, playerB, serviceScope)
             
         val database = MusicDatabase.getDatabase(this)
         val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
 
-        player.addListener(object : Player.Listener {
+        val listener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 super.onMediaItemTransition(mediaItem, reason)
                 if (mediaItem == null) return
-
-                // ── GUARD: Jangan re-resolve saat PLAYLIST_CHANGED ──────────────
-                // PLAYLIST_CHANGED terjadi karena replaceMediaItem() — sudah ada URL baru,
-                // tidak perlu resolve lagi (akan menyebabkan loop tak terbatas)
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
 
                 val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
                 val isUrlValid = currentUrl.isNotBlank() && (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
                 
                 // Jika URL berasal dari local storage "offline_", URL tersebut akan diproses terpisah.
                 // Jika tidak valid, kita harus meresolve URI yang kosong / kadaluarsa ini.
-                if (!isUrlValid && !mediaItem.mediaId.startsWith("offline_")) {
+                if (!isUrlValid && !mediaItem.mediaId.startsWith("offline_") && reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                     Log.w("MusicService", "⚠️ URL KOSONG/INVALID di MusicService. Resolving URL dulu untuk ${mediaItem.mediaId}...")
+                    val currentPlayer = crossfadeManager.activePlayer
                     // Simpan state wasPlaying sebelum pause
-                    val wasPlaying = player.playWhenReady
+                    val wasPlaying = currentPlayer.playWhenReady
                     // Pause player sementara agar tidak error saat mencoba memutar url kosong
-                    player.pause()
+                    currentPlayer.pause()
 
                     serviceScope.launch {
                         try {
-                            val songId = mediaItem.mediaId
-                            val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
-                            val artistName = mediaItem.mediaMetadata.artist?.toString() ?: "Unknown"
-
-                            val extras = mediaItem.mediaMetadata.extras
-                            val effectiveId = extras?.getString("effectiveId") ?: songId
-                            val sourceFromExtras = extras?.getString("source")
-
-                            // 1. Cek Cache Lokal dari Download DULU (Bypass API sepenuhnya)
-                            val localUri = com.example.remusic.utils.SongDownloader.getLocalFileUri(
-                                this@MusicService, 
-                                songTitle, 
-                                artistName
-                            )
+                            val resolvedItem = resolveMediaItemUrl(mediaItem)
                             
-                            if (localUri != null) {
-                                Log.d("MusicService", "✅ LOCAL CACHE FOUND for $songId: $localUri")
-                                val newItem = mediaItem.buildUpon()
-                                    .setUri(localUri)
-                                    .build()
-
+                            if (resolvedItem != null) {
                                 withContext(Dispatchers.Main) {
-                                    player.replaceMediaItem(player.currentMediaItemIndex, newItem)
-                                    player.prepare()
-                                    if (wasPlaying) player.play()
-                                }
-                                return@launch
-                            }
-
-                            // 2. Ambil detail song dari local DB (Jika tidak di-download)
-                            val localSong = database.musicDao().getSongById(songId)
-                            val artistId = localSong?.artistId
-                            val telegramFileId = localSong?.telegramFileId
-                            val fallbackUrl = localSong?.telegramDirectUrl
-                            val source = sourceFromExtras ?: localSong?.source
-
-                            // Pastikan visitorData YouTube sudah siap sebelum resolve
-                            if (com.metrolist.innertube.YouTube.visitorData == null) {
-                                try {
-                                    val vd = com.metrolist.innertube.YouTube.visitorData().getOrNull()
-                                    if (vd != null) com.metrolist.innertube.YouTube.visitorData = vd
-                                } catch (_: Exception) {}
-                            }
-                            
-                            val result = repository.getPlayableUrl(
-                                songId = effectiveId,
-                                title = songTitle,
-                                telegramFileId = telegramFileId,
-                                fallbackUrl = fallbackUrl,
-                                artistId = artistId,
-                                source = source
-                            )
-                            
-                            val newUrl = result.url
-                            if (newUrl.isNotBlank()) {
-                                Log.d("MusicService", "✅ URL Resolved: $newUrl (source=${result.source})")
-
-                                // Set User-Agent dan header YouTube sesuai client jika sumber YouTube
-                                if (result.source.startsWith("YOUTUBE")) {
-                                    val userAgent = when {
-                                        newUrl.contains("&c=IOS") || newUrl.contains("c=IOS&") ->
-                                            "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)"
-                                        newUrl.contains("&c=ANDROID_VR") ->
-                                            "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)"
-                                        newUrl.contains("&c=ANDROID") ->
-                                            "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
-                                        else -> "Mozilla/5.0"
-                                    }
-                                    val headers = mutableMapOf(
-                                        "Origin" to "https://www.youtube.com",
-                                        "Referer" to "https://www.youtube.com/"
-                                    )
-                                    com.metrolist.innertube.YouTube.visitorData?.let {
-                                        headers["X-Goog-Visitor-Id"] = it
-                                    }
-                                    httpDataSourceFactory.setUserAgent(userAgent)
-                                    httpDataSourceFactory.setDefaultRequestProperties(headers)
-                                }
-
-                                // Rebuild MediaItem dengan URL yang valid
-                                val newItem = mediaItem.buildUpon()
-                                    .setUri(newUrl)
-                                    .build()
-                                
-                                withContext(Dispatchers.Main) {
-                                    val newIndex = player.currentMediaItemIndex
-                                    // Simpan posisi sekarang — mungkin sudah ada buffering
-                                    // sedikit tapi kalau masih 0, mulai dari awal
-                                    val resumePos = player.currentPosition.coerceAtLeast(0L)
+                                    val currentActive = crossfadeManager.activePlayer
+                                    val newIndex = currentActive.currentMediaItemIndex
+                                    val resumePos = currentActive.currentPosition.coerceAtLeast(0L)
                                     
-                                    player.replaceMediaItem(newIndex, newItem)
-                                    // Jika sudah ada posisi bermakna, lanjutkan dari sana
-                                    // Jika belum (auto-next baru saja terjadi), mulai dari 0
+                                    currentActive.replaceMediaItem(newIndex, resolvedItem)
                                     if (resumePos > 500L) {
-                                        player.seekTo(newIndex, resumePos)
+                                        currentActive.seekTo(newIndex, resumePos)
                                     }
-                                    
                                     if (wasPlaying) {
-                                        player.play()
+                                        currentActive.play()
                                     }
                                 }
                             } else {
                                 Log.e("MusicService", "❌ Gagal resolve URL. Memberhentikan pemutaran.")
                                 withContext(Dispatchers.Main) {
-                                    // Jangan skip otomatis karena bisa menyebabkan infinite loop jika offline
-                                    player.pause()
+                                    crossfadeManager.activePlayer.pause()
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e("MusicService", "❌ Error resolving URL in Service: ${e.message}")
+                            if (e !is kotlinx.coroutines.CancellationException) {
+                                Log.e("MusicService", "❌ Error Resolving URL", e)
+                            }
                             withContext(Dispatchers.Main) {
-                                player.pause()
+                                crossfadeManager.activePlayer.pause()
                             }
                         }
                     }
                 }
+                
+                prefetchNextSong()
             }
-        })
 
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                super.onTimelineChanged(timeline, reason)
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                    prefetchNextSong()
+                }
+            }
+        }
+        
+        playerA.addListener(listener)
+        playerB.addListener(listener)
 
         // Create an intent to launch MainActivity
         val sessionActivityIntent = Intent(this, com.example.remusic.MainActivity::class.java).apply {
@@ -460,9 +427,110 @@ class MusicService : MediaLibraryService() {
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaLibrarySession.Builder(this, player, mediaSessionCallback)
+        mediaSession = MediaLibrarySession.Builder(this, playerA, mediaSessionCallback)
             .setSessionActivity(pendingIntent)
             .build()
+            
+        crossfadeManager.attachSession(mediaSession!!)
+        
+        // Loop polling untuk check crossfade 
+        serviceScope.launch {
+            val userPrefs = com.example.remusic.data.preferences.UserPreferencesRepository(this@MusicService)
+            while (isActive) {
+                val isCrossfadeEnabled = userPrefs.crossfadeEnabledFlow.first()
+                if (isCrossfadeEnabled) {
+                    val durationSec = userPrefs.crossfadeDurationFlow.first()
+                    val curve = userPrefs.crossfadeCurveFlow.first()
+                    withContext(Dispatchers.Main) {
+                        crossfadeManager.checkAndTriggerCrossfade(durationSec * 1000L, curve)
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        crossfadeManager.cancelCrossfade()
+                    }
+                }
+                delay(500)
+            }
+        }
+    }
+    
+    private suspend fun resolveMediaItemUrl(mediaItem: MediaItem): MediaItem? {
+        val currentUrl = mediaItem.localConfiguration?.uri?.toString() ?: ""
+        val isUrlValid = currentUrl.isNotBlank() && (currentUrl.startsWith("http") || currentUrl.startsWith("content"))
+        if (isUrlValid || mediaItem.mediaId.startsWith("offline_")) {
+            return null // No need to resolve
+        }
+
+        val songId = mediaItem.mediaId
+        val songTitle = mediaItem.mediaMetadata.title?.toString() ?: "Unknown"
+        val artistName = mediaItem.mediaMetadata.artist?.toString() ?: "Unknown"
+
+        val extras = mediaItem.mediaMetadata.extras
+        val effectiveId = extras?.getString("effectiveId") ?: songId
+        val sourceFromExtras = extras?.getString("source")
+
+        // 1. Cek Cache Lokal dari Download
+        val localUri = com.example.remusic.utils.SongDownloader.getLocalFileUri(
+            this@MusicService, 
+            songTitle, 
+            artistName
+        )
+        if (localUri != null) {
+            Log.d("MusicService", "✅ LOCAL CACHE FOUND for $songId: $localUri")
+            return mediaItem.buildUpon().setUri(localUri).build()
+        }
+
+        // 2. Resolve via Repository (Database & API)
+        val database = MusicDatabase.getDatabase(this)
+        val localSong = database.musicDao().getSongById(songId)
+        val artistId = localSong?.artistId
+        val telegramFileId = localSong?.telegramFileId
+        val fallbackUrl = localSong?.telegramDirectUrl
+        val source = sourceFromExtras ?: localSong?.source
+
+        if (com.metrolist.innertube.YouTube.visitorData == null) {
+            try {
+                val vd = com.metrolist.innertube.YouTube.visitorData().getOrNull()
+                if (vd != null) com.metrolist.innertube.YouTube.visitorData = vd
+            } catch (_: Exception) {}
+        }
+        
+        val repository = MusicRepository(database.musicDao(), database.localPlayHistoryDao())
+        val result = repository.getPlayableUrl(
+            songId = effectiveId,
+            title = songTitle,
+            telegramFileId = telegramFileId,
+            fallbackUrl = fallbackUrl,
+            artistId = artistId,
+            source = source
+        )
+        
+        val newUrl = result.url
+        if (newUrl.isNotBlank()) {
+            Log.d("MusicService", "✅ URL Resolved: $newUrl (source=${result.source})")
+            if (result.source.startsWith("YOUTUBE")) {
+                val userAgent = when {
+                    newUrl.contains("&c=IOS") || newUrl.contains("c=IOS&") ->
+                        "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)"
+                    newUrl.contains("&c=ANDROID_VR") ->
+                        "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)"
+                    newUrl.contains("&c=ANDROID") ->
+                        "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
+                    else -> "Mozilla/5.0"
+                }
+                val headers = mutableMapOf(
+                    "Origin" to "https://www.youtube.com",
+                    "Referer" to "https://www.youtube.com/"
+                )
+                com.metrolist.innertube.YouTube.visitorData?.let {
+                    headers["X-Goog-Visitor-Id"] = it
+                }
+                httpDataSourceFactory.setUserAgent(userAgent)
+                httpDataSourceFactory.setDefaultRequestProperties(headers)
+            }
+            return mediaItem.buildUpon().setUri(newUrl).build()
+        }
+        return null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -508,7 +576,8 @@ class MusicService : MediaLibraryService() {
 
     override fun onDestroy() {
         mediaSession?.run {
-            player.release()
+            playerA.release()
+            playerB.release()
             release()
             mediaSession = null
         }

@@ -27,6 +27,7 @@ import coil.compose.AsyncImage
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.displayArtistName
 
+@kotlinx.serialization.Serializable
 data class CommunityAlbumData(
     val title: String,
     val coverUrl: String,

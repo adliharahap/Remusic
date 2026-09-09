@@ -212,8 +212,10 @@ fun MoreOptionsBottomSheet(
     // Crossfade
     isCrossfadeEnabled: Boolean = false,
     onCrossfadeEnabledChange: (Boolean) -> Unit = {},
-    crossfadeDuration: Int = 5,
+    crossfadeDuration: Int = 10,
     onCrossfadeDurationChange: (Int) -> Unit = {},
+    crossfadeCurve: com.example.remusic.data.preferences.CrossfadeCurve = com.example.remusic.data.preferences.CrossfadeCurve.EQUAL_POWER,
+    onCrossfadeCurveChange: (com.example.remusic.data.preferences.CrossfadeCurve) -> Unit = {},
     // Playback Speed
     playbackSpeed: Float = 1.0f,
     onPlaybackSpeedChange: (Float) -> Unit = {},
@@ -288,6 +290,7 @@ fun MoreOptionsBottomSheet(
                         isDataSaverModeEnabled = isDataSaverModeEnabled,
                         isCrossfadeEnabled = isCrossfadeEnabled,
                         crossfadeDuration = crossfadeDuration,
+                        crossfadeCurve = crossfadeCurve,
                         playerBackgroundStyle = playerBackgroundStyle,
                         gradientStyle = gradientStyle,
                         lyricsConfig = lyricsConfig,
@@ -304,6 +307,8 @@ fun MoreOptionsBottomSheet(
                         onCrossfadeEnabledChange = onCrossfadeEnabledChange,
                         crossfadeDuration = crossfadeDuration,
                         onCrossfadeDurationChange = onCrossfadeDurationChange,
+                        crossfadeCurve = crossfadeCurve,
+                        onCrossfadeCurveChange = onCrossfadeCurveChange,
                         onNavigate = { currentPage = it }
                     )
                 }
@@ -359,6 +364,7 @@ private fun MainOptionsContent(
     isDataSaverModeEnabled: Boolean,
     isCrossfadeEnabled: Boolean,
     crossfadeDuration: Int,
+    crossfadeCurve: com.example.remusic.data.preferences.CrossfadeCurve,
     playerBackgroundStyle: com.example.remusic.data.preferences.PlayerBackgroundStyle,
     gradientStyle: com.example.remusic.data.preferences.GradientStyle,
     lyricsConfig: LyricsConfig,
@@ -517,9 +523,11 @@ private fun PlaybackSettingsContent(
     onCrossfadeEnabledChange: (Boolean) -> Unit,
     crossfadeDuration: Int,
     onCrossfadeDurationChange: (Int) -> Unit,
+    crossfadeCurve: com.example.remusic.data.preferences.CrossfadeCurve,
+    onCrossfadeCurveChange: (com.example.remusic.data.preferences.CrossfadeCurve) -> Unit,
     onNavigate: (MoreOptionsPage) -> Unit
 ) {
-    val isModified = playbackSpeed != 1.0f || isCrossfadeEnabled || crossfadeDuration != 5
+    val isModified = playbackSpeed != 1.0f || isCrossfadeEnabled || crossfadeDuration != 10 || crossfadeCurve != com.example.remusic.data.preferences.CrossfadeCurve.EQUAL_POWER
 
     Column(
         modifier = Modifier
@@ -534,7 +542,8 @@ private fun PlaybackSettingsContent(
             onActionClick = {
                 onPlaybackSpeedChange(1.0f)
                 onCrossfadeEnabledChange(false)
-                onCrossfadeDurationChange(5)
+                onCrossfadeDurationChange(10)
+                onCrossfadeCurveChange(com.example.remusic.data.preferences.CrossfadeCurve.EQUAL_POWER)
             }
         )
 
@@ -709,10 +718,10 @@ private fun PlaybackSettingsContent(
                     ) {
                         Text("1 dtk", color = TextSecondaryColor, fontSize = 11.sp)
                         Text(
-                            "5 dtk (Bawaan)",
-                            color = if (crossfadeDuration == 5) Color.White else TextSecondaryColor,
+                            "10 dtk (Bawaan)",
+                            color = if (crossfadeDuration == 10) Color.White else TextSecondaryColor,
                             fontSize = 11.sp,
-                            fontWeight = if (crossfadeDuration == 5) FontWeight.Bold else FontWeight.Normal
+                            fontWeight = if (crossfadeDuration == 10) FontWeight.Bold else FontWeight.Normal
                         )
                         Text("15 dtk", color = TextSecondaryColor, fontSize = 11.sp)
                     }
@@ -735,6 +744,42 @@ private fun PlaybackSettingsContent(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(color = DividerColor)
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = "Mode Kurva Crossfade",
+                        color = TextPrimaryColor,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Mengatur seberapa cepat atau lambat perpindahan volume antara dua lagu.",
+                        color = TextSecondaryColor,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        com.example.remusic.data.preferences.CrossfadeCurve.values().forEach { curve ->
+                            CustomChip(
+                                selected = crossfadeCurve == curve,
+                                text = curve.displayName,
+                                onClick = { onCrossfadeCurveChange(curve) }
+                            )
+                        }
+                    }
+
                 }
             }
         }

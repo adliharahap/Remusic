@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import com.example.remusic.ui.components.searchcomponents.HeaderSearchSection
 import com.example.remusic.ui.components.searchcomponents.RecentlyPlayedSection
 import com.example.remusic.ui.theme.AppFont
@@ -437,21 +440,93 @@ fun SearchMainScreen(
                 }
             }
             
+            // State untuk dialog konfirmasi hapus semua
+            var showClearConfirmDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+            // Dialog konfirmasi hapus semua riwayat
+            if (showClearConfirmDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showClearConfirmDialog = false },
+                    containerColor = Color(0xFF1E1E1E),
+                    title = {
+                        Text(
+                            text = "Hapus Semua Riwayat?",
+                            color = Color.White,
+                            fontFamily = AppFont.RobotoBold,
+                            fontSize = 18.sp
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Semua riwayat pencarian akan dihapus secara permanen dan tidak dapat dikembalikan.",
+                            color = Color(0xCCFFFFFF),
+                            fontFamily = AppFont.RobotoRegular,
+                            fontSize = 14.sp
+                        )
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                searchViewModel.clearAllHistory()
+                                showClearConfirmDialog = false
+                            }
+                        ) {
+                            Text(
+                                text = "Hapus Semua",
+                                color = Color(0xFFE74C3C),
+                                fontFamily = AppFont.RobotoBold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = { showClearConfirmDialog = false }
+                        ) {
+                            Text(
+                                text = "Batal",
+                                color = Color(0xCCFFFFFF),
+                                fontFamily = AppFont.RobotoRegular,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                )
+            }
+
             // Hasil Pencarian atau Riwayat
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 
                 // Show search history when query is empty
                 if (searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
                     item { 
-                        Text(
-                            text = "Riwayat Pencarian",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontFamily = AppFont.RobotoBold,
-                                color = Color.White
-                            ),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Riwayat Pencarian",
+                                style = TextStyle(
+                                    fontSize = 20.sp,
+                                    fontFamily = AppFont.RobotoBold,
+                                    color = Color.White
+                                )
+                            )
+                            androidx.compose.material3.TextButton(
+                                onClick = { showClearConfirmDialog = true },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "Hapus Semua",
+                                    color = Color(0xFFE74C3C),
+                                    fontSize = 14.sp,
+                                    fontFamily = AppFont.RobotoRegular
+                                )
+                            }
+                        }
                     }
                     
                     itemsIndexed(searchHistory) { index, historyItem ->
@@ -493,21 +568,119 @@ fun SearchMainScreen(
                         }
                         // ------------------------------------
 
-                        QueueSongCard(
-                            index = index,
-                            songTitle = historyItem.title,
-                            artistName = songWithArtist.displayArtistName,
-                            posterUri = historyItem.coverUrl ?: "",
-                            isCurrentlyPlaying = false,
-                            onClickListener = {
-                                android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
-                                searchViewModel.onSongPlayed(songWithArtist)
-                                onSongClick(songWithArtist, historyItem.title)
-                            },
-                            onMoreClick = {
-                                playMusicViewModel.showQueueOptions(songWithArtist)
+                        // State lokal untuk animasi keluar — mencegah bg merah nyangkut
+                        var visible by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+
+                        val dismissState = androidx.compose.material3.rememberSwipeToDismissBoxState(
+                            positionalThreshold = { totalDistance -> totalDistance * 0.2f },
+                            confirmValueChange = { dismissValue ->
+                                when (dismissValue) {
+                                    androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> {
+                                        // Set visible=false dulu agar seluruh row (card+bg) ikut lenyap
+                                        visible = false
+                                        searchViewModel.removeHistoryItem(historyItem.id)
+                                        true
+                                    }
+                                    androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> {
+                                        searchViewModel.onSongPlayed(songWithArtist)
+                                        onSongClick(songWithArtist, historyItem.title)
+                                        false
+                                    }
+                                    else -> false
+                                }
                             }
                         )
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = visible,
+                            exit = androidx.compose.animation.shrinkVertically(
+                                animationSpec = androidx.compose.animation.core.tween(250)
+                            ) + androidx.compose.animation.fadeOut(
+                                animationSpec = androidx.compose.animation.core.tween(200)
+                            )
+                        ) {
+                            androidx.compose.material3.SwipeToDismissBox(
+                                state = dismissState,
+                                backgroundContent = {
+                                    val direction = dismissState.dismissDirection
+                                    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+                                    androidx.compose.runtime.LaunchedEffect(dismissState.targetValue) {
+                                        if (dismissState.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled) {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        }
+                                    }
+
+                                    val fraction = dismissState.progress.coerceIn(0f, 1f)
+                                    val colorAlpha = fraction.coerceAtLeast(0.1f)
+
+                                    val baseColor = when (direction) {
+                                        androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> Color(0xFFE74C3C)
+                                        androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> Color(0xFF3498DB)
+                                        else -> Color.Transparent
+                                    }
+                                    val color = if (baseColor == Color.Transparent) Color.Transparent else baseColor.copy(alpha = colorAlpha)
+
+                                    val alignment = when (direction) {
+                                        androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                                        androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
+                                        else -> Alignment.Center
+                                    }
+                                    val icon = when (direction) {
+                                        androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Delete
+                                        androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> Icons.Default.PlayArrow
+                                        else -> null
+                                    }
+
+                                    val isThresholdReached = dismissState.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled
+                                    val iconScale = if (isThresholdReached) 1.5f else 1.0f
+                                    val animatedScale by androidx.compose.animation.core.animateFloatAsState(
+                                        targetValue = iconScale,
+                                        animationSpec = androidx.compose.animation.core.spring(
+                                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                                        )
+                                    )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(color)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = alignment
+                                    ) {
+                                        if (icon != null) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .scale(animatedScale)
+                                            )
+                                        }
+                                    }
+                                }
+                            ) {
+                                Box(modifier = Modifier.background(Color(0xFF121212))) {
+                                    QueueSongCard(
+                                        index = index,
+                                        songTitle = historyItem.title,
+                                        artistName = songWithArtist.displayArtistName,
+                                        posterUri = historyItem.coverUrl ?: "",
+                                        isCurrentlyPlaying = false,
+                                        onClickListener = {
+                                            android.util.Log.d("SearchScreen", "CLICKED HISTORY: ${historyItem.title}")
+                                            searchViewModel.onSongPlayed(songWithArtist)
+                                            onSongClick(songWithArtist, historyItem.title)
+                                        },
+                                        onMoreClick = {
+                                            playMusicViewModel.showQueueOptions(songWithArtist)
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 

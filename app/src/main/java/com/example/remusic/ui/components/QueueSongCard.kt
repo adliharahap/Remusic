@@ -64,11 +64,7 @@ fun QueueSongCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .combinedClickable(
-                onClick = { onClickListener(index) },
-                onLongClick = if (isEditMode) null else { { onMoreClick() } }
-            ),
+            .clip(RoundedCornerShape(8.dp)),
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
         ),
@@ -77,40 +73,63 @@ fun QueueSongCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (isEditMode) dragModifier else Modifier)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (isCurrentlyPlaying) {
-                AudioWaveVisualizer(
-                    barCount = 4,
-                    maxHeight = 30.dp,
-                    minHeight = 4.dp,
-                    barWidth = 2.dp,
-                    barColor = Color.White,
-                    animationDuration = 300,
-                    modifier = Modifier.width(20.dp)
-                )
-            } else if (isEditMode) {
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag Handle",
-                    tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(18.dp)
-                )
-            } else {
-                Text(
-                    text = (index + 1).toString(),
-                    color = Color.White.copy(0.8f),
-                    fontFamily = AppFont.Coolvetica,
-                    fontSize = 15.sp,
-                    modifier = Modifier.width(20.dp)
-                )
+            Box(
+                modifier = Modifier
+                    .width(32.dp)
+                    .height(48.dp)
+                    .clickable(
+                        interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { onClickListener(index) }
+                    .then(dragModifier),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (isEditMode) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag Handle",
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else if (isCurrentlyPlaying) {
+                    AudioWaveVisualizer(
+                        barCount = 4,
+                        maxHeight = 30.dp,
+                        minHeight = 4.dp,
+                        barWidth = 2.dp,
+                        barColor = Color.White,
+                        animationDuration = 300,
+                        modifier = Modifier.width(20.dp)
+                    )
+                } else {
+                    Text(
+                        text = (index + 1).toString(),
+                        color = Color.White.copy(0.8f),
+                        fontFamily = AppFont.Coolvetica,
+                        fontSize = 15.sp,
+                        modifier = Modifier.width(20.dp)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
-            AsyncImage(
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .combinedClickable(
+                        interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onClickListener(index) },
+                        onLongClick = { onMoreClick() }
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
                 model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
                     .data(posterUri)
                     .crossfade(true)
@@ -194,6 +213,7 @@ fun QueueSongCard(
                     }
                 }
             }
+            } // Close the wrapper Row
 
             Spacer(modifier = Modifier.width(16.dp))
 
@@ -203,7 +223,10 @@ fun QueueSongCard(
                 tint = Color.White.copy(0.8f),
                 modifier = Modifier
                     .size(24.dp)
-                    .clickable { onMoreClick() }
+                    .clickable(
+                        interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { onMoreClick() }
             )
         }
     }

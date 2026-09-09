@@ -62,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -88,6 +90,8 @@ import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Speaker
 import com.example.remusic.data.model.AudioOutputDevice
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImagePainter
 import com.example.remusic.R
 import com.example.remusic.data.model.SongWithArtist
 import com.example.remusic.data.model.User
@@ -146,6 +150,7 @@ fun NowPlaying(
     meshColors: List<Color> = emptyList(),
     isCrossfadeEnabled: Boolean = false,
     isCrossfading: Boolean = false,
+    shouldShowCrossfadeBadge: Boolean = false,
     crossfadeDurationSeconds: Int = 5
 ) {
     val context = LocalContext.current
@@ -486,30 +491,19 @@ fun NowPlaying(
                                     fontSize = 12.sp,
                                 )
                             }
-                            // Indikator Crossfade dengan Animasi Skeleton (di tengah-tengah pas di atas icon Play/Pause)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 2.dp, bottom = 2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CrossfadeBadge(
-                                    isCrossfadeEnabled = isCrossfadeEnabled,
-                                    isCrossfading = isCrossfading,
-                                    crossfadeDurationSeconds = crossfadeDurationSeconds
-                                )
-                            }
+
                             // Tombol Kontrol (Play/Pause/Shuffle)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        start = 16.dp,
-                                        end = 16.dp,
-                                        bottom = 20.dp
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            start = 16.dp,
+                                            end = 16.dp,
+                                            bottom = 20.dp
+                                        ),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         painter = painterResource(R.drawable.shuffle),
@@ -564,31 +558,34 @@ fun NowPlaying(
                                         tint = Color.White
                                     )
                                     Spacer(modifier = Modifier.width(30.dp))
-                                    if (isBusy) {
-                                        androidx.compose.material3.CircularProgressIndicator(
-                                            modifier = Modifier.size(80.dp).padding(10.dp),
-                                            color = Color.White,
-                                            strokeWidth = 4.dp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                            contentDescription = "Play/Pause",
-                                            modifier = Modifier
-                                                .size(80.dp)
-                                                .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
-                                                .clickable(
-                                                    interactionSource = playPauseInteractionSource,
-                                                    indication = null
-                                                ) {
-                                                    playPauseScope.launch {
-                                                        playPauseScale.animateTo(1.1f, tween(200))
-                                                        playPauseScale.animateTo(1f, tween(200))
-                                                    }
-                                                    onPlayPauseClick()
-                                                },
-                                            tint = Color.White
-                                        )
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (isBusy) {
+                                            androidx.compose.material3.CircularProgressIndicator(
+                                                modifier = Modifier.size(80.dp).padding(10.dp),
+                                                color = Color.White,
+                                                strokeWidth = 4.dp
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                                contentDescription = "Play/Pause",
+                                                modifier = Modifier
+                                                    .size(80.dp)
+                                                    .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
+                                                    .clickable(
+                                                        interactionSource = playPauseInteractionSource,
+                                                        indication = null
+                                                    ) {
+                                                        playPauseScope.launch {
+                                                            playPauseScale.animateTo(1.1f, tween(200))
+                                                            playPauseScale.animateTo(1f, tween(200))
+                                                        }
+                                                        onPlayPauseClick()
+                                                    },
+                                                tint = Color.White
+                                            )
+                                        }
+                                        
                                     }
                                     Spacer(modifier = Modifier.width(30.dp))
                                     Icon(
@@ -645,7 +642,22 @@ fun NowPlaying(
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
+                            } // End Row
+                                
+                            // Crossfade badge positioned on the right
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-16).dp, y = (-21).dp)
+                            ) {
+                                CrossfadeBadge(
+                                    isCrossfadeEnabled = isCrossfadeEnabled,
+                                    isCrossfading = isCrossfading,
+                                    shouldShowBadge = shouldShowCrossfadeBadge && repeatMode != androidx.media3.common.Player.REPEAT_MODE_ONE,
+                                    crossfadeDurationSeconds = crossfadeDurationSeconds
+                                )
                             }
+                        } // End Box
 
                             // --- NEW: Audio Device & Action Row ---
                             Row(
@@ -708,8 +720,8 @@ fun NowPlaying(
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
-                                }
-                            }
+                                } // End Actions Row
+                            } // End Audio Device Row
                             // Spacer kecil di paling bawah column 1
                             Spacer(modifier = Modifier.height(5.dp))
                         }
@@ -751,14 +763,13 @@ fun NowPlaying(
                             }
                         ) { targetvalue ->
                             val isRunning by remember { derivedStateOf { transition.isRunning } }
-                             AsyncImage(
-                                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                    .data(songWithArtist?.song?.coverUrl?.toHdUrl())
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "Cover Album $targetvalue",
+                            val sdUrl = songWithArtist?.song?.coverUrl // URL SD asli (cepat)
+                            val hdUrl = songWithArtist?.song?.coverUrl?.toHdUrl() // URL HD (butuh fetch)
+                            val localContext = androidx.compose.ui.platform.LocalContext.current
+
+                            Box(
                                 modifier = Modifier
-                                    .padding(horizontal = 16.dp) // Jarak dari pinggir layar
+                                    .padding(horizontal = 16.dp)
                                     .fillMaxHeight(0.9f)
                                     .aspectRatio(1f)
                                     .shadow(
@@ -766,11 +777,53 @@ fun NowPlaying(
                                         shape = RoundedCornerShape(16.dp),
                                         clip = false
                                     )
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop,
-                                placeholder = painterResource(id = R.drawable.default_playlist),
-                                error = painterResource(id = R.drawable.default_playlist)
-                            )
+                                    .clip(RoundedCornerShape(10.dp))
+                            ) {
+                                // Layer 1 (bawah): Gambar SD sebagai placeholder
+                                // Ini akan langsung muncul dari cache Coil tanpa delay
+                                AsyncImage(
+                                    model = coil.request.ImageRequest.Builder(localContext)
+                                        .data(sdUrl)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    placeholder = painterResource(id = R.drawable.default_playlist),
+                                    error = painterResource(id = R.drawable.default_playlist)
+                                )
+
+                                // Layer 2 (atas): Gambar HD, fade-in smooth ketika sudah loaded
+                                SubcomposeAsyncImage(
+                                    model = coil.request.ImageRequest.Builder(localContext)
+                                        .data(hdUrl)
+                                        .crossfade(600)
+                                        .build(),
+                                    contentDescription = "Cover Album $targetvalue",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    val state = painter.state
+                                    val isSuccess = state is AsyncImagePainter.State.Success
+                                    val targetAlpha = if (isSuccess) 1f else 0f
+                                    val alpha by androidx.compose.animation.core.animateFloatAsState(
+                                        targetValue = targetAlpha,
+                                        animationSpec = androidx.compose.animation.core.tween(
+                                            durationMillis = 500,
+                                            easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                        ),
+                                        label = "hdFadeIn"
+                                    )
+                                    androidx.compose.foundation.Image(
+                                        painter = painter,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .alpha(alpha)
+                                    )
+                                }
+                            }
                         }
                         // Jarak antara Album Art dan Judul
                         Spacer(modifier = Modifier.height(5.dp))
@@ -923,12 +976,13 @@ fun NowPlaying(
                             )
                         }
                         // Tombol Kontrol (Play/Pause/Shuffle)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     painter = painterResource(R.drawable.shuffle),
@@ -982,31 +1036,33 @@ fun NowPlaying(
                                     tint = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(30.dp))
-                                if (isBusy) {
-                                    androidx.compose.material3.CircularProgressIndicator(
-                                        modifier = Modifier.size(80.dp).padding(10.dp),
-                                        color = Color.White,
-                                        strokeWidth = 4.dp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                        contentDescription = "Play/Pause",
-                                        modifier = Modifier
-                                            .size(80.dp)
-                                            .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
-                                            .clickable(
-                                                interactionSource = playPauseInteractionSource,
-                                                indication = null
-                                            ) {
-                                                playPauseScope.launch {
-                                                    playPauseScale.animateTo(1.2f, tween(100))
-                                                    playPauseScale.animateTo(1f, tween(100))
-                                                }
-                                                onPlayPauseClick()
-                                            },
-                                        tint = Color.White
-                                    )
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isBusy) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(80.dp).padding(10.dp),
+                                            color = Color.White,
+                                            strokeWidth = 4.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                            contentDescription = "Play/Pause",
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .graphicsLayer(scaleX = playPauseScale.value, scaleY = playPauseScale.value)
+                                                .clickable(
+                                                    interactionSource = playPauseInteractionSource,
+                                                    indication = null
+                                                ) {
+                                                    playPauseScope.launch {
+                                                        playPauseScale.animateTo(1.2f, tween(100))
+                                                        playPauseScale.animateTo(1f, tween(100))
+                                                    }
+                                                    onPlayPauseClick()
+                                                },
+                                            tint = Color.White
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.width(30.dp))
                                 Icon(
@@ -1062,7 +1118,22 @@ fun NowPlaying(
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
-                        }
+                        } // End Row
+                            
+                            // Crossfade badge positioned on the right
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-16).dp, y = (-21).dp)
+                            ) {
+                                CrossfadeBadge(
+                                    isCrossfadeEnabled = isCrossfadeEnabled,
+                                    isCrossfading = isCrossfading,
+                                    shouldShowBadge = shouldShowCrossfadeBadge && repeatMode != androidx.media3.common.Player.REPEAT_MODE_ONE,
+                                    crossfadeDurationSeconds = crossfadeDurationSeconds
+                                )
+                            }
+                        } // End Box
 
                         Spacer(modifier = Modifier.height(23.dp))
 
