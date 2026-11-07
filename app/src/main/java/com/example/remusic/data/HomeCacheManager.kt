@@ -79,7 +79,7 @@ object HomeCacheManager {
                 followedArtists = data.followedArtists,
                 mostLoved = data.mostLoved,
                 topTrending = data.topTrending,
-                quickPickSongs = data.quickPickSongs,
+                quickPickSongs = data.quickPickSongs.filter { !it.song.id.startsWith("offline_") },
                 communityAlbums = data.communityAlbums,
                 homePage = null // Tidak bisa dicache secara native dengan kotlinx.serialization
             )

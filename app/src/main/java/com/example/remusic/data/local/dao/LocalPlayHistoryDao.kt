@@ -30,15 +30,18 @@ interface LocalPlayHistoryDao {
     @Query("SELECT * FROM local_play_history ORDER BY lastPlayedAt DESC LIMIT 50")
     fun getRecentHistory(): Flow<List<LocalPlayHistory>>
 
-    // Get the top 10 most played songs
-    @Query("SELECT * FROM local_play_history ORDER BY playCount DESC LIMIT 10")
+    // Get the top 10 most played songs (excluding offline songs)
+    @Query("SELECT * FROM local_play_history WHERE songId NOT LIKE 'offline_%' ORDER BY playCount DESC LIMIT 10")
     suspend fun getTopPlayed(): List<LocalPlayHistory>
 
-    // Get up to 10 random songs from the rest of the history (excluding the top 10)
+    // Get up to 10 random songs from the rest of the history (excluding the top 10 and offline songs)
     @Query("""
         SELECT * FROM local_play_history 
-        WHERE songId NOT IN (
-            SELECT songId FROM local_play_history ORDER BY playCount DESC LIMIT 10
+        WHERE songId NOT LIKE 'offline_%'
+        AND songId NOT IN (
+            SELECT songId FROM local_play_history
+            WHERE songId NOT LIKE 'offline_%'
+            ORDER BY playCount DESC LIMIT 10
         )
         ORDER BY RANDOM() LIMIT 10
     """)

@@ -463,6 +463,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun fetchQuickPickSongs(): List<Song> {
         val historyIds = repository.getQuickPicks()
+            .filter { !it.startsWith("offline_") } // Jangan tampilkan lagu offline di Pilihan Cepat
         val localSongs = mutableListOf<Song>()
         val db = MusicDatabase.getDatabase(getApplication())
         
