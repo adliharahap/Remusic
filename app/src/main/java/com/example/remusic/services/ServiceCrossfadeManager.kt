@@ -21,7 +21,13 @@ class ServiceCrossfadeManager(
         private set
 
     private var crossfadeJob: Job? = null
-    private var isCrossfading = false
+    var isCrossfading = false
+        private set
+
+    private var fadingOutPlayerRef: ExoPlayer? = null
+    private var fadingInPlayerRef: ExoPlayer? = null
+    private var currentTargetVolume: Float = 1f
+    private var isHandoffCompleted = false
 
     fun attachSession(session: MediaLibrarySession) {
         this.mediaSession = session
@@ -69,10 +75,20 @@ class ServiceCrossfadeManager(
     }
 
     private fun startCrossfade(nextIndex: Int, fadeDurationMs: Long, curve: com.example.remusic.data.preferences.CrossfadeCurve) {
-        isCrossfading = true
-        val inactivePlayer = if (activePlayer == playerA) playerB else playerA
+        val fadingOutPlayer = activePlayer
+        val fadingInPlayer = if (activePlayer == playerA) playerB else playerA
 
-        Timber.tag("ServiceCrossfadeManager").d("🔀 Memulai A/B Crossfade ke index $nextIndex | Durasi: ${fadeDurationMs}ms | Kurva: ${curve.name}")
+        // Pertahankan volume pemutaran saat ini (misal: Game Mode volume) agar tidak reset ke 100%
+        val targetVolume = fadingOutPlayer.volume.coerceIn(0f, 1f)
+        val activeStartVol = targetVolume
+
+        isCrossfading = true
+        isHandoffCompleted = false
+        currentTargetVolume = targetVolume
+        fadingOutPlayerRef = fadingOutPlayer
+        fadingInPlayerRef = fadingInPlayer
+
+        Timber.tag("ServiceCrossfadeManager").d("🔀 Memulai A/B Crossfade ke index $nextIndex | Durasi: ${fadeDurationMs}ms | Kurva: ${curve.name} | Volume: $targetVolume")
 
         // 1. Copy the playlist to the inactive player
         val mediaItems = mutableListOf<MediaItem>()
@@ -80,22 +96,17 @@ class ServiceCrossfadeManager(
             mediaItems.add(activePlayer.getMediaItemAt(i))
         }
         
-        inactivePlayer.setMediaItems(mediaItems, nextIndex, 0L)
+        fadingInPlayer.setMediaItems(mediaItems, nextIndex, 0L)
         // Salin preferensi repeat mode agar UI tidak kaget dan mereset saat media session berganti
-        inactivePlayer.repeatMode = activePlayer.repeatMode
-        inactivePlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
-        inactivePlayer.volume = 0f
+        fadingInPlayer.repeatMode = activePlayer.repeatMode
+        fadingInPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        fadingInPlayer.volume = 0f
         // MATIKAN AUDIO FOCUS SEMENTARA UNTUK INACTIVE PLAYER
         // Agar ketika di-play, dia nggak merebut focus dari activePlayer (yang bikin activePlayer pause)
-        inactivePlayer.setAudioAttributes(inactivePlayer.audioAttributes, false)
+        fadingInPlayer.setAudioAttributes(fadingInPlayer.audioAttributes, false)
         
-        inactivePlayer.prepare()
-        inactivePlayer.play()
-
-        val fadingOutPlayer = activePlayer
-        val fadingInPlayer = inactivePlayer
-        val activeStartVol = fadingOutPlayer.volume.coerceAtLeast(0.1f)
-        val targetVolume = 1f // Asumsi volume penuh adalah 1f
+        fadingInPlayer.prepare()
+        fadingInPlayer.play()
 
         crossfadeJob = serviceScope.launch(Dispatchers.Main) {
             try {
@@ -135,6 +146,7 @@ class ServiceCrossfadeManager(
                     // 2. Pertengahan Crossfade: SWAP UI / Session Player!
                     if (i >= halfwayStep && !swapped) {
                         swapped = true
+                        isHandoffCompleted = true
                         Timber.tag("ServiceCrossfadeManager").d("🔄 Handoff A/B Player di pertengahan crossfade! UI ganti ke lagu baru.")
                         mediaSession?.player = fadingInPlayer
                         activePlayer = fadingInPlayer
@@ -153,20 +165,48 @@ class ServiceCrossfadeManager(
 
                 // KEMBALIKAN AUDIO FOCUS KE ACTIVE PLAYER YANG BARU
                 activePlayer.setAudioAttributes(activePlayer.audioAttributes, true)
+                activePlayer.volume = targetVolume
 
-                Timber.tag("ServiceCrossfadeManager").d("✅ Crossfade A/B Selesai!")
+                Timber.tag("ServiceCrossfadeManager").d("✅ Crossfade A/B Selesai! Target volume: $targetVolume")
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Timber.tag("ServiceCrossfadeManager").e(e, "❌ Error saat crossfade A/B")
                 }
             } finally {
                 isCrossfading = false
+                fadingOutPlayerRef = null
+                fadingInPlayerRef = null
             }
         }
     }
     
     fun cancelCrossfade() {
+        if (!isCrossfading) return
         crossfadeJob?.cancel()
+        crossfadeJob = null
+
+        val fadingOut = fadingOutPlayerRef
+        val fadingIn = fadingInPlayerRef
+        val targetVol = currentTargetVolume
+
+        if (isHandoffCompleted) {
+            // Handoff sudah terjadi: activePlayer adalah fadingIn
+            activePlayer.volume = targetVol
+            fadingOut?.setAudioAttributes(fadingOut.audioAttributes, false)
+            fadingOut?.pause()
+            fadingOut?.clearMediaItems()
+            fadingOut?.volume = targetVol
+        } else {
+            // Handoff belum terjadi: activePlayer masih fadingOut
+            activePlayer.volume = targetVol
+            fadingIn?.setAudioAttributes(fadingIn.audioAttributes, false)
+            fadingIn?.pause()
+            fadingIn?.clearMediaItems()
+            fadingIn?.volume = targetVol
+        }
+
         isCrossfading = false
+        fadingOutPlayerRef = null
+        fadingInPlayerRef = null
     }
 }

@@ -1110,6 +1110,9 @@ import timber.log.Timber
                                     if (controller.currentMediaItemIndex != index || posToSeek != C.TIME_UNSET) {
                                         controller.seekTo(index, posToSeek)
                                     }
+                                    if (_uiState.value.isGameModeActive) {
+                                        controller.volume = _uiState.value.gameModeVolume
+                                    }
                                     controller.play()
                                 }
                             }
@@ -1178,6 +1181,9 @@ import timber.log.Timber
                                         val posToSeek = if (startPositionMs != C.TIME_UNSET && startPositionMs > 0L) startPositionMs else C.TIME_UNSET
                                         if (controller.currentMediaItemIndex != index || posToSeek != C.TIME_UNSET) {
                                             controller.seekTo(index, posToSeek)
+                                        }
+                                        if (_uiState.value.isGameModeActive) {
+                                            controller.volume = _uiState.value.gameModeVolume
                                         }
                                         controller.play()
                                     }

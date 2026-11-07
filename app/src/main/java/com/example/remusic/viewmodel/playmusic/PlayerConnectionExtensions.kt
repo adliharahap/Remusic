@@ -123,6 +123,9 @@ import timber.log.Timber
                         // 2. Terapkan ke mediaController DULUAN sebelum listener dipasang
                         controller.shuffleModeEnabled = false // MUST ALWAYS BE FALSE FOR MANUAL SHUFFLE
                         controller.repeatMode = savedRepeatMode
+                        if (_uiState.value.isGameModeActive) {
+                            controller.volume = _uiState.value.gameModeVolume
+                        }
                         
                         // 3. Update UI state
                         _uiState.update { 
@@ -329,6 +332,12 @@ import timber.log.Timber
 
                                     // Reset Smart Retry Flag on transition
                                     hasRetriedCurrentSong = false
+
+                                    // Pastikan volume Game Mode tetap terjaga saat ganti lagu
+                                    if (_uiState.value.isGameModeActive) {
+                                        player.volume = _uiState.value.gameModeVolume
+                                        Timber.tag("DEBUG_PLAYER").d("🎮 onMediaItemTransition: Menjaga volume Game Mode di ${_uiState.value.gameModeVolume}")
+                                    }
                                 }
 
                                Timber.tag("DEBUG_PLAYER").d(
