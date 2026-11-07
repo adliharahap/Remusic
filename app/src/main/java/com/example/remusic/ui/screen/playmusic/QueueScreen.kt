@@ -208,7 +208,7 @@ fun QueueScreen(
         ) { index ->
             val songWithArtist = playlistQueue[index]
             val isDragging = reorderableState.draggingItemKey == "${songWithArtist.song.id}-${songWithArtist.hashCode()}"
-            val elevation = if (isDragging) 8.dp else 0.dp
+            val currentIsEditMode = isEditMode || reorderableState.draggingItemKey != null
             
             QueueSongCard(
                 index = index,
@@ -216,10 +216,12 @@ fun QueueScreen(
                 artistName = songWithArtist?.displayArtistName ?: "Unknown Artist",
                 posterUri = songWithArtist.song.coverUrl ?: "",
                 isCurrentlyPlaying = currentlyPlayingId != null && songWithArtist.song.id == currentlyPlayingId,
-                isEditMode = isEditMode || reorderableState.draggingItemKey != null,
+                isEditMode = currentIsEditMode,
+                // Edit mode aktif: dragModifier diteruskan ke Card (seluruh kartu bisa drag via long press)
+                // Edit mode nonaktif: dragModifier tetap diteruskan, tapi hanya Box angka yang memakai-nya
                 dragModifier = Modifier.detectReorderAfterLongPress(reorderableState),
                 modifier = Modifier
-                    .animateItem(), // Menggunakan animateItem() bawaan Compose 1.7
+                    .animateItem(),
                 onClickListener = { onClickListener(it) },
                 onMoreClick = {
                     selectedSongForOptions = songWithArtist

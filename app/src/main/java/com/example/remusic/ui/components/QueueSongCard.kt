@@ -64,7 +64,9 @@ fun QueueSongCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(8.dp))
+            // Jika edit mode aktif, seluruh card bisa di-drag via long press
+            .then(if (isEditMode) dragModifier else Modifier),
         colors = CardDefaults.cardColors(
             containerColor = cardBackgroundColor
         ),
@@ -84,7 +86,8 @@ fun QueueSongCard(
                         interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
                     ) { onClickListener(index) }
-                    .then(dragModifier),
+                    // Jika bukan edit mode, hanya area angka yang bisa memicu drag
+                    .then(if (!isEditMode) dragModifier else Modifier),
                 contentAlignment = Alignment.CenterStart
             ) {
                 if (isEditMode) {
@@ -121,11 +124,24 @@ fun QueueSongCard(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(6.dp))
-                    .combinedClickable(
-                        interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onClickListener(index) },
-                        onLongClick = { onMoreClick() }
+                    .then(
+                        if (isEditMode) {
+                            // Edit mode: hanya click biasa, long press dibiarkan naik ke Card level
+                            // agar drag bisa terpicu dari area judul lagu
+                            Modifier.clickable(
+                                interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onClickListener(index) }
+                            )
+                        } else {
+                            // Mode normal: long press buka opsi lagu
+                            Modifier.combinedClickable(
+                                interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onClickListener(index) },
+                                onLongClick = { onMoreClick() }
+                            )
+                        }
                     ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
