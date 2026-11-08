@@ -90,7 +90,12 @@ fun PlayMusicScreen(
                 playMusicViewModel.refreshCurrentSongData()
 
                 // 2. Paksa sync lirik ke LyricsViewModel jika data sudah ada
-                val currentLyrics = uiState.currentSong?.song?.lyrics
+                val currentSongId = uiState.currentSong?.song?.id
+                val validTranslatedLyrics = if (currentSongId != null && uiState.temporaryTranslatedSongId == currentSongId) {
+                    uiState.temporaryTranslatedLyrics
+                } else null
+                val currentLyrics = validTranslatedLyrics ?: uiState.currentSong?.song?.lyrics
+                lyricsViewModel.setCurrentSongId(currentSongId)
                 if (!currentLyrics.isNullOrBlank()) {
                     lyricsViewModel.loadLyrics(currentLyrics)
                 }
@@ -108,10 +113,15 @@ fun PlayMusicScreen(
     }
 
     // 2. Monitor Lyrics: Pass raw lyrics from PlayMusicVM to LyricsVM
-    LaunchedEffect(uiState.currentSong?.song?.id, uiState.currentSong?.song?.lyrics, uiState.temporaryTranslatedLyrics) {
-        val finalLyricsToLoad = uiState.temporaryTranslatedLyrics ?: uiState.currentSong?.song?.lyrics
+    LaunchedEffect(uiState.currentSong?.song?.id, uiState.currentSong?.song?.lyrics, uiState.temporaryTranslatedLyrics, uiState.temporaryTranslatedSongId) {
+        val currentSongId = uiState.currentSong?.song?.id
+        val validTranslatedLyrics = if (currentSongId != null && uiState.temporaryTranslatedSongId == currentSongId) {
+            uiState.temporaryTranslatedLyrics
+        } else null
+        val finalLyricsToLoad = validTranslatedLyrics ?: uiState.currentSong?.song?.lyrics
         // RESET STATE SCROLL SETIAP GANTI LAGU
         lyricsViewModel.resetScrollState()
+        lyricsViewModel.setCurrentSongId(currentSongId)
         
         if (!finalLyricsToLoad.isNullOrBlank()) {
             lyricsViewModel.loadLyrics(finalLyricsToLoad)

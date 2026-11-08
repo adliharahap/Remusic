@@ -158,7 +158,7 @@ fun LyricsScreen(
     // Variable UI
     var previousSongId by remember { mutableStateOf(songWithArtist?.song?.id) }
     val currentSongId = songWithArtist?.song?.id
-    
+
     val lazyListState = rememberLazyListState()
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
@@ -190,6 +190,22 @@ fun LyricsScreen(
     // 🎯 STATE: Pelacakan Sync Lyrics Gagal / Tidak Ditemukan
     var wasFetching by remember { mutableStateOf(false) }
     var showUnavailableBanner by remember { mutableStateOf(false) }
+
+    // Reset UI dan sheet ketika lagu berganti
+    LaunchedEffect(currentSongId) {
+        if (currentSongId != previousSongId) {
+            previousSongId = currentSongId
+            showLyricsOptions = false
+            showUnavailableBanner = false
+            isAutoScrollEnabled = true
+            isProgrammaticScroll = true
+            try {
+                lazyListState.scrollToItem(0)
+            } finally {
+                isProgrammaticScroll = false
+            }
+        }
+    }
 
     LaunchedEffect(isFetchingSyncedLyrics) {
         if (isFetchingSyncedLyrics) {

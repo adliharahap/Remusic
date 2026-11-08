@@ -321,7 +321,10 @@ import timber.log.Timber
                                                 errorType = null,
                                                 lyricsOffset = 0L, // Reset offset on transition
                                                 temporaryTranslatedLyrics = null, // Clear MLKit translated lyrics
-                                                alternativeLyricsResults = emptyList() // Clear cached search results for new song
+                                                temporaryTranslatedSongId = null,
+                                                alternativeLyricsResults = emptyList(), // Clear cached search results for new song
+                                                alternativeLyricsSongId = null,
+                                                isLoadingLyrics = true
                                         )
                                     }
 
@@ -397,8 +400,24 @@ import timber.log.Timber
                                 Timber.tag("DEBUG_PLAYER").w("   ⚠️ FALLBACK: Menggunakan metadata dari MediaItem (Lagu tidak ada di list local)")
                                 // fallback kalau nggak ketemu di playlist
                                 _uiState.update {
-                                    it.copy(currentSong = SongWithArtist(song = Song(id = mediaItem.mediaId,title = mediaItem.mediaMetadata.title?.toString() ?: "Unknown",audioUrl = mediaItem.localConfiguration?.uri.toString(),coverUrl = mediaItem.mediaMetadata.artworkUri.toString(),lyrics = ""),artist = null),
-                                            lyricsOffset = 0L) // Reset offset on transition
+                                    it.copy(
+                                        currentSong = SongWithArtist(
+                                            song = Song(
+                                                id = mediaItem.mediaId,
+                                                title = mediaItem.mediaMetadata.title?.toString() ?: "Unknown",
+                                                audioUrl = mediaItem.localConfiguration?.uri.toString(),
+                                                coverUrl = mediaItem.mediaMetadata.artworkUri.toString(),
+                                                lyrics = ""
+                                            ),
+                                            artist = null
+                                        ),
+                                        lyricsOffset = 0L,
+                                        temporaryTranslatedLyrics = null,
+                                        temporaryTranslatedSongId = null,
+                                        alternativeLyricsResults = emptyList(),
+                                        alternativeLyricsSongId = null,
+                                        isLoadingLyrics = true
+                                    )
                                 }
                             }
                         }

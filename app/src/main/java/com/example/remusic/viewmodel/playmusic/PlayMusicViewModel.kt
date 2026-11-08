@@ -99,7 +99,7 @@ data class PlayerUiState(
         val isLiked: Boolean = false,
         val isArtistFollowed: Boolean = false, // New State
         val temporaryTranslatedLyrics: String? = null, // Temporary MLKit lyrics
-
+        val temporaryTranslatedSongId: String? = null, // Track which song the translated lyrics belong to
 
         // --- Artist Songs Pagination ---
         val artistSongs: List<SongWithArtist> = emptyList(),
@@ -107,6 +107,7 @@ data class PlayerUiState(
         
         // --- Alternative Lyrics ---
         val alternativeLyricsResults: List<LrcLibResponse> = emptyList(),
+        val alternativeLyricsSongId: String? = null,
         val isSearchingLyrics: Boolean = false,
         val lyricsOffset: Long = 0L, // ms
 
@@ -272,11 +273,26 @@ class PlayMusicViewModel(application: Application) : AndroidViewModel(applicatio
     fun setTemporaryTranslatedLyrics(lyrics: String?) {
         _uiState.update { state ->
             val current = state.currentSong
+            val currentId = current?.song?.id
+            val currentEffectiveId = current?.song?.effectiveId
             val updatedCurrent = if (current != null && lyrics != null) {
                 current.copy(song = current.song.copy(lyrics = lyrics))
             } else current
+
+            val updatedPlaylist = if (currentId != null && lyrics != null) {
+                state.playlist.map { item ->
+                    if (item.song.id == currentId || item.song.effectiveId == currentEffectiveId) {
+                        item.copy(song = item.song.copy(lyrics = lyrics))
+                    } else item
+                }
+            } else state.playlist
             
-            state.copy(temporaryTranslatedLyrics = lyrics, currentSong = updatedCurrent)
+            state.copy(
+                temporaryTranslatedLyrics = lyrics,
+                temporaryTranslatedSongId = if (lyrics != null) currentId else null,
+                currentSong = updatedCurrent,
+                playlist = updatedPlaylist
+            )
         }
     }
 

@@ -75,11 +75,19 @@ import timber.log.Timber
         if (songId.isBlank() || songId.startsWith("offline_")) return
         fetchLyricsJob?.cancel()
         searchDebounceJob?.cancel()
+        
+        // Segera beri tahu UI bahwa lirik sedang di-fetch untuk lagu ini agar tidak menampilkan state kosong/lama
+        _uiState.update { state ->
+            if (state.currentSong?.song?.effectiveId == songId || state.currentSong?.song?.id == songId) {
+                state.copy(isLoadingLyrics = true, isFetchingSyncedLyrics = true)
+            } else state
+        }
+
         searchDebounceJob = viewModelScope.launch(Dispatchers.IO) {
             delay(500) // Small debounce
             fetchLyricsJob = launch {
                 _uiState.update { state ->
-                    if (state.currentSong?.song?.effectiveId == songId) {
+                    if (state.currentSong?.song?.effectiveId == songId || state.currentSong?.song?.id == songId) {
                         state.copy(isLoadingLyrics = true, isFetchingSyncedLyrics = true)
                     } else state
                 }
@@ -174,13 +182,18 @@ import timber.log.Timber
 
                         _uiState.update { state ->
                             if (state.currentSong?.song?.effectiveId == songId) {
+                                val updatedSong = state.currentSong.song.copy(
+                                    lyrics = finalLyrics ?: "",
+                                    uploaderUserId = bestUploaderId ?: state.currentSong.song.uploaderUserId
+                                )
+                                val updatedPlaylist = state.playlist.map { item ->
+                                    if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
+                                        item.copy(song = item.song.copy(lyrics = finalLyrics ?: ""))
+                                    } else item
+                                }
                                 state.copy(
-                                    currentSong = state.currentSong.copy(
-                                        song = state.currentSong.song.copy(
-                                            lyrics = finalLyrics ?: "",
-                                            uploaderUserId = bestUploaderId ?: state.currentSong.song.uploaderUserId
-                                        )
-                                    ),
+                                    currentSong = state.currentSong.copy(song = updatedSong),
+                                    playlist = updatedPlaylist,
                                     isLoadingLyrics = false,
                                     isFetchingSyncedLyrics = false
                                 )
@@ -191,8 +204,14 @@ import timber.log.Timber
                         skipLyricsFetch = true
                         _uiState.update { state ->
                             if (state.currentSong?.song?.effectiveId == songId) {
+                                val updatedPlaylist = state.playlist.map { item ->
+                                    if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
+                                        item.copy(song = item.song.copy(lyrics = lyricsInCache))
+                                    } else item
+                                }
                                 state.copy(
                                     currentSong = state.currentSong.copy(song = state.currentSong.song.copy(lyrics = lyricsInCache)),
+                                    playlist = updatedPlaylist,
                                     isLoadingLyrics = false,
                                     isFetchingSyncedLyrics = false
                                 )
@@ -209,8 +228,14 @@ import timber.log.Timber
                             Timber.tag("DEBUG_PLAYER").d("📜 [LYRICS CACHE PRE-LOAD] Loading cached lyrics to UI first: ${lyricsInCache.take(30)}...")
                             _uiState.update { state ->
                                 if (state.currentSong?.song?.effectiveId == songId) {
+                                    val updatedPlaylist = state.playlist.map { item ->
+                                        if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
+                                            item.copy(song = item.song.copy(lyrics = lyricsInCache))
+                                        } else item
+                                    }
                                     state.copy(
                                         currentSong = state.currentSong.copy(song = state.currentSong.song.copy(lyrics = lyricsInCache)),
+                                        playlist = updatedPlaylist,
                                         isLoadingLyrics = false
                                     )
                                 } else state
@@ -280,8 +305,14 @@ import timber.log.Timber
                                         // Update state
                                         _uiState.update { state ->
                                             if (state.currentSong?.song?.effectiveId == songId) {
+                                                val updatedPlaylist = state.playlist.map { item ->
+                                                    if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
+                                                        item.copy(song = item.song.copy(lyrics = finalSyncedLyrics))
+                                                    } else item
+                                                }
                                                 state.copy(
                                                     currentSong = state.currentSong.copy(song = state.currentSong.song.copy(lyrics = finalSyncedLyrics)),
+                                                    playlist = updatedPlaylist,
                                                     isLoadingLyrics = false,
                                                     isFetchingSyncedLyrics = false
                                                 )
@@ -350,8 +381,14 @@ import timber.log.Timber
                                         // Update state
                                         _uiState.update { state ->
                                             if (state.currentSong?.song?.effectiveId == songId && !isSyncedLoaded) {
+                                                val updatedPlaylist = state.playlist.map { item ->
+                                                    if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
+                                                        item.copy(song = item.song.copy(lyrics = sanitizedPlain))
+                                                    } else item
+                                                }
                                                 state.copy(
                                                     currentSong = state.currentSong.copy(song = state.currentSong.song.copy(lyrics = sanitizedPlain)),
+                                                    playlist = updatedPlaylist,
                                                     isLoadingLyrics = false
                                                 )
                                             } else state

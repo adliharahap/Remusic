@@ -40,18 +40,22 @@ class LyricsManager(
     }
 
     fun searchAlternativeLyrics(query: String) {
-        if (uiState.value.alternativeLyricsResults.isNotEmpty()) {
+        val currentEffectiveId = uiState.value.currentSong?.song?.effectiveId
+        if (uiState.value.alternativeLyricsSongId == currentEffectiveId && uiState.value.alternativeLyricsResults.isNotEmpty()) {
             Timber.tag("DEBUG_PLAYER").d("🧠 [CACHE] Menggunakan hasil pencarian lirik dari memory.")
             uiState.update { it.copy(isSearchingLyrics = false) }
             return
         }
 
         scope.launch(Dispatchers.IO) {
-            uiState.update { it.copy(isSearchingLyrics = true) }
+            uiState.update { it.copy(isSearchingLyrics = true, alternativeLyricsSongId = currentEffectiveId) }
             try {
                 Timber.tag("DEBUG_PLAYER").d("🔍 [NETWORK] Mencari lirik alternatif: $query")
                 val results = repository.lyrics.searchAlternativeLyrics(query)
-                uiState.update { it.copy(alternativeLyricsResults = results, isSearchingLyrics = false) }
+                // Hanya update state jika masih memutar lagu yang sama
+                if (uiState.value.currentSong?.song?.effectiveId == currentEffectiveId) {
+                    uiState.update { it.copy(alternativeLyricsResults = results, isSearchingLyrics = false) }
+                }
             } catch (e: Throwable) {
                 Timber.tag("DEBUG_PLAYER").e("Search alternative lyrics failed: ${e.message}")
                 uiState.update { it.copy(isSearchingLyrics = false) }
@@ -62,14 +66,26 @@ class LyricsManager(
     fun applyAlternativeLyrics(lrc: LrcLibResponse) {
         val currentSong = uiState.value.currentSong ?: return
         val songId = currentSong.song.effectiveId 
+        val rawSongId = currentSong.song.id
         val lyrics = lrc.syncedLyrics ?: lrc.plainLyrics ?: return
         val finalLrc = if (lrc.syncedLyrics != null) lyrics + "\n\nlyrics from lrclib (manual)" else lyrics
 
         scope.launch(Dispatchers.IO) {
             uiState.update { state ->
-                state.currentSong?.let { current ->
-                    state.copy(currentSong = current.copy(song = current.song.copy(lyrics = finalLrc)))
-                } ?: state
+                val updatedCurrent = state.currentSong?.takeIf { it.song.effectiveId == songId || it.song.id == rawSongId }?.let { current ->
+                    current.copy(song = current.song.copy(lyrics = finalLrc))
+                }
+                val updatedPlaylist = state.playlist.map { item ->
+                    if (item.song.effectiveId == songId || item.song.id == rawSongId) {
+                        item.copy(song = item.song.copy(lyrics = finalLrc))
+                    } else item
+                }
+                state.copy(
+                    currentSong = updatedCurrent ?: state.currentSong,
+                    playlist = updatedPlaylist,
+                    temporaryTranslatedLyrics = null,
+                    temporaryTranslatedSongId = null
+                )
             }
             
             try {

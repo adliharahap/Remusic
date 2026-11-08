@@ -29,6 +29,17 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     private val userPreferencesRepository = UserPreferencesRepository(getApplication())
     val lyrics = _lyrics.asStateFlow()
 
+    private val _currentSongId = MutableStateFlow<String?>(null)
+    val currentSongId = _currentSongId.asStateFlow()
+
+    fun setCurrentSongId(songId: String?) {
+        if (_currentSongId.value != songId) {
+            _currentSongId.value = songId
+            _isTranslating.value = false
+            _translationProgress.value = ""
+        }
+    }
+
     // posisi playback aktual (ms)
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition = _currentPosition.asStateFlow()
@@ -112,27 +123,33 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val translatedLrc = com.example.remusic.utils.LyricsTranslator.translateLrc(getApplication(), rawLrc) { progress ->
-                    _translationProgress.value = progress
+                    if (_currentSongId.value == songId) {
+                        _translationProgress.value = progress
+                    }
                 }
 
                 if (translatedLrc != null) {
-                    // Update global state instead of database
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        onTranslated(translatedLrc)
-                    }
-                    
-                    // Update current parsed lyrics in UI
-                    val parsed = parseLrc(translatedLrc)
-                    _lyrics.value = parsed
-                    _isAutoTranslated.value = true
-                    
-                    // Auto-enable translation view if not enabled
-                    if (!isTranslateLyrics.value) {
-                        userPreferencesRepository.setTranslateLyrics(true)
+                    // Update global state & UI HANYA jika masih di lagu yang sama
+                    if (_currentSongId.value == songId) {
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            onTranslated(translatedLrc)
+                        }
+                        
+                        // Update current parsed lyrics in UI
+                        val parsed = parseLrc(translatedLrc)
+                        _lyrics.value = parsed
+                        _isAutoTranslated.value = true
+                        
+                        // Auto-enable translation view if not enabled
+                        if (!isTranslateLyrics.value) {
+                            userPreferencesRepository.setTranslateLyrics(true)
+                        }
                     }
                 } else {
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(getApplication(), "Tidak dapat menerjemahkan lirik saat ini.", android.widget.Toast.LENGTH_SHORT).show()
+                    if (_currentSongId.value == songId) {
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(getApplication(), "Tidak dapat menerjemahkan lirik saat ini.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             } finally {
@@ -244,19 +261,21 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                         } catch (e: Exception) { Timber.tag("LyricsViewModel").e(e, "Gagal update supabase lyrics") }
                     }
 
-                    // 2. Update UI
-                    val parsed = parseLrc(translatedText)
-                    _lyrics.value = parsed
-                    // Set _isAutoTranslated to false explicitly for Gemini AI translations
-                    _isAutoTranslated.value = false
-                    
-                    if (!isTranslateLyrics.value) {
-                        userPreferencesRepository.setTranslateLyrics(true)
-                    }
+                    // 2. Update UI HANYA jika user masih mendengarkan lagu yang sama
+                    if (_currentSongId.value == songId) {
+                        val parsed = parseLrc(translatedText)
+                        _lyrics.value = parsed
+                        // Set _isAutoTranslated to false explicitly for Gemini AI translations
+                        _isAutoTranslated.value = false
+                        
+                        if (!isTranslateLyrics.value) {
+                            userPreferencesRepository.setTranslateLyrics(true)
+                        }
 
-                    // Notifikasi ke PlayMusicViewModel
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        onSuccess(translatedText)
+                        // Notifikasi ke PlayMusicViewModel
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            onSuccess(translatedText)
+                        }
                     }
 
                     // 3. Upload to Supabase lyrics_hub
@@ -292,7 +311,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     fun regenerateTranslation(songId: String, onTranslated: (String) -> Unit) {
         if (_isTranslating.value) return
         val currentLyrics = _lyrics.value
-        if (currentLyrics.isEmpty()) return
+        if (currentLyrics.isEmpty() || _currentSongId.value != songId) return
         
         // Reconstruct raw LRC (strip translation and MLKit tag)
         val rawLrcBuilder = java.lang.StringBuilder()

@@ -128,7 +128,13 @@ import timber.log.Timber
                     playlist = actualPlaylist,
                     currentSong = actualPlaylist[actualStartIndex],
                     currentSongIndex = actualStartIndex,
-                    playingMusicFromPlaylist = finalPlaylistName
+                    playingMusicFromPlaylist = finalPlaylistName,
+                    lyricsOffset = 0L,
+                    temporaryTranslatedLyrics = null,
+                    temporaryTranslatedSongId = null,
+                    alternativeLyricsResults = emptyList(),
+                    alternativeLyricsSongId = null,
+                    isLoadingLyrics = true
             )
         }
 
@@ -1070,11 +1076,16 @@ import timber.log.Timber
                     currentSong = targetSong,
                     currentSongIndex = index,
                     // Reset loading state sementara
-                    isLoadingLyrics = false,
+                    isLoadingLyrics = true, // Segera aktifkan loading untuk lirik lagu baru
                     isLoadingData = true, // Start loading data (Checking/Resolving)
                     isLiked = false, // Reset like status for new song
                     uploader = null, // Reset uploader for new song
-                    currentPosition = initialPos
+                    currentPosition = initialPos,
+                    lyricsOffset = 0L,
+                    temporaryTranslatedLyrics = null,
+                    temporaryTranslatedSongId = null,
+                    alternativeLyricsResults = emptyList(),
+                    alternativeLyricsSongId = null
             )
         }
 
