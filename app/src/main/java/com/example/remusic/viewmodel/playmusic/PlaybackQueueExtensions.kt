@@ -1210,8 +1210,8 @@ import timber.log.Timber
                         }
 
                         // 4. UPDATE LIRIK & WARNA (Sekali saja!)
-                        // Ambil data detail
-                        fetchFullSongDetails(targetSong.song.effectiveId, forceUpdate = true)
+                        // Ambil data detail (Gunakan cache lirik/terjemahan lokal jika ada)
+                        fetchFullSongDetails(targetSong.song.effectiveId, forceUpdate = false)
 
                         launch {
                             val colors =

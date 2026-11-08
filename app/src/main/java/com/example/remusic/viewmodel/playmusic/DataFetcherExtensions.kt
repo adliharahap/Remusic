@@ -121,8 +121,11 @@ import timber.log.Timber
                             .trim()
                     }
 
-                    // 1. Check local cache first
-                    val cached = database.musicDao().getSongById(songId)
+                    // 1. Check local cache first (cek ID dan YouTube ID)
+                    val altId = currentSongInState?.song?.id?.takeIf { it != songId }
+                        ?: currentSongInState?.song?.effectiveId?.takeIf { it != songId }
+                    val cached = database.musicDao().getSongByIdOrYoutubeId(songId)
+                        ?: (if (altId != null) database.musicDao().getSongByIdOrYoutubeId(altId) else null)
                     val lyricsInCache = cached?.lyrics
                     
                     val isTelegramSong = currentSongInState?.song?.source == "telegram" || currentSongInState?.song?.telegramFileId != null
@@ -199,11 +202,12 @@ import timber.log.Timber
                                 )
                             } else state
                         }
-                    } else if (!forceUpdate && !lyricsInCache.isNullOrBlank() && isLyricsSynced(lyricsInCache)) {
-                        Timber.tag("DEBUG_PLAYER").d("🚀 [LYRICS CACHE HIT] Lirik SYNCED ditemukan di database. Mengembalikan secara instan.")
+                    } else if (!lyricsInCache.isNullOrBlank() && isLyricsSynced(lyricsInCache) && (!forceUpdate || lyricsInCache.contains("|"))) {
+                        val hasTranslated = lyricsInCache.contains("|")
+                        Timber.tag("DEBUG_PLAYER").d("🚀 [LYRICS CACHE HIT] Lirik ditemukan di database (Translated=$hasTranslated). Mengembalikan secara instan.")
                         skipLyricsFetch = true
                         _uiState.update { state ->
-                            if (state.currentSong?.song?.effectiveId == songId) {
+                            if (state.currentSong?.song?.effectiveId == songId || state.currentSong?.song?.id == songId) {
                                 val updatedPlaylist = state.playlist.map { item ->
                                     if (item.song.effectiveId == songId || item.song.id == state.currentSong.song.id) {
                                         item.copy(song = item.song.copy(lyrics = lyricsInCache))

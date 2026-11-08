@@ -115,7 +115,13 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
     private val _translationProgress = MutableStateFlow("")
     val translationProgress = _translationProgress.asStateFlow()
 
-    fun translateCurrentLyrics(songId: String, rawLrc: String, onTranslated: (String) -> Unit) {
+    fun translateCurrentLyrics(
+        songId: String,
+        rawLrc: String,
+        musicDao: com.example.remusic.data.local.MusicDao? = null,
+        song: com.example.remusic.data.model.Song? = null,
+        onTranslated: (String) -> Unit
+    ) {
         if (_isTranslating.value) return
         _isTranslating.value = true
         _translationProgress.value = "Menyiapkan terjemahan lirik..."
@@ -129,6 +135,39 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 if (translatedLrc != null) {
+                    // Simpan ke local DB agar tidak perlu terjemahkan ulang
+                    if (musicDao != null) {
+                        try {
+                            val effectiveId = song?.effectiveId ?: songId
+                            val rawId = song?.id ?: songId
+                            val existing = musicDao.getSongByIdOrYoutubeId(songId)
+                                ?: musicDao.getSongByIdOrYoutubeId(effectiveId)
+                            if (existing != null) {
+                                musicDao.insertSong(existing.copy(lyrics = translatedLrc))
+                            } else {
+                                val cachedSong = com.example.remusic.data.local.entity.CachedSong(
+                                    id = rawId,
+                                    title = song?.title ?: "",
+                                    artistName = song?.artistId ?: "",
+                                    lyrics = translatedLrc,
+                                    source = song?.source ?: (if (effectiveId.length == 11) "youtube" else "telegram"),
+                                    coverUrl = song?.coverUrl,
+                                    uploaderUserId = song?.uploaderUserId,
+                                    telegramFileId = song?.telegramFileId,
+                                    telegramDirectUrl = song?.telegramDirectUrl,
+                                    youtubeId = song?.youtubeId ?: effectiveId.takeIf { it.length == 11 }
+                                )
+                                musicDao.insertSong(cachedSong)
+                            }
+                            musicDao.updateLyricsByIdOrYoutubeId(songId, translatedLrc)
+                            if (effectiveId != songId) {
+                                musicDao.updateLyricsByIdOrYoutubeId(effectiveId, translatedLrc)
+                            }
+                        } catch (e: Exception) {
+                            Timber.tag("LyricsViewModel").e(e, "Gagal menyimpan terjemahan MLKit ke DB")
+                        }
+                    }
+
                     // Update global state & UI HANYA jika masih di lagu yang sama
                     if (_currentSongId.value == songId) {
                         withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -165,6 +204,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
         artistName: String,
         rawLrc: String,
         musicDao: com.example.remusic.data.local.MusicDao,
+        song: com.example.remusic.data.model.Song? = null,
         onSuccess: (String) -> Unit
     ) {
         if (_isTranslating.value) return
@@ -249,8 +289,32 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                 if (translatedText != null && translatedText.contains("[")) {
                     _translationProgress.value = "Menyimpan hasil terjemahan..."
                     
-                    // 1. Update local DB
-                    musicDao.updateLyrics(songId, translatedText)
+                    // 1. Simpan ke database lokal (Room DB)
+                    val effectiveId = song?.effectiveId ?: songId
+                    val rawId = song?.id ?: songId
+
+                    val existing = musicDao.getSongByIdOrYoutubeId(songId) ?: musicDao.getSongByIdOrYoutubeId(effectiveId)
+                    if (existing != null) {
+                        musicDao.insertSong(existing.copy(lyrics = translatedText))
+                    } else {
+                        val cachedSong = com.example.remusic.data.local.entity.CachedSong(
+                            id = rawId,
+                            title = songTitle,
+                            artistName = artistName,
+                            lyrics = translatedText,
+                            source = song?.source ?: (if (effectiveId.length == 11) "youtube" else "telegram"),
+                            coverUrl = song?.coverUrl,
+                            uploaderUserId = song?.uploaderUserId,
+                            telegramFileId = song?.telegramFileId,
+                            telegramDirectUrl = song?.telegramDirectUrl,
+                            youtubeId = song?.youtubeId ?: effectiveId.takeIf { it.length == 11 }
+                        )
+                        musicDao.insertSong(cachedSong)
+                    }
+                    musicDao.updateLyricsByIdOrYoutubeId(songId, translatedText)
+                    if (effectiveId != songId) {
+                        musicDao.updateLyricsByIdOrYoutubeId(effectiveId, translatedText)
+                    }
                     
                     // Update Supabase in background
                     kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -281,7 +345,7 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
                     // 3. Upload to Supabase lyrics_hub
                     try {
                         val hubData = LyricsHub(
-                            id = songId,
+                            id = effectiveId,
                             title = songTitle,
                             artist = artistName,
                             lyrics = translatedText,
@@ -308,7 +372,12 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun regenerateTranslation(songId: String, onTranslated: (String) -> Unit) {
+    fun regenerateTranslation(
+        songId: String,
+        musicDao: com.example.remusic.data.local.MusicDao? = null,
+        song: com.example.remusic.data.model.Song? = null,
+        onTranslated: (String) -> Unit
+    ) {
         if (_isTranslating.value) return
         val currentLyrics = _lyrics.value
         if (currentLyrics.isEmpty() || _currentSongId.value != songId) return
@@ -330,6 +399,6 @@ class LyricsViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         
-        translateCurrentLyrics(songId, rawLrcBuilder.toString().trim(), onTranslated)
+        translateCurrentLyrics(songId, rawLrcBuilder.toString().trim(), musicDao, song, onTranslated)
     }
 }

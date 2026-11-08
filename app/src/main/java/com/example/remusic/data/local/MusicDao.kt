@@ -28,6 +28,9 @@ interface MusicDao {
     @Query("UPDATE cached_songs SET lyrics = :lyrics WHERE id = :id")
     suspend fun updateLyrics(id: String, lyrics: String)
 
+    @Query("UPDATE cached_songs SET lyrics = :lyrics WHERE id = :id OR youtubeId = :id")
+    suspend fun updateLyricsByIdOrYoutubeId(id: String, lyrics: String)
+
     // Partial Update: Details (Lyrics Fetch)
     @Query("UPDATE cached_songs SET title = :title, lyrics = :lyrics, lyricsUpdatedAt = :lyricsUpdatedAt, coverUrl = :cover, canvasUrl = :canvas, uploaderUserId = :uploaderId, language = :language, moods = :moods, artistId = :artistId, featuredArtists = :featuredArtists, source = :source, youtubeId = :youtubeId WHERE id = :id")
     suspend fun updateSongDetails(
@@ -49,6 +52,9 @@ interface MusicDao {
     // Ambil 1 lagu untuk dicek expired-nya
     @Query("SELECT * FROM cached_songs WHERE id = :songId")
     suspend fun getSongById(songId: String): CachedSong?
+
+    @Query("SELECT * FROM cached_songs WHERE id = :songId OR youtubeId = :songId LIMIT 1")
+    suspend fun getSongByIdOrYoutubeId(songId: String): CachedSong?
 
     // Ambil History (Lagu yang pernah diplay, urut dari yang terbaru)
     @Query("SELECT * FROM cached_songs ORDER BY lastPlayedAt DESC LIMIT 50")

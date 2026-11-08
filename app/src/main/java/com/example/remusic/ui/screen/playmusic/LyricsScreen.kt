@@ -494,7 +494,8 @@ fun LyricsScreen(
             onToggleTranslateLyrics = { lyricsViewModel.toggleTranslateLyrics() },
             onTranslateRequest = { 
                 if (currentSongId != null && songWithArtist?.song?.lyrics != null) {
-                    lyricsViewModel.translateCurrentLyrics(currentSongId, songWithArtist.song.lyrics) { translatedText ->
+                    val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
+                    lyricsViewModel.translateCurrentLyrics(currentSongId, songWithArtist.song.lyrics, musicDao, songWithArtist.song) { translatedText ->
                         onTranslateLyrics(translatedText)
                     }
                 } else {
@@ -743,7 +744,8 @@ fun LyricsScreen(
                 isTelegramSong = songWithArtist?.song?.source == "telegram" || songWithArtist?.song?.telegramFileId != null || songWithArtist?.song?.uploaderUserId != null,
                 onRegenerateTranslation = {
                     currentSongId?.let { id -> 
-                        lyricsViewModel.regenerateTranslation(id) { translated ->
+                        val musicDao = com.example.remusic.data.local.MusicDatabase.getDatabase(context).musicDao()
+                        lyricsViewModel.regenerateTranslation(id, musicDao, songWithArtist?.song) { translated ->
                             onTranslateLyrics(translated)
                         }
                     }
@@ -776,6 +778,7 @@ fun LyricsScreen(
                             songTitle = title,
                             artistName = artist,
                             musicDao = musicDao,
+                            song = songWithArtist?.song,
                             onSuccess = { translatedText ->
                                 onTranslateLyrics(translatedText)
                             }
